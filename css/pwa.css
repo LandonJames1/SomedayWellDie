@@ -44,7 +44,7 @@
       display: none; align-items: center; gap: 12px;
       padding: 12px; border-radius: 14px;
       background: var(--bg-raised);
-      box-shadow: 0 10px 34px rgba(0,0,0,.26), 0 0 0 .5px var(--separator);
+      box-shadow: 0 10px 34px rgba(0,0,0,.26), var(--ring);
     }
     .install-bar.show { display: flex; }
     .install-bar img { width: 42px; height: 42px; border-radius: 9px; flex-shrink: 0; }
@@ -64,7 +64,7 @@
       max-width: 520px; margin-inline: auto;
       background: var(--sheet-bg);
       border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-      box-shadow: 0 -8px 40px rgba(0,0,0,.24), 0 0 0 .5px var(--separator);
+      box-shadow: 0 -8px 40px rgba(0,0,0,.24), var(--ring);
       padding: 22px var(--gutter) calc(22px + var(--safe-bottom));
       transform: translateY(110%); transition: transform .42s var(--ease);
     }

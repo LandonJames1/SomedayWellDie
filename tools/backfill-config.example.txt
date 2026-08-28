@@ -1,0 +1,24 @@
+# Copy this file to: tools/backfill-config.txt
+# Then fill in the values below. Nothing else to do -- the script reads it.
+#
+# tools/backfill-config.txt is gitignored. This example file is not, so
+# do NOT put real values in this one.
+
+# ---- Supabase ----
+# Dashboard -> Settings -> API
+# Project URL:
+SUPABASE_URL=https://xxdmendegyxlkikejvps.supabase.co
+# service_role key (the long one marked "secret" -- NOT anon):
+SUPABASE_SERVICE_KEY=
+
+# ---- Cloudflare R2 ----
+# Account ID: on the R2 overview page, right-hand side
+R2_ACCOUNT_ID=
+# The bucket name you created:
+R2_BUCKET=media
+# R2 -> Manage API Tokens -> Create (Object Read & Write on that bucket)
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+# The bucket's public URL. Either your own domain, or the r2.dev one
+# Cloudflare gives you when you enable public access. No trailing slash.
+R2_PUBLIC_BASE=

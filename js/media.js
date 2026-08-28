@@ -46,9 +46,22 @@ const MEDIA_BUCKET='media';
    wait on over cellular, and there is no transcoding step here. The cap
    is on the file as picked; nothing is re-encoded. */
 const MAX_VIDEO_BYTES=100*1024*1024;   /* 100MB — Supabase's default limit */
-const MAX_PHOTO_DIM=1600;              /* uploads are files now, so this can
-                                          be generous where base64 could not */
-const PHOTO_QUALITY=.82;
+/* TWO pairs, and the split is load-bearing.
+
+   An uploaded photo is fetched once per device and then cached forever
+   (the keys are immutable), and on R2 that fetch costs nothing -- so
+   quality here costs storage only, which is cents. Be generous.
+
+   The FALLBACK pair is for the two paths that keep the bytes inline in
+   the row instead: no bucket, or offline. Those bytes ship again on
+   every single fetch of the list, which is the whole reason the
+   backfill in tools/media-backfill.py had to exist. So they stay small
+   deliberately. Raising the upload pair without this split raises the
+   inline pair with it and quietly rebuilds the problem. */
+const MAX_PHOTO_DIM=2560;
+const PHOTO_QUALITY=.92;
+const FALLBACK_PHOTO_DIM=1280;
+const FALLBACK_PHOTO_QUALITY=.72;
 
 /* ==============================================================
    CAPABILITY PROBE
@@ -56,6 +69,9 @@ const PHOTO_QUALITY=.82;
 let _storageReady=null;
 
 async function probeStorage(){
+  /* R2 needs no bucket probe: the Worker either answers or the upload
+     falls back inline, which is the same answer this probe gives. */
+  if(r2Ready()){_storageReady=true;return true;}
   try{
     /* list() on a bucket the caller can read succeeds even when empty,
        and 404s when the bucket does not exist. */
@@ -84,13 +100,61 @@ function mediaKey(ext){
   return `${currentUser.id}/${uuidv4()}.${ext}`;
 }
 
-async function uploadBlob(blob,ext,contentType){
+/* R2 is preferred over Supabase Storage for one reason: it does not
+   charge for egress, and a photo in a shared list is fetched by
+   everyone in it on every device. Falls back to Supabase Storage when
+   the Worker is not configured, so an unconfigured checkout still
+   works. See MEDIA_WORKER_URL in config.js. */
+function r2Ready(){
+  return !!(typeof MEDIA_WORKER_URL!=='undefined'&&MEDIA_WORKER_URL);
+}
+
+/* The Worker authorizes with the caller's own Supabase access token --
+   it asks Supabase whose it is and builds the storage key from the
+   answer, so the browser never chooses its own folder. */
+async function uploadToR2(blob,contentType){
+  const{data:{session}}=await sb.auth.getSession();
+  const token=session&&session.access_token;
+  if(!token)throw new Error('not signed in');
+  const res=await fetch(MEDIA_WORKER_URL.replace(/\/$/,'')+'/upload',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':contentType},
+    body:blob,
+  });
+  if(!res.ok){
+    let detail='';
+    try{detail=(await res.json()).error||'';}catch(e){}
+    throw new Error('upload failed ('+res.status+(detail?': '+detail:'')+')');
+  }
+  const{url}=await res.json();
+  if(!url)throw new Error('upload returned no url');
+  return url;
+}
+
+async function uploadToSupabase(blob,ext,contentType){
   const key=mediaKey(ext);
   const{error}=await sb.storage.from(MEDIA_BUCKET)
     .upload(key,blob,{contentType,cacheControl:'31536000',upsert:false});
   if(error)throw error;
   const{data}=sb.storage.from(MEDIA_BUCKET).getPublicUrl(key);
   return data.publicUrl;
+}
+
+async function uploadBlob(blob,ext,contentType){
+  if(r2Ready())return uploadToR2(blob,contentType);
+  return uploadToSupabase(blob,ext,contentType);
+}
+
+/* A cross-origin <a download> is ignored by browsers, so a link
+   straight at the bucket opens the photo instead of saving it. The
+   Worker re-serves the same object with Content-Disposition set. */
+function mediaDownloadUrl(url,name){
+  if(!r2Ready()||!url)return url;
+  const base=(typeof MEDIA_PUBLIC_BASE!=='undefined'&&MEDIA_PUBLIC_BASE)||'';
+  if(!base||url.indexOf(base)!==0)return url;   /* not ours; leave it alone */
+  const key=url.slice(base.replace(/\/$/,'').length+1);
+  return MEDIA_WORKER_URL.replace(/\/$/,'')+'/download?key='+
+    encodeURIComponent(key)+(name?'&name='+encodeURIComponent(name):'');
 }
 
 /* A data URL back to a Blob, so the same compressed bytes can be either
@@ -115,7 +179,12 @@ function compressFile(file,maxD,q){
 }
 
 async function uploadPhoto(file){
-  const dataUrl=await compressFile(file,MAX_PHOTO_DIM,PHOTO_QUALITY);
+  /* Decide where this is going BEFORE compressing, so an inline
+     fallback is never encoded at upload quality. */
+  const inline=!storageReady()||!navigator.onLine;
+  const dataUrl=await compressFile(file,
+    inline?FALLBACK_PHOTO_DIM:MAX_PHOTO_DIM,
+    inline?FALLBACK_PHOTO_QUALITY:PHOTO_QUALITY);
   /* Offline is the same answer as a missing bucket: keep the bytes
      inline. The activity row itself is queued by js/offline.js and
      syncs with the photo already embedded in it, so a completion
@@ -130,7 +199,14 @@ async function uploadPhoto(file){
     /* The connection dropped mid-upload. Falling back beats losing the
        photo the user just picked. */
     console.warn('[media] upload failed, keeping photo inline:',e);
-    return{type:'photo',url:dataUrl,poster:''};
+    /* These bytes are now going into the row after all, so re-encode
+       them down rather than embedding a full-quality image. */
+    try{
+      const small=await compressFile(file,FALLBACK_PHOTO_DIM,FALLBACK_PHOTO_QUALITY);
+      return{type:'photo',url:small,poster:''};
+    }catch(e2){
+      return{type:'photo',url:dataUrl,poster:''};
+    }
   }
 }
 

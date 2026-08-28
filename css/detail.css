@@ -100,7 +100,7 @@
     .act-group {
       background: var(--bg-elevated); border-radius: var(--r-row);
       margin: 0 var(--gx-r) 0 var(--gx-l); overflow: hidden;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
 
     .act-row {
@@ -184,7 +184,7 @@
     .act-thumb {
       width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0;
       object-fit: cover; background: var(--fill-3);
-      box-shadow: 0 0 0 .5px var(--separator);
+      box-shadow: var(--ring);
     }
     .act-chevron { color: var(--label-4); flex-shrink: 0; }
     .act-chevron .ic { width: 16px; height: 16px; stroke-width: 2.6; }
@@ -415,7 +415,7 @@
       border: none; background: var(--tint-soft); color: var(--tint);
       font-family: var(--mono); font-size: 15px; font-weight: 500;
       letter-spacing: .04em;
-      box-shadow: 0 0 0 .5px var(--separator);
+      box-shadow: var(--ring);
     }
     .ad-photo-more:active { opacity: .6; }
     .ad-photo-more .ic { width: 18px; height: 18px; stroke-width: 2.4; }
@@ -432,7 +432,7 @@
       background: var(--bg-elevated); border-radius: var(--r-row);
       padding: 15px 17px; font-size: 17px; line-height: 1.5;
       letter-spacing: -.011em; color: var(--label); white-space: pre-wrap;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     /* Long-form completion notes are the one place body copy is worth
        setting in the serif — it is prose, not UI.

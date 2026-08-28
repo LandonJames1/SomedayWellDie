@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v120';
+const CACHE_VERSION = 'v122';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -88,6 +88,11 @@ const VENDOR_HOSTS = [
 const IMAGE_HOSTS = [
   'images.unsplash.com',
   'basemaps.cartocdn.com',
+  /* The R2 bucket holding every photo and video. Keys are random and
+     never reused, so these are immutable and cache-first is exactly
+     right. Must match MEDIA_PUBLIC_BASE in js/config.js -- if the two
+     drift, photos silently stop being available offline. */
+  'pub-316c43a551774a47b23000d0b88a37f0.r2.dev',
 ];
 
 /* Never cache: live data and the geocoder. Supabase auth in particular must

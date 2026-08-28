@@ -13,3 +13,7 @@ Thumbs.db
 # Nothing here is built, but just in case tooling ever lands
 node_modules/
 *.log
+
+# Backfill credentials — service_role key and R2 secret. Never commit.
+tools/backfill-config.txt
+__pycache__/

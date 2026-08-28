@@ -100,7 +100,7 @@
   padding: 20px 18px;
   border-radius: var(--r-card);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+  box-shadow: var(--shadow-sm), var(--ring);
   text-align: center;
 }
 .join-name{
@@ -162,4 +162,55 @@
   font-size: max(16px, 17px) !important;
   letter-spacing: .1em;
   text-align: center;
+}
+
+/* ==============================================================
+   THE TWO SHEET BODIES
+
+   Everything above is rendered straight into #shareListBody /
+   #joinBody by sharing.js, and `.sheet-body` carries no horizontal
+   padding of its own — every block inside a sheet insets itself, and
+   none of these did. So the lead paragraph, the code, the note and
+   every full-width button ran flush to the glass on both edges.
+
+   The gutters go on the two bodies rather than onto a dozen
+   individually-styled blocks, which means the two children that DO
+   carry their own — .group and .sheet-actions, borrowed from
+   elsewhere — have to give theirs up here or they would be inset
+   twice.
+   ============================================================== */
+#shareListBody, #joinBody {
+  padding-left: var(--gx-l);
+  padding-right: var(--gx-r);
+}
+#shareListBody > .group, #joinBody > .group,
+#shareListBody > .sheet-actions, #joinBody > .sheet-actions {
+  margin-left: 0; margin-right: 0;
+}
+
+/* The invite sheet is a stack of full-width buttons with nothing
+   between them, so they read as one tall control. */
+#shareListBody > .btn { margin-top: 10px; }
+#shareListBody > .shr-url + .btn { margin-top: 0; }
+
+/* The one state left over from the deleted import sheet: the error
+   shown when an invite link cannot be read. Its styles went with
+   import.css, so it had no layout at all. */
+.imp-status {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 10px; padding: 12px 0 4px; text-align: center;
+}
+.imp-status p {
+  font-size: 15px; line-height: 1.45; color: var(--label-2);
+  margin-bottom: 6px;
+}
+
+/* The join-by-code sheet is static markup rather than one of the two
+   rendered bodies above, and mixes blocks that inset themselves (.fg)
+   with blocks borrowed from here and from auth.css that do not. Only
+   the ones that do not are inset. */
+#joinCodeSheet .shr-lead,
+#joinCodeSheet .shr-note,
+#joinCodeSheet .auth-error {
+  margin-left: var(--gx-l); margin-right: var(--gx-r);
 }

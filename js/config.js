@@ -13,6 +13,26 @@
    one signs everyone out or orphans their cached data. */
 const APP_NAME='Someday We’ll Die';
 
+/* ---- Media storage ----
+   Photos and video live in Cloudflare R2 rather than Supabase Storage,
+   for one reason: R2 does not charge for egress. A photo in a shared
+   list is viewed by everyone in it, on every device, forever, and on a
+   metered bucket that is the single largest cost the app has.
+
+   MEDIA_WORKER_URL is the Worker that authorizes uploads (see
+   cloudflare/media-worker/worker.js). It holds the R2 credentials; the
+   browser never does. Leave it EMPTY and uploads fall back to Supabase
+   Storage exactly as before -- the same way every optional piece of
+   this app degrades rather than breaking.
+
+   MEDIA_PUBLIC_BASE is the bucket's public URL. Reads go straight
+   there, not through the Worker: a read has nothing to authorize, and
+   routing it through a Worker would spend a request to add nothing.
+   It must also be listed in IMAGE_HOSTS in sw.js or photos stop being
+   cached offline. */
+const MEDIA_WORKER_URL='https://swd-media-worker.landon-talus.workers.dev';
+const MEDIA_PUBLIC_BASE='https://pub-316c43a551774a47b23000d0b88a37f0.r2.dev';
+
 const SUPABASE_URL='https://xxdmendegyxlkikejvps.supabase.co';
 const SUPABASE_KEY='sb_publishable_45ETmiEMgvWn3QAd58ck5Q_opy0TWnX';
 

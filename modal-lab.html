@@ -1,0 +1,124 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accomplished Modal — Option 9 variants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --serif:'Newsreader',ui-serif,Georgia,serif;
+ --sans:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;
+ --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+ --bg:#eeeae2;--sheet-bg:#f7f4ee;--bg-elevated:#fbf9f5;--fill-3:rgba(122,112,92,.12);
+ --label:#1c1a16;--label-2:rgba(58,55,48,.74);--label-3:rgba(78,74,64,.52);
+ --separator:rgba(120,110,92,.20);--tint:#9c5a2e;--tint-soft:rgba(156,90,46,.13);
+ --green:#6c8853;--red:#a8443c;
+ --shadow-md:0 4px 14px rgba(60,50,35,.12);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:var(--sans);color:var(--label);padding:28px 16px 60px}
+h1{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--tint);text-align:center}
+.lab{display:flex;flex-wrap:wrap;gap:26px;justify-content:center;align-items:flex-start}
+.col{width:390px}
+.opt-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--label-3);margin:0 0 8px 4px}
+.opt-note{font-size:12px;color:var(--label-3);margin:8px 4px 0;line-height:1.4}
+.sheet{background:var(--sheet-bg);border-radius:20px 20px 0 0;box-shadow:var(--shadow-md);overflow:hidden;height:660px;display:flex;flex-direction:column}
+.grab{width:36px;height:5px;border-radius:3px;background:var(--separator);margin:8px auto 0;flex:none}
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px 8px;flex:none}
+.sbar button{background:none;border:0;font-family:var(--sans);font-size:17px;color:var(--tint);padding:0}
+.sbody{flex:1;overflow-y:auto;padding:0 0 20px}
+img{display:block;width:100%;height:100%;object-fit:cover}
+
+/* ---- OPTION 9 base ---- */
+.pcard{margin:16px 16px 0}
+.pcard h2{font-family:var(--serif);font-size:30px;font-weight:600;margin:0;line-height:1.05;letter-spacing:-.01em}
+.pcard .psub{font-family:var(--sans);font-size:16px;color:var(--label-3);margin:4px 0 0}
+.pstage{position:relative;margin:18px 0 0;border-radius:16px;overflow:hidden;background:var(--fill-3);aspect-ratio:1}
+.pstage .slide{position:absolute;inset:0;opacity:0;transition:opacity .5s ease}
+.pstage .slide.on{opacity:1}
+.pdots{position:absolute;left:0;right:0;bottom:12px;display:flex;gap:6px;justify-content:center;z-index:2}
+.pdots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5)}
+.pdots i.on{background:#fff}
+.pfoot{display:flex;align-items:center;gap:10px;margin:16px 0 0}
+.pfoot .pmeta{flex:1;min-width:0;font-family:var(--sans);font-size:14.5px;line-height:1.32;color:var(--label-2)}
+.pfoot .pbtns{flex:none;display:flex;gap:8px}
+.pfoot .pbtns button{width:40px;height:40px;padding:0;border:0;border-radius:50%;display:flex;align-items:center;
+ justify-content:center;cursor:pointer}
+.pfoot .pbtns svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pfoot .p-e{background:var(--tint);color:#fff}
+.pfoot .p-u{background:var(--fill-3);color:var(--label)}
+.pfoot .p-d{background:var(--fill-3);color:var(--red)}
+
+/* ---- 9b: plain serif passage under the media ---- */
+.n-b{margin:18px 0 0}
+.n-b .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tint);margin:0 0 6px}
+.n-b p{font-family:var(--serif);font-size:18.5px;line-height:1.55;margin:0;color:var(--label)}
+
+/* ---- 9c: caption laid over the bottom of the photo ---- */
+.n-c{position:absolute;left:0;right:0;bottom:0;padding:56px 16px 30px;z-index:1;
+ background:linear-gradient(to top,rgba(18,15,10,.88),rgba(18,15,10,0));color:#fff}
+.n-c p{font-family:var(--serif);font-size:17px;line-height:1.45;margin:0;text-shadow:0 1px 10px rgba(0,0,0,.5)}
+.pstage.hascap .pdots{bottom:auto;top:12px;right:12px;left:auto}
+
+/* ---- 9d: pull-quote with a rule ---- */
+.n-d{margin:20px 0 0;padding-left:14px;border-left:2px solid var(--tint)}
+.n-d p{font-family:var(--serif);font-size:20px;line-height:1.45;margin:0;color:var(--label)}
+.n-d .by{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--label-3);margin:8px 0 0}
+
+/* ---- 9e: notes as the last slide in the deck ---- */
+.n-e{position:absolute;inset:0;background:var(--tint);color:#fff;padding:34px 26px;display:flex;flex-direction:column;justify-content:center}
+.n-e .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.75;margin:0 0 10px}
+.n-e p{font-family:var(--serif);font-size:21px;line-height:1.45;margin:0}
+</style></head><body>
+<h1>Accomplished Activity — Option 9 variants</h1>
+<div class="lab" id="lab"></div>
+<script>
+const PAL=[['#c98a4b','#7a4a24'],['#6c8853','#324226'],['#4a7f96','#22414f'],['#a8443c','#5c211d'],
+ ['#8a72b5','#3f3159'],['#b5a688','#5f5540'],['#3f7d6a','#1c3a31'],['#b8752f','#5e3a13'],['#6b5b8a','#332a45']];
+const SC=['Trailhead','Ridgeline','The valley','Camp one','Sunrise','River crossing','Summit','Descent','Last light'];
+const P=PAL.map((c,i)=>'data:image/svg+xml;utf8,'+encodeURIComponent(
+ `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c[0]}"/><stop offset="1" stop-color="${c[1]}"/></linearGradient></defs><rect width="800" height="800" fill="url(#g)"/><circle cx="620" cy="180" r="90" fill="rgba(255,255,255,.18)"/><path d="M0 640 L200 430 L360 600 L520 380 L800 660 L800 800 L0 800Z" fill="rgba(0,0,0,.22)"/><path d="M0 700 L260 520 L470 690 L640 560 L800 690 L800 800 L0 800Z" fill="rgba(0,0,0,.28)"/><text x="40" y="90" font-family="monospace" font-size="34" fill="rgba(255,255,255,.85)">${i+1}</text><text x="40" y="760" font-family="monospace" font-size="30" fill="rgba(255,255,255,.75)">${SC[i]}</text></svg>`));
+const NOTE='Eleven miles in and the valley just opened up. We ran out of water at Hanakoa and rationed the last of the trail mix, but the beach at the end was empty except for two goats. Worth every blister.';
+const BTNS=`<div class="pbtns">
+ <button class="p-e" title="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"/></svg></button>
+ <button class="p-u" title="Mark not done"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></button>
+ <button class="p-d" title="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button>
+</div>`;
+const FOOT=`<div class="pfoot"><div class="pmeta">Kauai, HI · 11 miles<br>9 photos, 1 video</div>${BTNS}</div>`;
+
+const V=[
+ ['9a','No notes (baseline)','Name and date lead, media as one big inset panel, meta line paired with three icon actions.',{}],
+ ['9b','Notes below the media','A mono eyebrow and a serif passage sitting directly under the photo panel, above the meta row.',{below:`<div class="n-b"><p class="eyebrow">How it went</p><p>${NOTE}</p></div>`}],
+ ['9c','Notes as a photo caption','The note is laid over the bottom of the photo itself, so the picture and the story are one object. Dots move to the corner.',{cap:`<div class="n-c"><p>${NOTE}</p></div>`}],
+ ['9d','Notes as a pull-quote','Bigger serif against a terracotta rule — the note reads as the thing you came back for, not a field.',{below:`<div class="n-d"><p>${NOTE}</p><p class="by">Written Mar 12, 2026</p></div>`}],
+ ['9e','Notes as the last slide','The note is a card at the end of the photo deck — swipe past the pictures and the story is the final frame.',{lastSlide:true}]
+];
+
+lab.innerHTML=V.map(([id,name,note,o])=>`
+<div class="col">
+<p class="opt-label">Option ${id} — ${name}</p>
+<div class="sheet"><div class="grab"></div>
+ <div class="sbar"><button>Close</button><button></button></div>
+ <div class="sbody">
+  <div class="pcard">
+   <h2>Hike the Kalalau Trail</h2>
+   <p class="psub">Accomplished Mar 12, 2026</p>
+   <div class="pstage${o.cap?' hascap':''}" data-stage="${id}" data-last="${o.lastSlide?1:0}">${o.cap||''}<div class="pdots"></div></div>
+   ${o.below||''}
+   ${FOOT}
+  </div>
+ </div></div>
+<p class="opt-note">${note}</p>
+</div>`).join('');
+
+const img=u=>`<img src="${u}" loading="lazy">`;
+document.querySelectorAll('.pstage').forEach(st=>{
+ const dots=st.querySelector('.pdots');
+ let slides=P.map((u,i)=>`<div class="slide${i?'':' on'}">${img(u)}</div>`);
+ if(st.dataset.last==='1') slides.push(`<div class="slide"><div class="n-e"><p class="eyebrow">How it went</p><p>${NOTE}</p></div></div>`);
+ st.insertAdjacentHTML('afterbegin',slides.join(''));
+ const N=slides.length;
+ dots.innerHTML=[0,1,2].map(i=>`<i class="${i?'':'on'}"></i>`).join('');
+ let n=0;setInterval(()=>{const s=st.querySelectorAll('.slide'),d=dots.children;
+  s[n].classList.remove('on');d[n%3].classList.remove('on');n=(n+1)%N;
+  s[n].classList.add('on');d[n%3].classList.add('on');},3500);
+});
+</script></body></html>

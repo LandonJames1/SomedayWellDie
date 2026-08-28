@@ -35,7 +35,7 @@
        sign-in pattern. */
     .auth-fields {
       background: var(--bg-elevated); border-radius: var(--r-row); overflow: hidden;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .auth-fields input {
       display: block; width: 100%;
@@ -115,7 +115,7 @@
       padding: 14px 16px;
       border-radius: var(--r-ctl);
       background: var(--bg-elevated);
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
       color: var(--label-2);
       font-size: 14px;
       line-height: 1.45;

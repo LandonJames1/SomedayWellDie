@@ -107,6 +107,18 @@
       --violet-soft:     rgba(108,68,171,.25);
       --slate-soft:      rgba(66,135,154,.25);
 
+      /* ---- The hairline ring ----
+         Every card, field and row in the app is a surface floating on
+         the ground, and this is the edge that says so. It is ONE token
+         because on the dark ground it has to do a different amount of
+         work: there, the warm near-black surfaces sit only a few values
+         apart and the warm shadows underneath them are worth nothing on
+         a near-black, so the ring is the only thing left drawing the
+         edge — it goes to a full pixel below. Reach for var(--ring),
+         never a literal `0 0 0 .5px var(--separator)`, or that surface
+         will be the one that vanishes in dark mode. */
+      --ring: 0 0 0 .5px var(--separator);
+
       /* ---- Depth ----
          Warm-tinted rather than neutral black, so shadows sit on the
          parchment instead of greying it. */
@@ -150,10 +162,16 @@
        and pure black would make the olive and terracotta look muddy. */
     @media (prefers-color-scheme: dark) {
       :root {
+        /* --bg-elevated was #211e18 against a --sheet-bg of #201d17:
+           one value apart, so an untinted field on a sheet — the List
+           picker, "How it went" — had no edge and no fill to be read
+           by, and simply was not there. The elevated surface is lifted
+           well clear and the sheet ground dropped to meet it, so the
+           split is ~14 values in every channel rather than 1. */
         --bg:              #16140f;
-        --bg-elevated:     #211e18;
-        --bg-raised:       #2b2720;
-        --sheet-bg:        #201d17;
+        --bg-elevated:     #2a2620;
+        --bg-raised:       #37322a;
+        --sheet-bg:        #1c1a15;
         --nav-bg:          rgba(22,20,15,.78);
         --scrim:           rgba(0,0,0,.6);
 
@@ -167,8 +185,13 @@
         --label-3:         rgba(220,212,196,.46);
         --label-4:         rgba(210,200,182,.28);
 
-        --separator:       rgba(200,186,158,.16);
-        --separator-solid: #3a352c;
+        /* .16 of a warm grey at half a pixel is nothing on the dark
+           ground. The ring is also the ONLY thing drawing an edge here,
+           since --shadow-sm is black on near-black, so it takes a whole
+           pixel. */
+        --separator:       rgba(206,193,167,.26);
+        --separator-solid: #423b31;
+        --ring:            0 0 0 1px var(--separator);
 
         --tint:            #d98f5c;
         --tint-strong:     #e5a273;

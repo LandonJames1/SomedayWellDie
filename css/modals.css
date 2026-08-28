@@ -97,7 +97,7 @@
 
     .field {
       background: var(--bg-elevated); border-radius: var(--r-row);
-      overflow: hidden; box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      overflow: hidden; box-shadow: var(--shadow-sm), var(--ring);
     }
     .field + .field { margin-top: 18px; }
 
@@ -117,7 +117,19 @@
       /* 16px floor: Safari zooms the page when a focused field is smaller. */
       font-size: max(16px, 17px); letter-spacing: -.011em;
       border-radius: var(--r-row);
+      /* The tinted fields below carry a ring in their own hue and the
+         untinted ones carried nothing at all, which on the dark ground
+         meant a fill one value off the sheet behind it and no edge —
+         the field was invisible. Every box you can type in has an edge
+         now, and --ring is what makes that edge hold up in dark mode. */
+      box-shadow: var(--shadow-sm), var(--ring);
       -webkit-appearance: none; appearance: none;
+    }
+    /* The .fg-hero focus ring used to be the only one in the app. Every
+       field it is not gets the quieter version, because a field with an
+       edge needs to say which edge is live. */
+    .fg input:focus, .fg textarea:focus, .fg select:focus {
+      box-shadow: var(--shadow-sm), 0 0 0 1.5px var(--tint);
     }
     .fg textarea { min-height: 92px; resize: none; line-height: 1.38; padding-top: 13px; }
     .fg input::placeholder, .fg textarea::placeholder { color: var(--label-3); }
@@ -178,6 +190,9 @@
       background: var(--bg-elevated); border-radius: var(--r-row);
       color: var(--label); text-align: left;
       font-size: max(16px, 17px); letter-spacing: -.011em;
+      /* Matches the field it shares the line with. Without it this was
+         the box in the screenshot with no visible outline at all. */
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .picker-btn:active { background: var(--fill-4); }
     .picker-btn-value {
@@ -238,9 +253,14 @@
     /* Two fields sharing one rounded card, split by a hairline. */
     .fg-stack {
       background: var(--bg-elevated); border-radius: var(--r-row); overflow: hidden;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
-    .fg-stack > * { border-radius: 0; }
+    /* The children are .fg inputs, which now carry a ring of their own —
+       inside a card that already has one that would be two edges around
+       each field. The card is the edge; the focus ring moves to it. */
+    .fg-stack > * { border-radius: 0; box-shadow: none; }
+    .fg-stack > *:focus { box-shadow: none; }
+    .fg-stack:focus-within { box-shadow: var(--shadow-sm), 0 0 0 1.5px var(--tint); }
     .fg-stack textarea { min-height: 62px; padding: 12px 16px; }
     .fg-stack > *:not(:last-child) { border-bottom: .5px solid var(--separator); }
 
@@ -274,7 +294,7 @@
     .comp-card {
       margin: 0 var(--gx-r) 14px var(--gx-l);
       background: var(--bg-elevated); border-radius: var(--r-row);
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .comp-row {
       position: relative;
@@ -354,12 +374,22 @@
     .comp-sec-label .req {
       text-transform: none; letter-spacing: -.002em; color: var(--red);
     }
+    /* .sheet-body has no horizontal padding of its own — every block
+       inside one insets itself — so this had none and ran to both edges
+       of the glass. */
     .comp-req-hint {
-      margin-top: 10px; font-size: 13px; line-height: 1.38;
+      /* Loose below, tight above: it is a caption on the media block it
+         follows, and with an even gap on both sides it read as the
+         label for "How it went" underneath. */
+      margin: 0 var(--gx-r) 16px var(--gx-l);
+      font-size: 13px; line-height: 1.38;
       color: var(--label-2);
     }
     .comp-req-hint[hidden] { display: none; }
     .comp-sec .photo-previews { margin-top: 0; }
+    /* The photo-location offer sits directly on the sheet body rather
+       than inside a .fg, so unlike .loc-guess it has to inset itself. */
+    .comp-suggest { margin-left: var(--gx-l); margin-right: var(--gx-r); }
     /* Written in the face it will be read back in — .ad-note.prose on
        the activity sheet is the serif, and this is the one thing on the
        sheet the user writes rather than picks. */
@@ -368,7 +398,7 @@
       min-height: 108px; padding: 14px 16px; resize: none;
       border: none; outline: none; border-radius: var(--r-row);
       background: var(--bg-elevated); color: var(--label);
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
       font-family: var(--serif); font-size: max(16px, 17px);
       line-height: 1.45; letter-spacing: -.006em;
     }
@@ -654,7 +684,7 @@
       margin: 0 var(--gx-r) 0 var(--gx-l);
       background: var(--bg-elevated); border-radius: var(--r-row);
       overflow: hidden;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .lp-row {
       position: relative; width: 100%;
@@ -670,7 +700,7 @@
     .lp-cover {
       width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
       object-fit: cover; background: var(--fill-3);
-      box-shadow: 0 0 0 .5px var(--separator);
+      box-shadow: var(--ring);
     }
     .lp-name {
       flex: 1; min-width: 0;
@@ -704,6 +734,13 @@
     .fg-hint {
       margin: 8px 4px 0 17px;
       font-size: 13px; line-height: 1.4; color: var(--label-2);
+    }
+    /* Written for life inside a .fg, which carries the gutters for it.
+       As a direct child of a sheet body — the reminder sheet's resolved
+       date — there is nothing above it holding an inset, so it takes
+       its own. */
+    .sheet-body > .fg-hint {
+      margin-left: var(--gx-l); margin-right: var(--gx-r);
     }
 
 /*  ============================================================
@@ -773,6 +810,10 @@
       margin: 0; padding: 10px 12px; min-height: 62px;
       border: none; border-radius: var(--r-row);
       background: color-mix(in srgb, var(--c-link) 14%, transparent);
+      /* Its own hue at ring strength, as .fg-tint does — a tinted fill
+         alone has no edge, and on the dark ground that reads as a patch
+         rather than a control. */
+      box-shadow: 0 0 0 .5px color-mix(in srgb, var(--c-link) 34%, transparent);
       cursor: pointer;
     }
     .comp-media-card:active { background: color-mix(in srgb, var(--c-link) 24%, transparent); }

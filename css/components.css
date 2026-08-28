@@ -19,7 +19,7 @@
       overflow: hidden;
       /* A hairline plus a soft warm shadow, so cards sit *on* the
          parchment rather than being cut out of it. */
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .group + .group { margin-top: 22px; }
 
@@ -134,7 +134,7 @@
       background: var(--fill-3); color: var(--label-2);
       transition: background .2s;
     }
-    .searchfield:focus-within { background: var(--bg-elevated); box-shadow: 0 0 0 .5px var(--separator), var(--shadow-sm); }
+    .searchfield:focus-within { background: var(--bg-elevated); box-shadow: var(--ring), var(--shadow-sm); }
     .searchfield .ic { width: 17px; height: 17px; }
     .searchfield input {
       flex: 1; min-width: 0; border: none; outline: none; background: none;

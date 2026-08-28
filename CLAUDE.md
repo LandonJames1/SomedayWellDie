@@ -127,7 +127,11 @@ manifest.webmanifest  PWA metadata (name, icons, standalone display, theme color
 sw.js                 Service worker — offline app shell + runtime caching. Must stay at the root.
 supabase/             Backend — schema.sql (reminders + reminder_deliveries), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), storage.sql (the media bucket), cron.sql, and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
 css/                  One stylesheet per concern (see CSS file map)
-tools/                difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog)
+tools/                difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog);
+                      media-backfill.py — the one-off that moved every photo to R2 (see **Media**)
+cloudflare/           media-worker/worker.js — the Worker that authorizes uploads to R2 and serves
+                      downloads. Pasted into the Cloudflare dashboard by hand; there is no deploy step
+                      in this repo. See **Media**.
 js/                   One script per concern (see JS file map)
 icons/                App icon PNGs + generate.py, the script that draws them
 Supabase Setup/       CSV exports of the Collections / Activities / Users tables (schema reference; STALE, see Back end)
@@ -138,6 +142,11 @@ color-lab.html        A bench for the four activity colours (done / high / mediu
                       rendering the real rails, capsules, cards and pins on both grounds at
                       once. Dev tool only: not linked from index.html, not in sw.js. Open it
                       directly; #ember / #signal / #ladder / #current pick a scheme.
+modal-lab.html        The same kind of bench for the completion sheet's layout, showing the
+                      variants side by side at 390px. It COPIES the tokens rather than
+                      linking base.css, so it drifts — read it as a sketch of a decision
+                      already made, never as the current sheet. Dev tool only: not linked
+                      from index.html, not in sw.js.
 ```
 
 There is no build step. Serve statically: `python3 -m http.server 8000`.
@@ -480,6 +489,67 @@ that a tap navigated the page underneath and left a sheet stranded over
 the wrong screen.
 
 #### Media
+
+**Media lives in Cloudflare R2, not Supabase Storage, and the reason is
+egress.** A photo in a shared list is fetched by everyone in it, on
+every device, for as long as the list exists. Supabase meters that;
+R2 does not charge for it at all. That single difference is what makes
+full-quality photos affordable, and it is why the quality constants
+below are set where they are.
+
+Three things make it work, and all three are outside this repo except
+the last:
+
+- **`cloudflare/media-worker/worker.js`** holds the R2 credentials and
+  is the only thing allowed to write. The browser never sees a key —
+  the same argument that keeps `HERE_API_KEY` inside the `geo`
+  function. It verifies the uploader by asking Supabase whose access
+  token this is (`GET /auth/v1/user`) rather than checking the JWT
+  signature locally: that works with both legacy JWT secrets and the
+  newer signing keys without the Worker knowing which, and it refuses a
+  deleted account, which a signature check cannot. **The uid it builds
+  the storage key from is the verified one, never anything in the
+  request** — a uid from the body would let any signed-in user write
+  into somebody else's folder.
+- **Reads go straight to the bucket**, not through the Worker. A read
+  has nothing to authorize and routing it through a Worker would spend
+  a request to add nothing. `MEDIA_PUBLIC_BASE` in `config.js` **must**
+  also appear in `IMAGE_HOSTS` in `sw.js`; if the two drift, photos
+  silently stop being cached offline.
+- **It degrades.** `MEDIA_WORKER_URL` empty falls back to Supabase
+  Storage exactly as before, which falls back to inline base64 exactly
+  as before. Nothing about this is load-bearing for a checkout that has
+  not configured it.
+
+**The compression constants are TWO pairs and the split is
+load-bearing.** An uploaded photo is fetched once per device and then
+cached forever — the keys are random and never reused, so the objects
+are immutable — and on R2 that fetch is free, so quality costs storage
+only. `MAX_PHOTO_DIM`/`PHOTO_QUALITY` are therefore generous
+(2560/.92). `FALLBACK_PHOTO_DIM`/`FALLBACK_PHOTO_QUALITY` (1280/.72)
+are for the two paths that keep the bytes *in the row* instead — no
+bucket, or offline — and those bytes ship again on every fetch of the
+list. **Raising the upload pair without the split raises the inline
+pair with it and quietly rebuilds the problem the backfill existed to
+fix.** `uploadPhoto()` picks the pair *before* compressing, and the
+upload-failed path re-encodes down, because those bytes are about to
+live in a row after all.
+
+**A cross-origin `<a download>` is ignored by browsers**, so a link
+straight at the bucket opens the photo instead of saving it.
+`mediaDownloadUrl()` points at the Worker's `/download`, which re-serves
+the same object with `Content-Disposition` set.
+
+**`tools/media-backfill.py` is the one-off that got everything here.**
+It moved 8.9MB of base64 out of `Activities.photos` and re-hosted the
+Supabase Storage URLs (`--migrate-storage`); as of that run all 58 media
+items are on R2 and none are inline. It is dry-run by default, takes
+`--limit N` so one row can be checked before the rest, and only rewrites
+a row once every one of its uploads has succeeded — a failure leaves the
+row exactly as it was rather than half-converted. Re-running is
+harmless. Credentials come from `tools/backfill-config.txt`, which is
+gitignored; `tools/backfill-config.example.txt` is the template.
+
 
 Photos **and video**, in `js/media.js`, stored in a Supabase Storage
 bucket called `media`, one folder per user.
@@ -2840,6 +2910,22 @@ Other rules:
   lower steps are cool in a warm palette, which is deliberate: they have to
   read as the bottom of a scale whose top is terracotta, and warm greys just
   looked disabled. See **Showing priority** below.
+- **Every surface's edge is `var(--ring)`, never a literal
+  `0 0 0 .5px var(--separator)`.** One token, because on the dark
+  ground it has to do a different amount of work: the warm near-black
+  surfaces sit close together and `--shadow-sm` is black on near-black
+  and worth nothing, so the ring is the only thing left drawing an
+  edge and goes to a full pixel. A surface that hardcodes the half
+  pixel is the one that disappears in dark mode. **Every box you can
+  type in has one** — `.fg input/textarea/select` and `.picker-btn` had
+  nothing at all, which with the old grounds meant a fill one value off
+  the sheet behind it and no edge: the List picker and "How it went"
+  simply were not there in dark mode.
+- **In dark mode `--bg-elevated` must stay well clear of `--sheet-bg`.**
+  They were `#211e18` on `#201d17` — one value apart. The split is now
+  ~14 values in every channel (`#2a2620` on `#1c1a15`). If you retune
+  the dark grounds, check an untinted field on a sheet, not a card on
+  the page: the page ground is much darker and hides the problem.
 - **Nothing outside `:root` in `base.css` should contain a raw hex value.**
   Re-theming the entire app is meant to be one file. The `--shadow-*` tokens
   are warm-tinted for the same reason: neutral black shadows grey the
@@ -2895,7 +2981,7 @@ Loaded in this order; **order matters**.
 
 | File | Domain |
 | --- | --- |
-| `config.js` | `SUPABASE_URL`/`SUPABASE_KEY`, **`HERE_API_KEY`** (place search; public by design, restrict it by origin in the HERE portal — empty falls back to Nominatim), the `sb` client (auth options spelled out rather than defaulted — note `detectSessionInUrl:false`, the one that is *not* a default: `auth.js` handles the email-confirmation landing itself), the `COVERS` array of default Unsplash covers, and `randCover(existingCovers)` (picks a cover the user isn't already using). |
+| `config.js` | `SUPABASE_URL`/`SUPABASE_KEY`, **`MEDIA_WORKER_URL`/`MEDIA_PUBLIC_BASE`** (the Cloudflare Worker that authorizes uploads, and the R2 bucket reads come from — empty falls back to Supabase Storage; see **Media**), **`HERE_API_KEY`** (place search; public by design, restrict it by origin in the HERE portal — empty falls back to Nominatim), the `sb` client (auth options spelled out rather than defaulted — note `detectSessionInUrl:false`, the one that is *not* a default: `auth.js` handles the email-confirmation landing itself), the `COVERS` array of default Unsplash covers, and `randCover(existingCovers)` (picks a cover the user isn't already using). |
 | `state.js` | Every shared mutable global: `currentUser`, the navigation triple (`curTab`, `curPage`, `backTab`), `curListId`, **`curConvId`** (which conversation the conversation screen is showing — it *is* a collection id), `editingListId`, `editingActId`, `completingId`, `curFilter`, **`curSort`** (see **Sorting a collection**), `curView`, `upMedia`, `coverPhoto`, `userProfile`, and the map handles. Other files declare their own feature-local globals next to their code (`aLinks`, `bulkEntries`, `actMap`, `lbPhotos`, `locTimer`). |
 | `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl`, `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`sortActivities`** (see **Sorting a collection**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
 | `exif.js` | `exifReadLocation(file)` — the GPS fix out of a photo's EXIF, or null. Handles **JPEG and HEIC/HEIF/AVIF**, dispatching on magic bytes rather than `file.type`. Underneath: the JPEG walk (`exifFindTiff`), the HEIC box walk (`isoBoxes`, `isoType`, `heicReadLocation`, `heicExifExtent`, `heicExifItemId`, `heicItemExtent`, `heicTiffStart`, `isTiffAt`), and the shared TIFF reader both land on (`exifGpsFrom`, `exifTagValue`, `exifDMS`). Pure, no dependencies, every failure path returns null rather than throwing. **Must be called against the original `File`**: a canvas re-encode strips every tag. See **Where the photo was taken**. |
@@ -2919,7 +3005,7 @@ Loaded in this order; **order matters**.
 | --- | --- |
 | `links.js` | The URL chip input: `aLinks`, `handleTagKey`, `removeTag`, `renderTagChips`. ⚠️ `getChipArr(which)` ignores its argument and always returns `aLinks` — vestigial from when there were two chip fields. Adding a second means fixing this first. |
 | `location.js` | Everything that resolves a place. **`placeSearch(q, limit)`** — the one search entry point, HERE Autosuggest or Nominatim depending on `HERE_API_KEY` (`hereReady`, `hereSearch`, `nominatimSearch`, `hereName`, `hereSub`) — and `locSearch(input, resultsId)`, the debounced dropdown around it (`locItemHTML`, `locShortcutsHTML`, `locOpen`/`locClose`, `locPickIdx`, `locApply`, `locUseHome`, `locUseCurrent`, and the `_locSeq` race guard). Then the bias point (`biasPoint`, `requestBiasPoint`, `primeBias`) and **the text/coordinate contract** — `locGeoMark`, `locFieldsFor`, `locInvalidateIfChanged`, `resolveLocationField`, `requireLocation`, and the Home-intent pair `locIsHome`/`locSetHome`. See **Searching for a place**, **The text and the coordinates must agree** and **A location is required**. Plus `geocodeOnce(q)` (one-shot, no debounce, no DOM: resolves a place name we already have — an imported link's location — to `{display, lat, lng}` or null), `reverseGeocode(lat, lng)` (the other direction, for a photo's EXIF fix — `zoom=14`, so a place rather than a postal address), `positionLocBox` (the bulk sheet's dropdown is `position:fixed` so it can escape the sheet's scroll container, and therefore has to be placed by hand) and `locPick`. Plus the **guess from the activity's name** — which also carries the difficulty rating, see **Guessing how hard it is**: `maybeGuessLocation`, **`queueLocationGuess`** (the debounced `input` trigger) and the session-lived `_guessCache` — the two things that make the guess arrive while the sheet is still being filled — plus **`difficultyExamples`/`DIFF_EX_PER_TIER`/`resetGuessCache`** (the tier-balanced sample of the user's own ratings sent with every guess — see **Rating for one person, not an average one**), `guessMatchesName`, `resetLocationGuess`, `onActLocInput`, `undoLocationGuess`, `clearLocationGuessMark`. See **Guessing the location from the name**. |
-| `media.js` | Photos **and video**. `probeStorage()`/`storageReady()`, `uploadPhoto`/`uploadVideo` (→ the `media` Supabase Storage bucket), `videoPoster` (grabs a still so thumbnails and map pins have an image), `handleMedia`, `rmMedia`, `mediaTileHTML`, `renderThumbs` (which ends in `updateMediaRequirement()` — the completion sheet's media rule, owned by `activities.js`), and the ordering set — `coverIndex`, `moveMedia`, `makeCover`, `openMediaMenu`. Also the photo→location offer: `needsLocationSuggestion`, `suggestLocationFromPhoto`, `acceptPhotoLocation`, `dismissPhotoLocation`, `resetLocationSuggestion` (see **Where the photo was taken**). Working list is the `upMedia` global. Replaced `photos.js`; see **Media** below. |
+| `media.js` | Photos **and video**. `probeStorage()`/`storageReady()`, **`r2Ready`/`uploadToR2`/`uploadToSupabase`/`mediaDownloadUrl`** (uploads go to Cloudflare R2 through the Worker, with Supabase Storage as the fallback — see **Media**), `uploadPhoto`/`uploadVideo`, `videoPoster` (grabs a still so thumbnails and map pins have an image), `handleMedia`, `rmMedia`, `mediaTileHTML`, `renderThumbs` (which ends in `updateMediaRequirement()` — the completion sheet's media rule, owned by `activities.js`), and the ordering set — `coverIndex`, `moveMedia`, `makeCover`, `openMediaMenu`. Also the photo→location offer: `needsLocationSuggestion`, `suggestLocationFromPhoto`, `acceptPhotoLocation`, `dismissPhotoLocation`, `resetLocationSuggestion` (see **Where the photo was taken**). Working list is the `upMedia` global. Replaced `photos.js`; see **Media** below. |
 
 **Screens and features**
 
@@ -3461,6 +3547,22 @@ these are the defaults, not overrides.
   button sits directly above the first card's corner rather than floating
   inboard of it. The tab bar deliberately stays centred and compact instead:
   four tabs stretched across 720px drift away from the thumb.
+- **`.sheet-body` has NO horizontal padding, so every block inside a
+  sheet insets itself — and a block written for life inside a `.fg`
+  does not.** This is the single commonest way text ends up flush
+  against the glass, and it shipped in five places at once: the
+  completion sheet's requirement hint and its photo-location chip, the
+  reminder sheet's resolved date (`.fg-hint`), the join-by-code sheet's
+  lead, error and note, and the whole of the invite and accept-invite
+  sheets, whose bodies are rendered by `sharing.js` out of blocks
+  (`.shr-*`, `.join-*`, bare `.btn-block`s) that carry no gutters at
+  all. Two shapes of fix, and which one you want depends on the body:
+  a body whose children are *all* bare takes the padding itself
+  (`#shareListBody`, `#joinBody` — and the two children that do inset
+  themselves, `.group` and `.sheet-actions`, have their margins zeroed
+  there or they are inset twice); a body that mixes the two insets only
+  the bare blocks (`#joinCodeSheet`). **Re-run the audit below after
+  touching any sheet.**
 - **A component's container and one of its inner spans must not share a class
   name.** This bit twice, in the same way. `.up-list` was the card wrapping
   Home's Up Next rows *and* the span naming a row's collection; `.dupe-list`
@@ -3552,6 +3654,17 @@ trusting a screenshot:
    A full-width block whose text is padded inwards is fine; comparing
    `getBoundingClientRect()` alone reports it as touching the edge.
 
+**The edge-inset audit is worth rebuilding rather than eyeballing.** Copy
+`index.html`, replace the supabase CDN tag with a stub `createClient`, drop
+`main.js` and `pwa.js` so nothing tries to authenticate, reassign the
+`fetch*` functions to return fixtures (they are plain function
+declarations in one shared scope, so they can simply be overwritten), then
+for each screen and each `.modal-overlay` walk every element that owns a
+text node or is a field and flag a content edge inside 14px. Chrome clamps
+its window to 500px, which is fine — a block with no gutter measures 0
+there too. Headless cannot print to stdout in this Chrome, so have the page
+write its findings into a fixed white `<div>` and take a `--screenshot`.
+
 ## Adding a screen
 
 1. Add `<div class="page" id="page-yourpage">` in `index.html`.
@@ -3613,10 +3726,10 @@ Two things that will bite:
   created before it still have no location and are only fixed by hand. The
   edit path is deliberately exempt (see **A location is required**), so
   nothing forces the issue.
-- **Rows written before the `media` bucket existed still carry base64
-  photos.** They render fine, and are converted only if that activity's media
-  happens to be edited. A one-off backfill that uploads them and rewrites the
-  column would shrink the table considerably; nothing does it automatically.
+- **~~Rows written before the `media` bucket existed still carry base64
+  photos.~~ DONE.** `tools/media-backfill.py` moved them; the audit after
+  that run showed 0 inline items. The script stays for anything that
+  slips through — it is idempotent and dry-run by default.
 - **Reordering media is drag-only.** There is no keyboard or
   assistive-technology path to it, and the tiles are not focusable. The button
   menu it replaced was reachable; this is not. A long-press menu as a fallback
@@ -3629,24 +3742,36 @@ Two things that will bite:
   invisible; `handleMedia()` logs one `[media] photo location:` line to
   the console naming which gate it fell through. The same parser could
   read `DateTimeOriginal` to suggest the completion date too; it does not.
-- **Deleted media is not removed from Storage** — only its URL is dropped from
-  the row. See the sweeper query at the bottom of `supabase/storage.sql`.
+- **Deleted media is not removed from storage** — only its URL is dropped
+  from the row. That is now true in **two** places: the sweeper query at the
+  bottom of `supabase/storage.sql` covers the old Supabase objects, and
+  nothing at all reaps orphans in R2. The backfill also left every migrated
+  original in the Supabase bucket rather than deleting it, deliberately —
+  keeping a file costs kilobytes, deleting one somebody still references
+  costs them a photo.
 - **Mutations re-render from the cache, but there are no optimistic updates.**
   A quick-add still waits for the insert itself before the row appears — one
   round trip now, down from five, but not instant. (Offline it *is* instant,
   because the write is applied to the snapshot and queued — which is a good
   hint at how the online path should eventually work.)
-- **Legacy base64 photos are still on the list query's critical path.**
-  `select('*')` pulls `photos`, and any row written before the storage bucket
-  existed has image data inline, so a handful of them can be megabytes on
-  every fetch. Painting from the snapshot hides this on launch but not on
-  `revalidate()`. The one-off backfill below would fix it properly; dropping
-  the column from the query cannot, because `a.photos[0]` is the cover every
-  thumbnail, grid card and map pin draws.
-- **Media created offline stays base64 forever.** A photo attached with no
-  connection is embedded in the row and syncs that way; nothing later uploads
-  it to the bucket and rewrites the column. Same gap as the pre-bucket rows
-  above, and the same one-off backfill would fix both.
+- **~~Legacy base64 photos are still on the list query's critical path.~~
+  DONE.** This was the egress overage: 8.9MB of images inside
+  `Activities.photos`, re-sent on every cold launch and every
+  `revalidate()`, on every device. All of it is on R2 now. **The shape of
+  the bug is worth remembering** — `photos` cannot be dropped from the
+  select, because `a.photos[0]` is the cover every thumbnail, grid card and
+  map pin draws, so anything inline in that column is on the critical path
+  by construction.
+- **⚠️ Media created offline stays base64 forever, and this is now the
+  ONLY way base64 can re-enter the table.** A photo attached with no
+  connection is embedded in the row and syncs that way; nothing later
+  uploads it and rewrites the column. `FALLBACK_PHOTO_QUALITY` keeps
+  those rows small so the bleed is slow, and `tools/media-backfill.py`
+  clears them whenever it is run — but that is a person remembering to
+  run it. **The durable fix is a sweep in `revalidate()`** over `photos`
+  entries starting with `data:`, re-uploading through the same path
+  `uploadPhoto()` uses. Until that exists, re-run the backfill
+  occasionally.
 - **The write queue has no cap and no age-out.** Someone offline for a very
   long time accumulates ops indefinitely, and a queued write against a row
   another device has since deleted is dropped on replay with only a console

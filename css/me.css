@@ -11,7 +11,7 @@
       background: var(--bg-elevated); border-radius: var(--r-card);
       margin: 6px var(--gx-r) 0 var(--gx-l);
       overflow: hidden;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .stat {
       padding: 18px 16px;
@@ -47,7 +47,7 @@
       background: var(--bg-elevated); border-radius: var(--r-card);
       padding: 16px 17px;
       display: flex; flex-direction: column; gap: 11px;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .me-progress-top {
       display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -76,7 +76,7 @@
       margin: 6px var(--gx-r) 0 var(--gx-l);
       background: var(--bg-elevated); border-radius: var(--r-card);
       padding: 17px;
-      box-shadow: var(--shadow-sm), 0 0 0 .5px var(--separator);
+      box-shadow: var(--shadow-sm), var(--ring);
     }
     .me-avatar {
       width: 58px; height: 58px; border-radius: 50%; flex-shrink: 0;
