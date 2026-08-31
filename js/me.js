@@ -11,6 +11,7 @@ async function renderMe(){
   renderMeIdentity();
   renderMeNotifications();
   renderMeHome();
+  renderMeSafety();
 
   const lists=await fetchCollections();
   const allActs=await fetchAllActivities(lists);
@@ -31,6 +32,23 @@ async function renderMe(){
       <span>${done} of ${total}</span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+}
+
+/* The Safety section — Blocked People, and the count on it. The two
+   Legal rows beside it are static markup and always shown: a privacy
+   policy that depends on a migration having been run is not a privacy
+   policy. This section does depend on one, because there is nothing
+   for it to open without user_blocks. See supabase/moderation.sql. */
+function renderMeSafety(){
+  const sec=$('meSafetySection');
+  if(!sec) return;
+  const on=typeof moderationReady==='function'&&moderationReady();
+  sec.style.display=on?'':'none';
+  if(!on) return;
+  const n=blockedCount();
+  /* Empty rather than "0" — a zero beside a row is a number the reader
+     has to decode before learning there is nothing there. */
+  $('meBlockedCount').textContent=n?String(n):'';
 }
 
 function renderMeIdentity(){
@@ -239,6 +257,12 @@ async function createUserProfile(){
     if(!error){
       userProfile={display_name:row.display_name,username:row.username};
       if(curPage==='me') renderMeIdentity();
+      /* The row exists, so the acceptance recorded at sign-up has
+         somewhere to be written. Deliberately not awaited: a failure
+         here must never be why somebody cannot finish creating an
+         account, and the acceptance itself happened in the UI. See
+         supabase/moderation.sql. */
+      recordTermsAcceptance();
       return;
     }
     if(error.code!=='23505'){

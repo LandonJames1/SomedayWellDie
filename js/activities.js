@@ -992,6 +992,8 @@ async function openActDetail(id){
       <span class="ad-chip c-${pri}"><small>Priority</small>${cap(pri)}</span>
       ${diff?`<span class="ad-chip c-d-${esc(a.difficulty)}"><small>Difficulty</small>${esc(diff)}</span>`:''}
       ${target?`<span class="ad-chip c-target"><small>Target</small><b>${esc(target)}</b></span>`:''}
+      ${(()=>{const d=fmtDistance(a);return d
+        ?`<span class="ad-chip c-dist"><small>Distance</small>${esc(d)}</span>`:'';})()}
       <span class="ad-chip c-remind"><small>Remind</small>${a.remindAt?esc(fmtDate(a.remindAt)):'None'}</span>
     </div>`;
     if(a.location){
@@ -1190,6 +1192,11 @@ async function openActDetail(id){
   }
 
   openModal('actDetailSheet');
+  /* After openModal, not before: the sheet has to be on screen before
+     the address bar claims it is. See ROUTE_SHEET in router.js — this
+     replaces the current entry rather than pushing one, so Back still
+     closes the sheet in a single press. */
+  routeSheetSync(a.id);
   startAdStage();
 }
 
@@ -1352,13 +1359,20 @@ function setView(v){
    SORT ORDER  (the control beside the filter on a collection screen)
    ============================================================== */
 function openSortMenu(){
+  const active=normSortKey(curSort);
   showActionSheet({
     title:'Sort By',
-    items:Object.entries(ACT_SORTS).map(([key,s])=>({
-      label:s.label,
-      checked:curSort===key,
-      onSelect:()=>setSort(key),
-    })),
+    /* Distance is dropped rather than disabled when there is no Home to
+       measure from. An order that cannot be applied is not a choice,
+       and the sheet has no room to explain itself — see the no-help-text
+       rule. Setting a Home in the You tab brings it back. */
+    items:Object.entries(ACT_SORTS)
+      .filter(([key])=>key!=='nearby'||distanceReady())
+      .map(([key,s])=>({
+        label:s.label,
+        checked:active===key,
+        onSelect:()=>setSort(key),
+      })),
   });
 }
 function setSort(key){

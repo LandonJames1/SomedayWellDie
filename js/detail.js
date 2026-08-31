@@ -97,8 +97,12 @@ function syncDetailControls(){
    trade responsive.css makes for the collection name on an Up Next
    row. */
 function sortButtonHTML(){
-  const s=ACT_SORTS[curSort]||ACT_SORTS[DEFAULT_ACT_SORT];
-  return `<button class="det-sort${curSort!==DEFAULT_ACT_SORT?' custom':''}"
+  /* Through normSortKey(), not off curSort directly: with Home cleared
+     the distance order is not available and the button must say what is
+     actually being applied. */
+  const key=normSortKey(curSort);
+  const s=ACT_SORTS[key];
+  return `<button class="det-sort${key!==DEFAULT_ACT_SORT?' custom':''}"
       id="detSortBtn" onclick="openSortMenu()"
       aria-label="Sort by ${esc(s.label.toLowerCase())}">
     ${icon('sort','ic-sm')}<span class="det-sort-label">${esc(s.short)}</span>
@@ -208,6 +212,16 @@ function activityRowHTML(a){
      does not reach the text of a flex item — without it the name is
      chopped mid-letter instead of ellipsised. */
   if(a.location) bits.push(`<span class="act-loc">${icon('pin','ic-xs')}<span>${esc(a.location)}</span></span>`);
+  /* Distance only while the list is ordered by it. It is a fourth thing
+     on a line that is already carrying a capsule, a deadline and a
+     place name, and .act-meta is flex-wrap:nowrap by design — so it
+     earns its width on the one screen where it is the answer to the
+     question being asked, and nowhere else. Unlike the place name it
+     does not shrink: a truncated distance is a wrong number. */
+  if(normSortKey(curSort)==='nearby'){
+    const dist=fmtDistance(a);
+    if(dist) bits.push(`<span class="act-dist">${esc(dist)}</span>`);
+  }
   /* The whole row opens the activity, not just the text. The handler used
      to sit on .act-main, so the thumbnail and the chevron beside it — the
      part that most looks like "tap here to open" — were dead. The check

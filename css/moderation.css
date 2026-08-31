@@ -1,0 +1,143 @@
+/* ==============================================================
+   MODERATION — the report sheet, the blocked list, the agreement
+   --------------------------------------------------------------
+   Three small surfaces, all of which have to read as *quiet*. The
+   report sheet is opened by somebody who is already upset, and an
+   interface that shouts back — red panels, warning glyphs — makes
+   the app feel like it is taking a side before it knows anything.
+   Same argument dupes.css makes about interrupting the fast path.
+
+   Remember that .sheet-body has NO horizontal padding, so every
+   block in here insets itself. See MOBILE LAYOUT RULES in CLAUDE.md;
+   this is the commonest way text ends up flush against the glass.
+   ============================================================== */
+
+/* ---- The report sheet ---- */
+.report-lead{
+  margin:0 var(--gx-r) 18px var(--gx-l);
+  font-size:15px;
+  line-height:1.45;
+  color:var(--text-2);
+}
+.report-lead strong{
+  color:var(--text);
+  font-weight:600;
+}
+
+.report-reasons{
+  margin:0 var(--gx-r) 20px var(--gx-l);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+/* A radio group built out of buttons rather than <input type=radio>,
+   for the same reason the priority chooser is: a native radio cannot
+   carry a 44px target and the app's own ring without being rebuilt
+   from its pseudo-elements anyway. */
+.report-reason{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  width:100%;
+  min-height:44px;
+  padding:10px 14px;
+  border-radius:12px;
+  background:var(--bg-elevated);
+  box-shadow:var(--ring);
+  font-family:var(--sans);
+  font-size:16px;
+  color:var(--text);
+  text-align:left;
+  cursor:pointer;
+}
+.report-radio{
+  flex:0 0 auto;
+  width:20px;
+  height:20px;
+  border-radius:50%;
+  box-shadow:inset 0 0 0 1.5px var(--separator);
+  transition:box-shadow .15s ease, background .15s ease;
+}
+.report-reason.picked{
+  background:var(--tint-soft);
+  box-shadow:inset 0 0 0 1.5px var(--tint);
+}
+.report-reason.picked .report-radio{
+  background:var(--tint);
+  box-shadow:inset 0 0 0 3.5px var(--bg-elevated), inset 0 0 0 20px var(--tint);
+}
+
+.report-detail{
+  margin:0 var(--gx-r) 8px var(--gx-l);
+}
+.report-detail textarea{
+  width:100%;
+  min-height:88px;
+  padding:12px 14px;
+  border-radius:12px;
+  background:var(--bg-elevated);
+  box-shadow:var(--ring);
+  font-family:var(--sans);
+  /* Never below 16px computed, or Safari zooms the page and stays
+     zoomed. See MOBILE LAYOUT RULES. */
+  font-size:max(16px,17px);
+  line-height:1.45;
+  color:var(--text);
+  resize:none;
+}
+
+/* The 24-hour commitment. It is a promise the terms make and this is
+   where the person being asked to trust it actually reads it. */
+.report-note{
+  margin:0 var(--gx-r) 18px var(--gx-l);
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  line-height:1.5;
+  color:var(--text-3);
+}
+
+.report-error{
+  margin:0 var(--gx-r) 10px var(--gx-l);
+  font-size:14px;
+  color:var(--red);
+  min-height:18px;
+}
+
+/* ---- The blocked list ---- */
+.blocked-row{
+  gap:10px;
+}
+.blocked-row .btn{
+  flex:0 0 auto;
+  margin-left:auto;
+}
+
+/* ---- The sign-up agreement ----
+   Not a checkbox. Apple accepts an "by continuing you agree" line so
+   long as the terms are reachable before the account is made, and a
+   checkbox is one more thing standing between somebody and the app
+   they have decided to try. The links are the part that matters and
+   they are real 44px targets. */
+.auth-agree{
+  margin:14px 0 0;
+  font-size:13px;
+  line-height:1.5;
+  text-align:center;
+  color:var(--text-3);
+}
+.auth-agree a{
+  color:var(--tint);
+  text-decoration:none;
+  /* The line is small; the target is not. */
+  display:inline-block;
+  padding:4px 2px;
+}
+.auth-agree a:active{ opacity:.6; }
+
+/* The Safety row's glyph tile. The other five live in me.css beside the
+   rest of the Me tab's colours; this one is here because --slate is the
+   priority scale's bottom step and nothing on that tab was using it. */
+.row-leading.li-slate{ background:var(--slate); }

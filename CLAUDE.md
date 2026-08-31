@@ -125,14 +125,19 @@ CLAUDE.md             This guide
 README.md             Human-facing setup + structure overview
 manifest.webmanifest  PWA metadata (name, icons, standalone display, theme color)
 sw.js                 Service worker — offline app shell + runtime caching. Must stay at the root.
-supabase/             Backend — schema.sql (reminders + reminder_deliveries), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), storage.sql (the media bucket), cron.sql, and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
+legal/                privacy.html + terms.html, the two documents App Store Connect asks for
+                      at a public URL. Deliberately standalone pages with their own _style.css:
+                      a privacy policy must load without an account, and linking them into the
+                      app shell would mean booting Supabase to read a document.
+supabase/             Backend — schema.sql (reminders + reminder_deliveries), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), storage.sql (the media bucket), cron.sql, and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
 css/                  One stylesheet per concern (see CSS file map)
 tools/                difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog);
                       media-backfill.py — the one-off that moved every photo to R2 (see **Media**)
 cloudflare/           media-worker/worker.js — the Worker that authorizes uploads to R2 and serves
                       downloads. Pasted into the Cloudflare dashboard by hand; there is no deploy step
                       in this repo. See **Media**.
-js/                   One script per concern (see JS file map)
+js/                   One script per concern (see JS file map). router.js is the newest —
+                      a hash route per screen; see **A URL for every screen**.
 icons/                App icon PNGs + generate.py, the script that draws them
 Supabase Setup/       CSV exports of the Collections / Activities / Users tables (schema reference; STALE, see Back end)
 .github/workflows/    reminders.yml — the daily sweep that fires send-reminders. Replaces
@@ -172,7 +177,8 @@ a `file://` URL. If you need the real thing on a device, tunnel localhost
 The app is modelled on a UIKit tab controller: **four root destinations in a
 bottom tab bar**, plus three screens that push on top of a tab. All are
 `<div class="page">` siblings shown one at a time by `nav()` toggling `.active`.
-There is no router and no URL state — reloading always lands on Home.
+Every screen has a URL — a hash route, written by `nav()` and read back
+by `js/router.js`. See **A URL for every screen**.
 
 | Page id | Route key | Tab | Rendered by |
 | --- | --- | --- | --- |
@@ -211,6 +217,124 @@ was pushed from (`backTab`).
 There is also a screen outside this system: the signed-out `#authPage`, which
 `showAuth()`/`showApp()` swap against `#appWrap`. It is not a `.page` and
 `nav()` knows nothing about it.
+
+#### A URL for every screen
+
+`js/router.js`. Every screen has a hash route; `nav()` writes it and the
+router reads it back. Reloading returns to where you were, a collection
+can be linked to, and the browser's own Back — the button, and the back
+*gesture* every phone user reaches for first — walks the trail.
+
+| Route | Screen |
+| --- | --- |
+| `#home` `#upnext` `#done` | Home and the two screens pushed on it |
+| `#lists` `#list/<id>` | Lists, and one collection |
+| `#messages` `#chat/<id>` | The hub, and one conversation |
+| `#map` `#you` | Map, You |
+| `#activity/<id>` | One activity's sheet, over its own collection |
+
+**The route key is not the page id.** `#you` and `#chat` are what the tab
+bar calls those screens while the code keeps the domain word (`me`,
+`conversation`) — the same split the Screens table above describes. A URL
+is read by a person.
+
+**Why the hash and not a path.** The app is served statically from
+whatever directory it sits in, with no rewrite rule in front of it, so
+`/list/<id>` as a real path would 404 on exactly the two occasions a route
+earns its keep: a cold load and a refresh. A hash needs nothing from the
+server, works from a subdirectory and from the PWA's `start_url`, and —
+because it never reaches the server — a deep link **works offline**, since
+`sw.js` serves the cached `index.html` for the navigation and the router
+does the rest.
+
+It is also orthogonal to the three things already read off the query
+string at boot (`?token_hash=`, `?conv=`, `?join=`). A path router would
+have had to be threaded through all three.
+
+Things to keep:
+
+- **`routeSync()` writes `location.pathname + location.search + hash`,
+  never a rebuilt URL.** The query string is where a confirmation token or
+  an invite lives while `main.js` is still consuming it.
+- **And the three boot readers now preserve the hash**, for the mirror
+  reason. `readPendingJoin()` blanks the search string wholesale and was
+  rewriting to `location.pathname` alone, which silently ate the route;
+  `readEmailConfirmation()` had the same gap. `readPushLanding()` already
+  got this right. **The general rule is that a boot reader owns its own
+  keys and nothing else** — the hash included.
+- **The session's first write replaces, later writes push.** Booting into
+  Home must not leave an entry behind it that Back can return to, because
+  there is nothing there.
+- **An open sheet eats the back gesture.** `onRouteChange()` dismisses the
+  overlay and pushes the current route straight back, so the screen stays
+  put and a second Back navigates for real. Navigating out from under an
+  open sheet is the same stranded-overlay bug `selectTab()` calls
+  `dismissOverlays()` to avoid.
+- **`goBack()` still calls `nav()` rather than `history.back()`.** They
+  agree whenever the pushed screen was reached from inside the app, and
+  differ on a deep link — where `history.back()` would leave the app
+  entirely. The chevron must never do that. The cost is a slightly longer
+  history trail, which is the right side to err on.
+- **A route is honoured once per page life.** `routeEntry()` is consumed
+  on its first call, so signing out and back in on the same page starts at
+  Home rather than reopening the previous account's collection. A deep
+  link opened while signed *out* survives the sign-in screen and lands
+  where it pointed, which is the case worth having.
+- **A dead id costs nothing.** `renderDetail()` and `renderConversation()`
+  already bounce to their tab when the collection is gone or was never
+  this account's, and that bounce overwrites the URL on its way.
+- **Explicit sign-out calls `routeClear()`; a lapsed session deliberately
+  does not.** The same person signing back in should land where they were;
+  a shared device should not leave the previous account's collection in
+  the address bar.
+- `_routeApplying` is what stops `nav()` pushing an entry for a
+  navigation the history just handed us. Anything new that navigates from
+  inside the router has to set it.
+
+#### A URL for one activity
+
+`#activity/<id>`, written by `openActDetail()` and released by
+`afterSheetClosed()`. The thing people want to send someone is *one
+activity* — "look at this one" — and until this the closest a link could
+get was the list it happened to be filed in.
+
+**It is deliberately not `#list/<listId>/<actId>`.** An activity is
+opened from Home's Up Next, from Accomplished, from the map's place
+sheet and from the composer's search results as readily as from its own
+collection, and none of those screens is a list — so a route that had to
+name one would be wrong or unavailable on four of the five ways in. The
+id is enough: `routeOpenActivity()` reads the activity's own
+`collection_id` back and lands the screen behind the sheet on the right
+list.
+
+Things to keep:
+
+- **It replaces, it does not push.** Opening a sheet is not a
+  navigation, and every sheet in the app is already dismissed by Back
+  through the `overlayOpen()` branch of `onRouteChange()`. Pushing an
+  entry here would make closing the sheet take two presses. The URL is
+  shareable; the history is untouched.
+- **`routeSheetClear()` is a no-op unless the hash actually names a
+  sheet**, and that is what lets `dismissOverlays()` call it safely. On
+  the Back-with-a-sheet-open path the hash has already moved on, and
+  writing the screen route there *as well as* in the branch below would
+  leave two entries deep for one press.
+- **Every dismissal already funnels through `afterSheetClosed()`**, so
+  that is where the URL is handed back — not on the close button. Same
+  argument that put the sheet-return registry there: Save, Cancel, the
+  scrim, Escape and a swipe down have to agree.
+- **`routeOpenActivity()` arms `_routeStarted` by hand.** It navigates
+  with the router suspended, so `routeSync()` never gets to set it — and
+  without it `routeSheetClear()` would decline to act and strand
+  `#activity/<id>` in the address bar for the rest of the session.
+- **`showApp()` awaits it, alone among its navigations.** It has to read
+  the activity back before it knows which list to land on. Warm, that
+  resolves out of the cache; cold — somebody following a shared link on
+  a new device — it is one round trip, and holding the splash for it
+  beats dropping to a blank app and correcting it.
+- **A dead id costs nothing**, like a dead collection id: `fetchActivity()`
+  answers null, the screen falls back to Lists, and the URL is rewritten
+  on the way rather than left claiming something is there.
 
 #### Home is derived, never authoritative
 
@@ -1067,6 +1191,62 @@ Things to keep:
   that can reinforce a mistake. Nothing in the app corrects a rating
   today — that is the missing piece if the lean ever needs breaking.
 
+#### How far away it is
+
+`haversineMiles`/`distanceFromHome`/`fmtDistance`/`distanceReady` in
+`utils.js`. Every activity carries `location_lat`/`location_lng` and the
+user carries a Home, so this is arithmetic the app had every input for and
+was not doing.
+
+**It is the half of "what could I do this weekend" that the difficulty
+rating cannot answer.** Easy/Medium/Hard deliberately folds three separate
+costs — distance, time and money — into one word (see **Guessing how hard
+it is**), which is right for a glance and lossy by construction: something
+can be genuinely easy and four hours away. Distance pulls the one of the
+three that is a *measurable fact* back out, and it needs no model call, no
+migration and no column.
+
+Where it shows up, and nowhere else:
+
+- **The Distance sort** on a collection, nearest first. Un-located rows sort
+  last, for the same reason un-rated ones do under Difficulty: nothing has
+  been said about them, and an unknown at the head of a list of things close
+  to hand is the one wrong answer.
+- **A distance in the row's meta line, but only while that sort is
+  applied.** It is a fourth thing on a line already carrying a priority
+  capsule, a deadline badge and a place name, and `.act-meta` is
+  `flex-wrap: nowrap` by design — so it earns its width on the one screen
+  where it is the answer to the question being asked. Unlike the place name
+  it does **not** shrink: an ellipsised place name is still readable, a
+  truncated distance is a wrong number.
+- **A `Distance` chip on a pending activity's sheet**, beside Priority,
+  Difficulty and Target. Untinted, like the difficulty chip: that row
+  already carries priority's three-colour scale and the target's moss, and a
+  fifth hue would be a fourth ranking arguing over one glance.
+
+Things to keep:
+
+- **Nothing is stored.** Home moves and every distance in the app moves with
+  it, which is the same reason `updateHomeActivities()` exists rather than a
+  denormalised column.
+- **Null is a real and common answer.** No Home set, or an activity typed
+  offline that never got geocoded (see the backlog). Every caller handles it
+  rather than treating it as zero, which would put un-located rows at the
+  top of a nearest-first list.
+- **The comparator is written out rather than subtracting ranks.** The
+  `Infinity` trick the other sorts could have used yields `NaN` when both
+  sides are absent, which is not a comparator at all.
+- **"At home" comes off `location_is_home`, not off a small distance.**
+  Same distinction **Moving house** rests on: picking *Home* means "my home,
+  wherever that is", and a hike that happens to be in your own town is not
+  at your house.
+- **Miles, spelled out.** The no-abbreviation rule is not only about
+  `dateInfo()` — "12 mi" saves four pixels and makes the reader decode a
+  label they were meant to glance at.
+- **The sort is dropped from the menu rather than disabled** when there is
+  no Home. An order that cannot be applied is not a choice, and the sheet
+  has no room to explain itself.
+
 #### Where the photo was taken
 
 `js/exif.js` reads the GPS block out of a JPEG, and `handleMedia()`
@@ -1812,6 +1992,120 @@ are left alone. The one correction is `syncComposerToKeyboard()`, which
 drops the tab-bar clearance once it has been lifted, since the bar is
 no longer underneath it.
 
+#### Reporting and blocking
+
+`js/moderation.js` plus `supabase/moderation.sql`. **This exists for App
+Store review, and it is the one migration in `supabase/` that is not
+really optional** — every other piece of the app degrades to "the
+feature is absent", and here the absent feature is the rejection.
+
+Apple's Guideline 1.2 applies the moment an app carries user-generated
+content other people can see. Here that is a shared list's name, its
+activities, its notes and its conversation. It asks for four things,
+and all four are now present:
+
+| Requirement | Where |
+| --- | --- |
+| Agreement to terms forbidding objectionable content, **before** the account exists | `.auth-agree` under the Create Account button, `Users.terms_accepted_at` |
+| A way to report content | A message's ⋯ menu, and a shared list's conversation menu |
+| A way to block an abusive user | The same menu, plus You → Safety → Blocked People |
+| A stated commitment to act within 24 hours | `legal/terms.html`, and repeated on the report sheet itself |
+
+##### Blocking is a display preference, not a permission
+
+A blocked person's messages stop being drawn **for you**. They are not
+removed from the list, they are not told, and nothing about their own
+view changes. Three consequences, and each is deliberate:
+
+- **The filtering is client-side**, in `paintConversation()`. A select
+  policy would be stronger and would also let an author discover a
+  block by watching their own messages vanish for one reader — and the
+  messages remain legitimately readable by a member of that list, so
+  the block is a preference rather than a permission boundary.
+- **It does not eject anybody from a shared list.** That is somebody
+  else's list, often the person who invited you both, and quietly
+  removing a member on a private decision by a third party is a worse
+  surprise than the messages staying. Leaving is one tap away in the ⋯
+  menu and is the right control for "I want nothing to do with this".
+  `confirmBlockUser()` says both halves in as many words, because
+  people expect the first and discover the second later.
+- **The read policy is scoped to `blocker_id` alone**, so a blocked
+  user cannot query whether they have been blocked. That is what makes
+  the silence real rather than cosmetic.
+
+The list is held in memory for the session like every other
+per-account cache, read synchronously on every message drawn, and
+cleared by `resetAccountState()`. **A cold list filters nothing**,
+which is the right failure: drawing a message you meant to hide is
+visible and recoverable, whereas holding the conversation behind a
+pending request would look like the messages were lost. A *failed*
+load is deliberately not cached as empty, the same rule `readRows()`
+follows.
+
+##### A report goes one way
+
+`content_reports` has an insert policy and **no select policy at all**
+— not even for the reporter. That sounds over-tight and buys the one
+property that matters: a report carries a **snapshot** of what was
+reported, so a readable report would be a way to retrieve content
+after its author deleted it.
+
+The snapshot is why the column exists. A report pointing at a message
+id is worthless the moment that message is soft-deleted, which is
+exactly what an author does when somebody reports them.
+
+Things to keep:
+
+- **`openReportSheet()` takes a `{kind, id}`, not a message.** A shared
+  list's *name* is user-generated content too, and reporting is offered
+  on a conversation as a whole as well as on one line of it — a list
+  filled with abuse is not well described by reporting its most recent
+  message.
+- **The block is offered immediately after a report is sent.**
+  Somebody who has just reported a person almost always wants to stop
+  seeing them, and making them go and find a separate control is the
+  gap that reads as "reporting did nothing". A report is answered by a
+  human eventually; a block is answered now, which is what they came
+  for.
+- **Neither is offered on your own message**, and the block is not
+  offered when `sender_id` is null — a deleted account has no uid left
+  to act on. It can still be *reported*, since the snapshot is the
+  point.
+- **`reporter_id` and `reported_id` are `on delete set null`, not
+  cascade.** Cascading would make deleting your account the way to
+  withdraw an accusation you no longer want looked at.
+
+##### There is no moderation UI, and that is stated rather than hidden
+
+The queue is a `select` in the SQL editor, written out at the bottom of
+`moderation.sql`. The 24-hour commitment in the terms is a promise that
+somebody runs it daily; nothing in the app enforces it.
+
+Acting on a report is a soft delete of the message plus, if it comes to
+it, banning the account from the Supabase dashboard. **That ban takes
+effect on every device within a JWT lifetime** rather than waiting for
+the person to sign out, because `ensureSessionLive()` already asks —
+see **Being signed into an account that no longer exists**, which was
+built for a different reason and turns out to be the enforcement
+mechanism.
+
+##### The agreement
+
+A line, not a checkbox: `applyAuthMode()` shows `#authAgree` in Create
+Account mode only. Apple accepts "by continuing you agree" so long as
+the terms are reachable before the account is made, and a checkbox is
+one more thing standing between somebody and an app they have already
+decided to try. The links are the part that matters and they are real
+44px targets.
+
+`terms_accepted_at` is a timestamp rather than a boolean, and
+**existing accounts are deliberately not backfilled** — writing
+`now()` into every row would record an acceptance that never happened.
+Null is a legible "this account predates the requirement".
+`recordTermsAcceptance()` is called from `createUserProfile()` and
+never awaited: a failure there must not be why somebody cannot finish
+signing up, and the acceptance itself happened in the UI.
+
 #### Notes on an activity
 
 `js/notes.js` plus the `activity_notes` table in the same migration, so
@@ -2268,6 +2562,76 @@ RLS policies on `Users` — without an INSERT policy the client-side fallback
 is simply refused — a unique index on `lower(username)`, and a backfill for
 the accounts already stranded. **Run it.**
 
+#### Resetting a password
+
+Until this existed a forgotten password was **total account loss** —
+there was no way to ask for a link and no screen to set a new one.
+
+It is built out of the confirmation machinery rather than beside it,
+because it is the *same* round trip: out of the app, through a mail
+client, very often onto a different device, and back. So it inherits
+every floor that section put under that trip — the same boot reader, the
+same `verifyOtp()`, the same failure notice, the same per-address
+cooldown (`confirmResendAt` is deliberately **shared**, because Supabase
+rate-limits per address across both and two independent cooldowns would
+only manufacture a failure), and the same rate-limit wording from
+`authErrorText()`.
+
+Two halves:
+
+- **Asking.** *Forgot password?* under the Sign In button →
+  `requestPasswordReset()` → `sendRecoveryEmail()`. Hidden in Create
+  Account mode by `applyAuthMode()`: there is no password to have
+  forgotten on an account that does not exist, and the link under a
+  Create Account button reads as an invitation to give up before
+  starting.
+- **Setting.** The link lands, `consumeEmailConfirmation()` redeems it,
+  and `showPasswordReset()` draws `#authReset` — the third state of the
+  auth screen, after the form and the check-your-email panel.
+
+**A THIRD DASHBOARD TEMPLATE, and it fails the same silent way as the
+other two.** Authentication → Emails → **Reset password**:
+
+    {{ .SiteURL }}/index.html?token_hash={{ .TokenHash }}&type=recovery
+
+That is what makes a reset link work on a device other than the one that
+asked for it — which here is the *normal* case, because somebody who
+cannot get in on their phone will very often go and ask from a laptop.
+The default `{{ .ConfirmationURL }}` comes back as `?code=`, and with
+PKCE that exchange needs the verifier written to localStorage in the
+browser that made the request.
+
+It also carries **`type=recovery`, which is the only thing that tells the
+client this landing is a reset**. On the `?code=` path there is nothing
+in the URL that says so, so such a link signs the person in and drops
+them in the app with their old password unchanged — recoverable, and not
+what they asked for. `c.recovery` is read in `readEmailConfirmation()`
+and carried through `recoveryLanding` to `main.js`.
+
+Things to keep:
+
+- **The panel is the last step of the reset, not a gate in front of the
+  app.** `verifyOtp()` has already established a session by the time it
+  is drawn, so a reload from it simply goes in. That is the escape hatch,
+  and it is why there is no "skip" button to explain.
+- **`confirmFailureHTML()` takes a `recovery` flag**, and it is the whole
+  reason the argument exists: offering a *signup confirmation* to
+  somebody whose password reset expired sends mail that does nothing, and
+  they would have no way to tell. `resendFromNotice(true)` sends the
+  right one.
+- **The request answers identically whether or not the address has an
+  account.** Replying "no such account" would turn the sign-in form into
+  a way to test whether any given person has signed up here. Supabase's
+  endpoint is silent for the same reason, so there is nothing to report
+  even if we wanted to.
+- **`PASSWORD_MIN` mirrors a dashboard setting** (Providers → Email →
+  minimum password length, 6 by default) and is checked here only to
+  avoid spending a round trip on something the server would refuse.
+- **The subtitle is the account's email, not an instruction.** On a
+  shared device — or for somebody with two addresses here — which account
+  is being reset is the one thing worth saying, and it is a fact rather
+  than help text.
+
 #### Coming back through the confirmation email
 
 The other half of the same round trip, in the CONFIRMING AN EMAIL ADDRESS
@@ -2285,6 +2649,7 @@ page"*.
 | **Auth → URL Configuration → Site URL** | Left at the Supabase default it is `http://localhost:3000`, so every recipient lands on a dead page. This is where the link goes. |
 | **Auth → URL Configuration → Redirect URLs** | `emailRedirectTo` does **not** override Site URL on its own. Supabase silently ignores a redirect that is not allow-listed and falls back — which is exactly how the setting above hides. The app's real origin has to be listed before `confirmRedirectUrl()` has any effect at all. |
 | **Auth → Emails → Confirm signup** | Should be `{{ .SiteURL }}/index.html?token_hash={{ .TokenHash }}&type=email`. |
+| **Auth → Emails → Reset password** | The same shape with `type=recovery`. See **Resetting a password** — `type` is the only thing that tells the client a landing is a reset rather than a confirmation. |
 
 **That template is what makes the link work on a device other than the one
 that signed up**, which is the common case — people sign up on a laptop and
@@ -2338,9 +2703,18 @@ Things to keep:
 
 `ACT_SORTS` and `sortActivities()` in `utils.js`, the control in
 `sortButtonHTML()` (`detail.js`), the menu in `openSortMenu()`/`setSort()`
-(`activities.js`). Four orders: **Date added** (the default, newest first),
-**Target date**, **Date completed** and **Difficulty** (easiest first — see
-**Guessing how hard it is**).
+(`activities.js`). Five orders: **Date added** (the default, newest first),
+**Target date**, **Date completed**, **Difficulty** (easiest first — see
+**Guessing how hard it is**) and **Distance from home** (nearest first — see
+**How far away it is**).
+
+**Every reader normalises through `normSortKey()`.** Distance is the one
+order that can stop being available — it needs a Home to measure from, and
+Home can be cleared from the You tab while a collection is sitting sorted by
+it. Left alone, `curSort` would keep naming an order that silently degraded
+to "everything is equally far away", which is `createdAt` wearing a different
+label. The button, the menu and the list all ask `normSortKey()` what is
+actually being applied, so they cannot disagree.
 
 **The control is a compact button beside the filter, not a fourth segment.**
 The segments answer "which subset"; sort answers "in what order", and four
@@ -2960,10 +3334,10 @@ Loaded in this order; **order matters**.
 | `base.css` | The design system: `color-scheme`, the three type tokens (`--serif`/`--sans`/`--mono`), the warm palette with a full `prefers-color-scheme: dark` variant, the `--shadow-*` depth scale, the priority scale (`--tint`/`--violet`/`--slate` and their `-soft` fills), layout metrics (`--gutter`, `--nav-h`, `--tab-h`), the iOS safe-area tokens (`--safe-*`, plus the `--gx-l`/`--gx-r` gutter+inset shorthands every screen uses for horizontal padding), the type scale (`.t-*`, including `.t-eyebrow` for the mono small-caps label), the reset, and the shared keyframes. Everything depends on it. |
 | `layout.css` | The app shell: the translucent `.navbar` and its `.condensed` state, `.large-title`, the `.tabbar`, and the `.page` show/hide system with its push/fade animations. |
 | `components.css` | The reusable iOS primitives every screen builds from: `.group`/`.row` inset grouped lists, `.seg` segmented controls, `.btn` styles, `.searchfield`, `.badge`/`.tag`, **`.list-chip`** (a collection's name on any row that could have come from any list — Home's Up Next, the Up Next screen, search results, the duplicate sheet; sized to match `.tag` so the capsules on one row line up), the `.pri-*` priority marks, `.seg-pri`/`.pri-swatch` (the priority chooser), `.media-tile`/`.media-play` (one tile for a photo or a video, used by three screens), `.empty`, `.progress`, `.spinner`. Look here before inventing a new component. |
-| `auth.css` | The signed-out screen — no nav bar, no tab bar, its own centring. Plus `.auth-invite`, the tinted note shown when an invite link was opened while signed out; `.auth-notice`, the same shape for a confirmation link that could not be honoured, but carrying its own way out (a resend button) because "that link expired" with no way to get another is the same dead end the link was; and `.auth-check`, the quieter waiting-for-confirmation panel — nothing has gone wrong there, and the title above is already carrying the message. |
+| `auth.css` | The signed-out screen — no nav bar, no tab bar, its own centring. Plus `.auth-invite`, the tinted note shown when an invite link was opened while signed out; `.auth-notice`, the same shape for a confirmation link that could not be honoured, but carrying its own way out (a resend button) because "that link expired" with no way to get another is the same dead end the link was; `.auth-check`, the quieter waiting-for-confirmation panel — nothing has gone wrong there, and the title above is already carrying the message — and `.auth-forgot`, quieter still than the `.auth-toggle` beneath it (creating an account is one of the two things this screen is for; recovering one is what you reach for when neither worked) while keeping the same 44px target, since it is pressed by somebody already having a bad time. |
 | `home.css` | The dashboard: the greeting, the SVG progress ring, the context-free quick-add composer (`.home-composer-wrap` owns the gutters so `.home-suggest`, its results dropdown, can position against the field), the Up Next list, and the two `.shelf` grids (recently accomplished, your lists). |
 | `collections.css` | The Lists tab: `.smart-row`/`.smart-btn` — the three derived difficulty lists as a button strip above everything else (see **Three lists nobody edits**) — `.coll-card` photo cards, the "New List" tile, and the now-unused `.coll-card-auto`. |
-| `detail.css` | A collection's screen: `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows, `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip`. |
+| `detail.css` | A collection's screen: `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. |
 | `me.css` | The Me tab: the stats card, the progress card, the identity row. |
 | `modals.css` | The three presentation styles — `.modal`/`.sheet-*` bottom sheets, `.action-sheet`, `.lightbox` — plus the form controls that live inside a sheet: `.fg` and its `.fg-hero` (the field a sheet is *about* — only the activity name) and `.fg-pair` (two short choices on one line), `.picker-btn` (a value that opens a picker, sized to match a `<select>` beside it), `.chip-field`, `.photo-*`, the completion sheet's own `.comp-*` (`.comp-card`/`.comp-row` — inset grouped rows whose overflow must stay visible for the location dropdown — `.comp-sec`, `.comp-note`), the list picker's `.lp-*`, and `.toast`. There are no disclosure styles here any more — `.more-toggle`/`.more-fields` went with the completion sheet's last collapsed section. |
 | `map.css` | Map containers (the full-bleed `.page-map` and the inset detail map), the CSS sky gradient behind the globe, the floating `.map-filter`/`.map-count`/`.map-fab` chrome, `.map-pin`/`.map-cluster` markers, MapLibre's own controls restyled, the `.loc-*` autocomplete dropdown, `.loc-suggest-*` — the "from your photo" chip, deliberately a tinted *offer* rather than a filled control, since it must not read as though the field is already answered — `.loc-guess-*`, which is the opposite case and therefore shaped differently: a quiet caption marking a field the app has already filled in from the activity's name, with an ✕ that takes it back out — and `.pl-*`, the place sheet (everything at one point on the map), whose rows are `.act-row` from `detail.css` unchanged so only its container and header are new. |
@@ -2971,6 +3345,7 @@ Loaded in this order; **order matters**.
 | `sharing.css` | `.shr-people-*`/`.shr-avatar`/`.shr-role` and `.join-*` — the invite sheet's roster and the accept-an-invite card — plus `.shr-code-head`/`.shr-code` (the invite as something that can be read off one screen and typed into another) and `.join-code-input`. It also **defines** `.shr-lead`/`.shr-url`/`.shr-note`, which used to live in the deleted `import.css` and which the invite and accept-an-invite cards are now the only users of. |
 | `messages.css` | `.conv-*` (the hub's rows and the conversation's scroller, composer and `@` picker), `.msg-*` (a message, its author line, its bubble and the activity chips under it) and `.tab-badge`, the unread count on the tab bar. **`.page-conv` is the app's second full-height screen after the map** — it drops `.page`'s padding and owns its own scrolling; read the note there before changing it. |
 | `notes.css` | `.note-*` — the append-only log on an activity, its composer, and `.fg-note`, the field on the new/edit activity sheet that writes the log's first entry. The meta line is mono and the body is sans, deliberately **not** the serif `.ad-note.prose` uses: "How it went" is a story you read back, this is working state you scan. |
+| `moderation.css` | `.report-*` (the report sheet — a radio group built out of buttons, for the same reason the priority chooser is), `.blocked-row`, `.auth-agree` (the terms line under the sign-up button) and the `.li-slate` glyph tile the Safety row uses. Deliberately quiet: it is opened by somebody already upset, and red panels make the app look like it has taken a side before it knows anything. |
 | `pwa.css` | The offline banner, install bar, iOS Add-to-Home-Screen sheet. |
 | `responsive.css` | Only the two directions away from phone-first: <375px, and ≥700px where the app centres in a column instead of stretching. **Must load last.** |
 
@@ -2983,7 +3358,7 @@ Loaded in this order; **order matters**.
 | --- | --- |
 | `config.js` | `SUPABASE_URL`/`SUPABASE_KEY`, **`MEDIA_WORKER_URL`/`MEDIA_PUBLIC_BASE`** (the Cloudflare Worker that authorizes uploads, and the R2 bucket reads come from — empty falls back to Supabase Storage; see **Media**), **`HERE_API_KEY`** (place search; public by design, restrict it by origin in the HERE portal — empty falls back to Nominatim), the `sb` client (auth options spelled out rather than defaulted — note `detectSessionInUrl:false`, the one that is *not* a default: `auth.js` handles the email-confirmation landing itself), the `COVERS` array of default Unsplash covers, and `randCover(existingCovers)` (picks a cover the user isn't already using). |
 | `state.js` | Every shared mutable global: `currentUser`, the navigation triple (`curTab`, `curPage`, `backTab`), `curListId`, **`curConvId`** (which conversation the conversation screen is showing — it *is* a collection id), `editingListId`, `editingActId`, `completingId`, `curFilter`, **`curSort`** (see **Sorting a collection**), `curView`, `upMedia`, `coverPhoto`, `userProfile`, and the map handles. Other files declare their own feature-local globals next to their code (`aLinks`, `bulkEntries`, `actMap`, `lbPhotos`, `locTimer`). |
-| `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl`, `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`sortActivities`** (see **Sorting a collection**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
+| `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl`, `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`normSortKey`/`sortActivities`** (see **Sorting a collection**), **`haversineMiles`/`distanceFromHome`/`fmtDistance`/`distanceReady`/`EARTH_MILES`** (how far an activity is from Home — see **How far away it is**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
 | `exif.js` | `exifReadLocation(file)` — the GPS fix out of a photo's EXIF, or null. Handles **JPEG and HEIC/HEIF/AVIF**, dispatching on magic bytes rather than `file.type`. Underneath: the JPEG walk (`exifFindTiff`), the HEIC box walk (`isoBoxes`, `isoType`, `heicReadLocation`, `heicExifExtent`, `heicExifItemId`, `heicItemExtent`, `heicTiffStart`, `isTiffAt`), and the shared TIFF reader both land on (`exifGpsFrom`, `exifTagValue`, `exifDMS`). Pure, no dependencies, every failure path returns null rather than throwing. **Must be called against the original `File`**: a canvas re-encode strips every tag. See **Where the photo was taken**. |
 | `fuzzy.js` | Approximate string matching, shared by duplicate detection and search. `similarity(a,b)` (symmetric — are these the same thing?) and `matchScore(q,text)` (asymmetric — does this row answer what is being typed?), plus `scoreFields()` and the primitives underneath: `fuzzyNorm`, `fuzzyTokens`, `fuzzyStem`, `fuzzyTokenSim`, `fuzzySoftDice`, `fuzzyTrigrams`, `fuzzyDice`, `fuzzyEditRatio`. Pure and synchronous. **See How the fuzzy matching works** — the constants are tuned, not derived. |
 | `icons.js` | `ICON_PATHS`, the app's own inline-SVG glyph set (`sort` is the newest), plus `ICON_FILLED` (glyphs already solid, which must not be stroked) and `icon(name, cls)`. Icons inherit `currentColor`. **Add new glyphs here**, not inline in a template string. |
@@ -2994,8 +3369,9 @@ Loaded in this order; **order matters**.
 
 | File | Domain |
 | --- | --- |
-| `auth.js` | **`resetAccountState()`** — everything belonging to one account, cleared on every auth transition (see **One account at a time**) — **`ensureSessionLive`/`verifyLiveUser`/`authAnswerIsDefinitive`/`signOutStaleSession`/`resetSessionLiveCheck`/`recheckSessionSoon`/`startSessionWatch`/`stopSessionWatch`**, which is how a session belonging to a deleted account stops being trusted, on every device (see **Being signed into an account that no longer exists**) — **`inviteSweepDue()`/`authJustAuthenticated`**, which decide when to ask the server whether an invite is waiting for this address (see **An invite that survives creating an account**) — plus `showAuth`/`showApp` (swap `#authPage` against `#appWrap`; `showApp` boots into Home, loads the profile, triggers the iOS install hint, and starts the token auto-refresh). Also the `visibilitychange` handler that stops/starts auto-refresh — browsers suspend timers in a backgrounded PWA, and without restarting on resume the access token goes stale and the next request 401s, which reads to the user as being logged out — and the `onAuthStateChange` listener that keeps `currentUser` in step and only shows the login screen on a real `SIGNED_OUT`, `toggleAuthMode`/`applyAuthMode` (tracked by the `authIsSignUp` flag, not by reading the heading text), `setAuthError`, `handleAuth`, `handleSignOut`. Sign-up also inserts the `Users` profile row. Plus **the confirmation-email landing** — `readEmailConfirmation` (boot; reads `token_hash`/`code`/implicit tokens/`error`, and strips only its own keys), `consumeEmailConfirmation`, `confirmFailureHTML`, `confirmRedirectUrl`, `setAuthNotice`, `setAuthView`/`showCheckEmail`/`authBackToForm`, and the resend pair `sendConfirmationEmail`/`resendConfirmation`/`resendFromNotice`. See **Coming back through the confirmation email**. |
-| `nav.js` | `nav(page, listId)` — the single entry point for changing screens (see **Screens and navigation**). Plus `PAGE_TAB`, `TAB_ROOT`, `TAB_ORDER` and **`visibleTabs()`** (the tabs a swipe can actually reach — the Messages tab is hidden until its migration is run), `selectTab`, `goBack`, `dismissOverlays`, **`refreshAfterChange(src)`** (the single answer to "something was written, what redraws?" — see **Refreshing after a change**), `updateNavbar` (**where each screen's bar buttons are defined**, and where the collection FAB is bound to `startNewActivity`; there is no search bar button — see **Finding things again**), `applyNavCondense`, a debounced `resize` handler, **`setBodyScrollLock(lock)`** — the single place that touches body overflow — `RENDERERS`/`scrollKey`/`_scrollMem` (each screen's renderer in one table, and the offset it was left at — see **Rendering without reloading**), `queueNavCondense` — and **`syncTabbarToKeyboard()`**, which keeps the tab bar behind the software keyboard instead of riding up on top of it (see **Mobile layout rules**). |
+| `auth.js` | **`resetAccountState()`** — everything belonging to one account, cleared on every auth transition (see **One account at a time**) — **`ensureSessionLive`/`verifyLiveUser`/`authAnswerIsDefinitive`/`signOutStaleSession`/`resetSessionLiveCheck`/`recheckSessionSoon`/`startSessionWatch`/`stopSessionWatch`**, which is how a session belonging to a deleted account stops being trusted, on every device (see **Being signed into an account that no longer exists**) — **`inviteSweepDue()`/`authJustAuthenticated`**, which decide when to ask the server whether an invite is waiting for this address (see **An invite that survives creating an account**) — plus `showAuth`/`showApp` (swap `#authPage` against `#appWrap`; `showApp` boots into Home, loads the profile, triggers the iOS install hint, and starts the token auto-refresh). Also the `visibilitychange` handler that stops/starts auto-refresh — browsers suspend timers in a backgrounded PWA, and without restarting on resume the access token goes stale and the next request 401s, which reads to the user as being logged out — and the `onAuthStateChange` listener that keeps `currentUser` in step and only shows the login screen on a real `SIGNED_OUT`, `toggleAuthMode`/`applyAuthMode` (tracked by the `authIsSignUp` flag, not by reading the heading text), `setAuthError`, `handleAuth`, `handleSignOut`. Sign-up also inserts the `Users` profile row. Plus **the confirmation-email landing** — `readEmailConfirmation` (boot; reads `token_hash`/`code`/implicit tokens/`error`, and strips only its own keys), `consumeEmailConfirmation`, `confirmFailureHTML`, `confirmRedirectUrl`, `setAuthNotice`, `setAuthView` (three states now: form / check / reset), `showCheckEmail`/`authBackToForm`, and the resend pair `sendConfirmationEmail`/`resendConfirmation`/`resendFromNotice`. See **Coming back through the confirmation email**. Plus **the password reset** — `requestPasswordReset`/`sendRecoveryEmail`/`showPasswordReset`/`savePasswordReset`/`PASSWORD_MIN` and the `recoveryLanding` flag `main.js` branches on. See **Resetting a password**. |
+| `router.js` | **A URL for every screen.** `ROUTE_PAGE`/`ROUTE_ID`/`PAGE_ROUTE` (the route-key ↔ page-id table), `routeHash`/`parseRoute`, `routeSync` (called by `nav()`), `routeEntry` (called once by `showApp()`), `routeClear` (called by `handleSignOut()`) and `onRouteChange`, behind `popstate` and `hashchange`. Plus **`ROUTE_SHEET`/`routeSheetSync`/`routeSheetClear`/`routeOpenActivity`** — the one route that names an overlay rather than a screen, so a link can point at a single activity; see **A URL for one activity**. Hash-based deliberately — see **A URL for every screen**. Loads after `nav.js`, before `main.js`. |
+| `nav.js` | `nav(page, listId)` — the single entry point for changing screens (see **Screens and navigation**), and where the screen's URL is written via `routeSync()`. Plus `PAGE_TAB`, `TAB_ROOT`, `TAB_ORDER` and **`visibleTabs()`** (the tabs a swipe can actually reach — the Messages tab is hidden until its migration is run), `selectTab`, `goBack`, `dismissOverlays`, **`refreshAfterChange(src)`** (the single answer to "something was written, what redraws?" — see **Refreshing after a change**), `updateNavbar` (**where each screen's bar buttons are defined**, and where the collection FAB is bound to `startNewActivity`; there is no search bar button — see **Finding things again**), `applyNavCondense`, a debounced `resize` handler, **`setBodyScrollLock(lock)`** — the single place that touches body overflow — `RENDERERS`/`scrollKey`/`_scrollMem` (each screen's renderer in one table, and the offset it was left at — see **Rendering without reloading**), `queueNavCondense` — and **`syncTabbarToKeyboard()`**, which keeps the tab bar behind the software keyboard instead of riding up on top of it (see **Mobile layout rules**). |
 | `gestures.js` | The two touch gestures, both delegated from `document`: **swipe a sheet down to dismiss it** (`.modal` and the action sheet) and **swipe sideways to change screen**. `overlayOpen`, `ownsHorizontal`/`ownsVertical` (surfaces with their own gesture), `SHEET_DISMISS_PX`/`SHEET_FLICK_PX`, `SWIPE_MIN`/`SWIPE_EDGE`, `TAB_ORDER` (in `nav.js`). See **Gestures** below. |
 | `modals.js` | `openModal` (**resets `.sheet-body` scrollTop** — see the note under *Sheets* below) / `closeModal` (they call `setBodyScrollLock`, so use them rather than toggling `.open` yourself), the scrim-click and Escape handlers, **`showActionSheet(opts)`** and `showConfirm` (iOS confirms destructive actions with an action sheet, not a dialog — `confirmDeleteCollection`/`confirmDeleteActivity` wrap it), the photo lightbox (swipe sideways to page, down to close), the list picker (`openListPicker`/`renderListPickerRows`/`listPickerPick` — single-select, see **The list picker**), `ensurePickerRoom`/`releasePickerRoom` (see **Gestures**), and `showToast`. |
 
@@ -3013,6 +3389,7 @@ Loaded in this order; **order matters**.
 | --- | --- |
 | `dupes.js` | **Fuzzy duplicate detection.** `dupeGuard(opts, proceed)` — the single gate every add path goes through — plus `findDupes`, `dupeScore`, the sheet's handlers (`dupeAddAnyway`/`dupeOpenExisting`/`dupeCancel`) and the `DUPE_LIKELY`/`DUPE_POSSIBLE` thresholds. The batch half — `dupeGuardBatch`/`dupeSkipDuplicates` — went with the bulk sheet. Loads before every screen that adds an activity. See **Catching duplicates**. |
 | `sharing.js` | **Shared lists.** `probeSharing`/`sharingReady`/`resetSharingProbe`, `ownsCollection`/`isSharedWithMe` (which buttons to draw), the invite sheet (`openShareList`/`renderShareList`/`createInvite`/`revokeInvite`/`copyInviteLink`/`copyInviteCode`/`sendInviteLink`/`removeMember`), leaving (`confirmLeaveList`/`leaveList`), and accepting (`readPendingJoin` at boot, `handlePendingJoin`/`acceptJoin`/`declineJoin`, `updateAuthInviteNotice`/`authInviteWaitingNotice` for the signed-out case, and the link-free path `openJoinByCode`/`submitJoinCode`/`parseInviteCode`), plus **`claimInviteForEmail`/`claimInvitesForMe`** — the server-side copy of the code, which is the only one that survives a sign-up confirmed on another device — and `makeInviteCode`/`inviteUrl`. See **Shared lists**, **Accepting an invite** for why that link-free group exists, and **An invite that survives creating an account** for the last pair. |
+| `moderation.js` | **Reporting content and blocking people.** `probeModeration`/`moderationReady`/`resetModerationProbe`, the block list (`loadMyBlocks`/`isBlocked`/`blockedCount`/`confirmBlockUser`/`blockUser`/`unblockUser`/`openBlockedList`/`renderBlockedList`), the report sheet (`REPORT_REASONS`/`openReportSheet`/`pickReportReason`/`submitReport`), `recordTermsAcceptance`, and `resetModerationState` — called by `resetAccountState()`. Loads after `sharing.js`. See **Reporting and blocking**. |
 | `upnext.js` | The Up Next screen pushed from Home: every unfinished activity, bucketed by `targetBand()`. Borrows its rows and sort from `home.js`. |
 | `done.js` | The Accomplished screen pushed from Home: everything completed, grouped by the month it was finished. Reuses Home's photo tiles. |
 | `home.js` | The Home tab. `renderHome()` plus one function per section, the shared `upNextRowHTML()`/`sortUpNext()` the Up Next screen also uses, the context-free composer (`homeQuickAdd`, which asks plan-or-record via `startNewActivity()`), the composer's search half (`updateHomeSuggest`/`homeSuggestRowHTML`/`openHomeSuggest`/`closeHomeSuggest`, plus `searchActivities`/`searchMark`/`SEARCH_MIN`/`SEARCH_ACT_WEIGHTS` — all that survives of the deleted Search screen; see **One field, both questions** and **Finding things again**), and `toggleCompleteFrom()` — Home's copy of the completion toggle, which cannot rely on `curListId`. |
@@ -3025,7 +3402,7 @@ Loaded in this order; **order matters**.
 | `notes.js` | **The append-only log on an activity.** `notesReady()` (= `messagesReady()`), `fetchNotes`, `renderActivityNotes`/`noteRowHTML`/`onNoteInput`/`onNoteKey`, `addNote`/`submitActivityNote`/`openNoteMenu`/`copyNote`/`deleteNote`, **`addMessageToNotes`** — promoting a message into the activity's log, which is the reason the feature exists — and the new/edit sheet's pair `resetActivityNoteField`/`flushActivityNoteField`. There is deliberately no update path. See **Notes on an activity**. |
 | `map.js` | All MapLibre GL. **`ensureMapLibre()`** — the library is loaded on demand here, not from `<head>`; at ~900KB it was the biggest single cost of a cold launch, blocking the parser on the way to a Home screen with no map on it. Both entry points await it and fall back to the "map unavailable" state if it cannot be fetched. Then `mapStyle()` (raster CARTO basemap + globe projection + sky), `webglOK()`, `actsToGeoJSON()`, and `attachActivityLayer()` — which adds the clustered GeoJSON source and the two symbol layers, and owns the click handlers. Then the marker icons (`ensureDotIcon`, `ensurePhotoIcon`, `ensureClusterIcon`, `stampPointIcons`). Then **one point, several activities**: `SAME_PLACE_DEG`/`CLUSTER_STACKED`/`samePlaceCluster` (is this bubble one place or a neighbourhood?), `indexActs`/`placeActs` (the id → activity index kept beside the layer data), `openClusterPlace`, `openPlaceSheet`/`placeTitle`/`sortPlaceActs`/`placeRowHTML`, and the two row actions `placeOpenActivity`/`placeToggleActivity` — see **Several activities at one point**. Then the two instances: the Map tab (`renderGlobalMap`, `fitGlobal`, `zoomGlobe`, `globeFillZoom`, `setGlobalMapFilter`) and the per-collection map (`renderMap`, `updateMapMarkers`). Plus `mapLoaded(map)` and `hasGeo`. Teardown is explicit — `destroyGlobalMap()`/`destroyDetailMap()` — because each map holds a WebGL context, but **only the detail map is torn down on navigation**. See **The immersive map** above for the traps. |
 | `pwa.js` | Service-worker registration and the install/offline UI: `isStandalone()`/`isIOS()` (which stamp `.standalone`/`.ios` on `<html>`), the `beforeinstallprompt` capture behind `pwaInstall()`, the iOS Add-to-Home-Screen sheet, `pwaShowInstallHelp()` (the Me tab row), and `pwaUpdateOnlineState()`. Dismissals persist in `localStorage` under `bl_*` keys. **It also calls `reg.update()` on foreground and on reconnect** — an installed PWA is rarely killed, and registration is the only moment the browser looks for a new `sw.js`, so without it a shipped fix can sit undelivered on the home-screen copy for days and look like it was never made. **`pwaHadController` gates the `controllerchange` reload** so it fires on an update and not on a first install — see **Shared lists**, where getting that wrong silently destroyed every invite link. |
-| `main.js` | Boot: `paintStaticIcons()` fills the empty icon placeholders left in `index.html` from the sprite map, then the query-string readers run in a **fixed order** — `readEmailConfirmation()`, `readPushLanding()`, `readPendingJoin()` — all **before** the session restore, because an invite can be opened or an address confirmed while signed out. The first two strip only their own keys; the last blanks the search string wholesale, which is why it goes last. Then `consumeEmailConfirmation()` is tried ahead of `restoreSession()`, and `showApp()`/`showAuth()` follows. **Loads last.** See **Staying signed in** (why `restoreSession()` is more than one `getSession()` call) and **Coming back through the confirmation email** (why the reader order is not arbitrary). |
+| `main.js` | Boot: `paintStaticIcons()` fills the empty icon placeholders left in `index.html` from the sprite map, then the query-string readers run in a **fixed order** — `readEmailConfirmation()`, `readPushLanding()`, `readPendingJoin()` — all **before** the session restore, because an invite can be opened or an address confirmed while signed out. The first two strip only their own keys; the last blanks the search string wholesale, which is why it goes last. Then `consumeEmailConfirmation()` is tried ahead of `restoreSession()`, and `showApp()`/`showAuth()` follows — or `showPasswordReset()`, when the link that just signed someone in was a recovery one. **Loads last.** See **Staying signed in** (why `restoreSession()` is more than one `getSession()` call) and **Coming back through the confirmation email** (why the reader order is not arbitrary). |
 
 ### The two-speed activity flow
 
@@ -3327,7 +3704,7 @@ they can be queued when there is no network.
 | --- | --- |
 | `Collections` | `id`, `created_at`, `name`, `description`, `cover_image`, `user_id`, `number_activities`, `activites_completed`, `category_tag` |
 | `Activities` | `id`, `created_at`, `collection_id` *(the only list an activity is in — see **One activity, one list**)*, `name`, `description` *(dead — see below)*, `target_date`, `priority`, `date_completed`, `experience_notes`, `photos`, `links`, `location`, `location_lat`, `location_lng`, `location_is_home` *(optional — added by `home.sql`; see **Moving house**)*, `difficulty` *(optional — added by `difficulty.sql`; `easy`/`medium`/`hard` or null, inferred and never asked for — see **Guessing how hard it is**)*, `category_tag`, `remind_at` (see below) |
-| `Users` | `id` (= `auth.users.id`), `created_at`, `display_name`, `username`, `icon`, `home_location`, `home_lat`, `home_lng` *(the last three optional — added by `home.sql`; see **Home**)*, `avatar_url` *(optional — added by `avatars.sql`; see **A face on the account**)*, `difficulty_profile` *(optional — added by `difficulty-profile.sql`; a paragraph about the user, read only by the difficulty rating — see **Rating for one person, not an average one**)* |
+| `Users` | `id` (= `auth.users.id`), `created_at`, `display_name`, `username`, `icon`, `terms_accepted_at` *(optional — added by `moderation.sql`; null on accounts predating it, deliberately not backfilled)*, `home_location`, `home_lat`, `home_lng` *(the last three optional — added by `home.sql`; see **Home**)*, `avatar_url` *(optional — added by `avatars.sql`; see **A face on the account**)*, `difficulty_profile` *(optional — added by `difficulty-profile.sql`; a paragraph about the user, read only by the difficulty rating — see **Rating for one person, not an average one**)* |
 | `collection_members` *(optional)* | `collection_id`, `user_id`, `role`, `display_name`, `created_at` — added by `sharing.sql` |
 | `collection_invites` *(optional)* | `code` (PK), `collection_id`, `created_by`, `role`, `revoked`, `expires_at`, `created_at` |
 | `invite_claims` *(optional)* | `email`, `code` (composite PK), `created_at`, `claimed_at`, `claimed_by` — added by `sharing.sql` section 5. An invite waiting for an account that does not exist yet. **RLS on with no policies**, so only the two `SECURITY DEFINER` RPCs can see it. |
@@ -3335,6 +3712,8 @@ they can be queued when there is no network.
 | `conversation_reads` *(optional)* | `collection_id`, `user_id`, `last_read_at` (composite PK) — how far each person has read each conversation. Same shape as `reminder_deliveries`, for the same reason |
 | `conversation_prefs` *(optional)* | `collection_id`, `user_id`, `muted` (composite PK) — read only by `send-message-push`. Absent means nothing is muted, which is the right default |
 | `activity_notes` *(optional)* | `id`, `activity_id`, `author_id` (**`on delete set null`**), `author_name`, `body`, `created_at` — the append-only log. **No UPDATE policy, deliberately.** See **Notes on an activity** |
+| `user_blocks` *(optional)* | `blocker_id`, `blocked_id` (composite PK), `blocked_name` (a snapshot, for the same reason `messages.sender_name` is one), `created_at` — added by `moderation.sql`. Select is scoped to `blocker_id` alone, so a blocked user cannot discover the block |
+| `content_reports` *(optional)* | `id`, `reporter_id`, `reported_id` (both **`on delete set null`**), `target_kind`, `target_id`, `collection_id`, `reason`, `detail`, `snapshot`, `created_at`, `reviewed_at`, `resolution` — added by `moderation.sql`. **Insert-only: no select policy at all**, not even for the reporter. See **Reporting and blocking** |
 | `push_subscriptions` | `id`, `user_id`, `endpoint` (unique), `p256dh`, `auth`, `user_agent`, `created_at` — added by `schema.sql` |
 | `reminder_deliveries` | `activity_id`, `user_id`, `remind_at` (composite PK), `sent_at` — added by `schema.sql`. Who has already been told about which reminder, per person. See **Reminders**. |
 
@@ -3683,6 +4062,9 @@ write its findings into a fixed white `<div>` and take a `--screenshot`.
    *before* `pwa.js`.
 6. Add `if(page==='yourpage') renderYourPage();` to `nav()`, and a line to
    `refreshAfterChange()` if a mutation can happen while it is showing.
+6b. Add a route key to `ROUTE_PAGE` in `js/router.js` (plus `ROUTE_ID` if it
+   addresses one collection), or the screen writes no URL and Back skips
+   straight past it.
 7. If it is a pushed screen, add it to the `PUSHED` array in `nav()` so it
    animates in from the right and swipes back.
 8. Add both new files to `SHELL_ASSETS` in `sw.js` and bump `CACHE_VERSION`.
@@ -3699,6 +4081,58 @@ Two things that will bite:
 - **`--dump-dom` produces nothing in Chrome 151.** The headless recipes in
   the layout note below need driving over CDP (`--remote-debugging-port`
   plus `Runtime.evaluate`) rather than dumping to stdout.
+
+## Verifying which migrations have run
+
+Every optional piece of this app probes for itself and hides when it is
+absent, which is the right behaviour and means **a migration nobody ran
+is invisible from inside the app**. Several entries in the backlog below
+were stale for months for exactly that reason. Ask the database rather
+than trusting them:
+
+```sql
+select
+  (select count(*) from information_schema.columns
+     where table_name='Activities' and column_name='extra_collection_ids') as needs_single_list,
+  (select count(*) from information_schema.columns
+     where table_name='Users' and column_name='difficulty_profile') as has_diff_profile,
+  (select count(*) from information_schema.columns
+     where table_name='Users' and column_name='avatar_url') as has_avatars,
+  (select count(*) from information_schema.columns
+     where table_name='Users' and column_name='terms_accepted_at') as has_moderation,
+  (select count(*) from information_schema.tables
+     where table_name='user_blocks') as has_blocks,
+  (select count(*) from "Activities"
+     where target_date in ('This Month','This Year','Next Year','In 2-3 Years')) as needs_rollover;
+```
+
+`needs_single_list` and `needs_rollover` should be **0**; everything else
+should be **1**.
+
+**And the RLS audit is a different question that no client can answer.**
+The project shipped for a while with a policy literally named `ALL` on
+each of the three core tables, granting every signed-in user full access
+to everyone's rows — and an anonymous probe came back empty, so it
+looked locked down. Only `pg_policies` can tell you:
+
+```sql
+select tablename, policyname, cmd, roles, qual, with_check
+from pg_policies where schemaname='public' order by tablename;
+
+select tablename, rowsecurity from pg_tables
+where schemaname='public' order by tablename;
+```
+
+Anything with `qual` of `true` on `Collections`, `Activities` or `Users`
+is the bug; `supabase/rls-lockdown.sql` removes them. Note that an
+INSERT policy's condition lives in `with_check` and is null in `qual`,
+so a query selecting only `qual` reports every insert policy as
+unconstrained when it is nothing of the kind.
+
+*Audited 31 Aug 2026: all 12 tables have RLS on, every policy correctly
+scoped, and `reminder_deliveries` / `invite_claims` are RLS-on with no
+policies at all — reachable only by the service role, which is the
+design.*
 
 ## Known issues / cleanup backlog
 
@@ -3865,9 +4299,18 @@ Two things that will bite:
   scored on every keystroke. Fine at hundreds; it would need an index at tens
   of thousands.
 - **`getChipArr(which)` ignores its parameter** (see `links.js` above).
-- **No URL/route state.** Reloading always returns to the Lists tab; a
-  collection can't be linked to, and there is no browser-back integration —
-  the `goBack()` chevron is the only way out of a pushed screen.
+- **~~No URL/route state.~~ DONE.** `js/router.js` — see **A URL for every
+  screen**. The activity sheet is addressable too now (`#activity/<id>` —
+  see **A URL for one activity**); every *other* sheet still is not, so a
+  link cannot point at a completion sheet or the invite sheet. Those are
+  transient states rather than things anyone would send, so this is
+  probably where it should stop.
+- **~~There is no password reset.~~ DONE.** See **Resetting a password**.
+  The one thing it needs that the repo cannot assert is the dashboard
+  template — Authentication → Emails → **Reset password** has to point at
+  `token_hash` and `type=recovery`, exactly like the confirmation one, or a
+  link opened on a second device fails the PKCE way and a link opened on the
+  first signs the person in without ever offering them the panel.
 - **`sw.js` duplicates the asset list in `index.html`.** `SHELL_ASSETS` must be
   updated by hand; nothing enforces it. The pre-cache loop tolerates a missing
   path (it warns and continues), so the failure mode is a silently non-offline
@@ -3889,9 +4332,11 @@ Two things that will bite:
   the user has no way to say "no, that one is easy for me". A
   `difficulty` override on the activity sheet, preferred over the
   inferred value in `difficultyExamples()`, is the missing half.
-- **`supabase/difficulty-profile.sql` has to be run by hand.** Until it
-  is, *About you* saves to memory for the session and nothing else; the
-  failure is one `console.info` at sign-in.
+- **~~`supabase/difficulty-profile.sql` has to be run by hand.~~ DONE**
+  (verified against `information_schema` on 31 Aug 2026 —
+  `Users.difficulty_profile` exists). Re-check with the query in
+  **Verifying which migrations have run** below rather than trusting
+  this line.
 - **Nothing rates the activities that already exist, automatically.**
   `difficulty` defaults to null and is only ever written at capture, so
   every row predating this is un-rated: it sorts last under **Difficulty**
@@ -3930,16 +4375,45 @@ Two things that will bite:
   function has to be redeployed first. Expect to tune `PLACE_SYSTEM`
   against real activity names; it errs strict by design, so the failure to
   watch for is it refusing things it should catch, not inventing places.
-- **`supabase/target-rollover.sql` has to be run by hand.** Until it is, rows
-  still holding `This Year` / `Next Year` / `In 2-3 Years` keep rolling their
-  deadline forward every January, which is the bug the client fix closes for
-  everything written since. The failure is invisible — the row simply always
-  looks like it has about the same amount of time left.
-- **`supabase/single-list.sql` has to be run by hand.** Until it is, the
-  `extra_collection_ids` column is still on `Activities` holding whatever
-  memberships were there when the feature was removed — invisible, because
-  nothing reads it, and quietly widening the `Activities` select policy for
-  anyone who also ran the old `multilist.sql`.
+- **~~`supabase/target-rollover.sql` has to be run by hand.~~ DONE** —
+  zero rows still hold an unresolved band (verified 31 Aug 2026). Note
+  the query that checks this looks for `This Month` / `This Year` /
+  `Next Year` / `In 2-3 Years` and deliberately **not** `In 5+ Years`,
+  which is stored as itself forever by design.
+- **~~`supabase/single-list.sql` has to be run by hand.~~ DONE** —
+  `extra_collection_ids` is off the table (verified 31 Aug 2026), and
+  the narrow `can_use_activity` is what the policies use.
+- **There is no moderation UI.** Reports land in `content_reports` and
+  are worked with a `select` in the SQL editor (the query is at the
+  bottom of `moderation.sql`). The 24-hour commitment in the terms is a
+  promise that somebody runs it daily; nothing enforces it, nothing
+  alerts on a new report, and there is no record in the app of a report
+  having been acted on. A single admin page reading that table is the
+  obvious fix and is the thing most likely to matter if the app gets
+  any real use.
+- **A report is fire-and-forget from the reporter's side.** By design —
+  see **A report goes one way** — but it does mean somebody who reports
+  something gets no confirmation beyond a toast and can never check what
+  came of it. The block offered immediately afterwards is what makes
+  that tolerable.
+- **Blocking hides messages and nothing else.** A blocked person's
+  activities, notes and completion photos in a shared list are still
+  drawn, and their name is still on them. That is defensible — they are
+  the list's content, not a message aimed at you — but somebody who
+  blocks a person expects rather more silence than they get.
+- **`legal/privacy.html` and `legal/terms.html` carry placeholders.**
+  `[YOUR NAME OR COMPANY]`, `[YOUR ADDRESS]`, `[CONTACT EMAIL]` and
+  `[YOUR JURISDICTION]` have to be filled in before either is submitted
+  to App Store Connect, and the privacy policy URL there must be a live
+  public URL. Grep for `[` in that directory.
+- **The two legal pages are not in `SHELL_ASSETS`**, deliberately —
+  they are separate documents rather than part of the app shell, so
+  they are not available offline. Opening one in a tunnel fails.
+- **Nothing tells an existing account that the terms now exist.**
+  `terms_accepted_at` is null for every account created before
+  `moderation.sql`, and no prompt ever asks them. That is the honest
+  record and it is also, strictly, a set of users who have not agreed
+  to anything.
 - **Account deletion is not transactional.** `delete-account` runs a
   sequence of deletes; a failure part-way leaves the auth user in place
   (deliberately, so it can be re-run) but some rows already gone. A
@@ -3977,13 +4451,12 @@ Two things that will bite:
   profile photo went to a new `avatar_url` column rather than reusing
   `icon`: nothing reads `icon`, but it is a name that promises a glyph
   and this holds a URL.
-- **A profile photo needs `supabase/avatars.sql` run.** Without it the
-  You tab simply has no upload control and every message keeps its
-  initial disc — but the failure is invisible unless you read the
-  console, which says so once at sign-in. The same is true of the RPC
-  half: `Users.avatar_url` can exist while `collection_avatars()` does
-  not (sharing not installed), in which case you can set your own photo
-  and nobody else sees it.
+- **~~A profile photo needs `supabase/avatars.sql` run.~~ DONE** —
+  `Users.avatar_url` exists (verified 31 Aug 2026). The RPC half is
+  still worth knowing about and is *not* covered by that check:
+  `Users.avatar_url` can exist while `collection_avatars()` does not
+  (sharing not installed), in which case you can set your own photo and
+  nobody else sees it.
 - **The old avatar file is not deleted when you replace it.** Same
   orphan problem as every other piece of media — see the sweeper query
   at the bottom of `storage.sql`.

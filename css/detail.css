@@ -180,6 +180,10 @@
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .act-loc .ic { width: 12px; height: 12px; }
+    /* Does not shrink, unlike the place name beside it: a place name
+       ellipsised to "Fushimi Ina…" is still readable, and a distance
+       truncated to "1,2…" is a wrong number. */
+    .act-dist { flex: 0 0 auto; white-space: nowrap; }
 
     .act-thumb {
       width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0;
@@ -544,6 +548,12 @@
       background: color-mix(in srgb, var(--c-target) 18%, transparent);
       color: var(--c-target);
     }
+    /* Distance takes the same neutral treatment as an un-rated
+       difficulty rather than a hue of its own: the chip row already
+       carries priority's three-colour scale and the target's moss, and
+       a fifth colour there would be a fourth ranking arguing over one
+       glance. Same argument that keeps difficulty un-hued. */
+    .ad-chip.c-dist { background: var(--fill-3); color: var(--label-2); }
     .ad-chip.c-remind {
       background: color-mix(in srgb, var(--c-remind) 18%, transparent);
       color: var(--c-remind);

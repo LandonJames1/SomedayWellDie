@@ -1,0 +1,12 @@
+{
+  "appId": "com.landonjames.somedaywelldie",
+  "appName": "Someday We'll Die",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#efece6"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}

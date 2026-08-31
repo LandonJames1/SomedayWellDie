@@ -55,6 +55,17 @@
     .auth-error.ok { color: var(--green); }
 
     .auth-submit { width: 100%; margin-top: 16px; }
+
+    /* Quieter than .auth-toggle below it: creating an account is one of
+       the two things this screen is for, recovering one is the thing you
+       reach for when neither worked. Same 44px target regardless — it is
+       pressed by someone already having a bad time. */
+    .auth-forgot { text-align: center; margin-top: 2px; }
+    .auth-forgot button {
+      color: var(--label-2); font-size: 14px;
+      min-height: 44px; padding: 0 8px;
+    }
+
     .auth-toggle {
       text-align: center; margin-top: 10px;
       font-size: 15px; color: var(--label-2); letter-spacing: -.002em;

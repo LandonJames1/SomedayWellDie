@@ -53,6 +53,14 @@ function nav(page,listId){
   curTab=PAGE_TAB[page]||curTab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===curTab));
 
+  /* Write the screen's URL. After curPage/curListId, so the router can
+     fall back to them when nav() was called without an id, and before
+     the render, so a renderer that bounces (renderDetail() on a
+     collection that is gone) overwrites this rather than racing it.
+     routeSync() is a no-op while the router is itself applying a
+     popped route — see js/router.js. */
+  routeSync(page,listId);
+
   /* The per-collection map is torn down on the way out: it is rebuilt
      for whichever collection you open next anyway, so keeping it costs a
      WebGL context for nothing.
@@ -182,6 +190,11 @@ function goBack(){ nav(backTab==='lists'?'lists':backTab); }
    navigation can never leave a sheet stranded over a screen it has
    nothing to do with. */
 function dismissOverlays(){
+  /* Closing sheets wholesale skips closeModal(), so the activity
+     sheet's route has to be released by hand. It is a no-op unless the
+     hash actually names a sheet, which is what keeps it from fighting
+     the Back handler in router.js. */
+  routeSheetClear();
   clearSheetReturns();
   document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
   const as=$('actionSheet'),lb=$('lightbox');

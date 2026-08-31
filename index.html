@@ -76,6 +76,7 @@
   <link rel="stylesheet" href="css/sharing.css" />
   <link rel="stylesheet" href="css/messages.css" />
   <link rel="stylesheet" href="css/notes.css" />
+  <link rel="stylesheet" href="css/moderation.css" />
   <link rel="stylesheet" href="css/pwa.css" />
   <link rel="stylesheet" href="css/responsive.css" />
 </head>
@@ -129,10 +130,27 @@
 
       <div class="auth-error" id="authError"></div>
       <button class="btn btn-filled auth-submit" id="authBtn" onclick="handleAuth()">Sign In</button>
+      <!-- Sign-in only: applyAuthMode() hides it in Create Account mode,
+           where there is no password to have forgotten yet. -->
+      <div class="auth-forgot" id="authForgot">
+        <button onclick="requestPasswordReset()">Forgot password?</button>
+      </div>
       <div class="auth-toggle">
         <span id="authToggleText">Don&rsquo;t have an account?</span>
         <button id="authToggleBtn" onclick="toggleAuthMode()">Create one</button>
       </div>
+      <!-- Shown in Create Account mode only, by applyAuthMode(). Apple
+           requires the terms to be agreed to before an account carrying
+           user-generated content exists; a "by continuing" line with
+           reachable links satisfies that without putting a checkbox
+           between somebody and the app they already decided to try. -->
+      <p class="auth-agree" id="authAgree" style="display:none">
+        By creating an account you agree to the
+        <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a>
+        and
+        <a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+        There is no tolerance for abusive content or behaviour.
+      </p>
     </div>
 
     <!-- Where a sign-up lands while it waits to be confirmed. -->
@@ -147,6 +165,21 @@
         <span>Wrong address?</span>
         <button onclick="authBackToForm()">Start over</button>
       </div>
+    </div>
+
+    <!-- Where a recovery link lands. verifyOtp() has already established
+         a session by the time this is shown, so this screen is the last
+         step of the reset rather than a gate in front of the app — a
+         reload from here goes straight in. See RESETTING A PASSWORD in
+         auth.js. -->
+    <div id="authReset" style="display:none">
+      <div class="auth-fields">
+        <input id="authNewPass" type="password" autocomplete="new-password" placeholder="New password" />
+        <input id="authNewPass2" type="password" autocomplete="new-password" placeholder="Repeat password"
+               onkeydown="if(event.key==='Enter')savePasswordReset()" />
+      </div>
+      <div class="auth-error" id="authResetError"></div>
+      <button class="btn btn-filled auth-submit" id="authResetBtn" onclick="savePasswordReset()">Save Password</button>
     </div>
   </div>
 </div>
@@ -348,13 +381,49 @@
       <span class="row-body"><span class="row-title">About you</span></span>
     </button>
     <button class="row tappable has-leading" onclick="pwaShowInstallHelp()">
-      <span class="row-leading li-blue"></span>
+      <span class="row-leading li-blue" id="meInstallIcon"></span>
       <span class="row-body"><span class="row-title">Add to Home Screen</span></span>
       <span class="row-chevron" id="meInstallChevron"></span>
     </button>
     <!-- Joining by code lives on the Lists tab, beside New List and in
          that tab's empty state — which is the screen the missing list
          was supposed to appear on. It is not duplicated here. -->
+  </div>
+
+  <!-- Reporting, blocking and the two legal documents. It is its own
+       section rather than a row under App because App Store review
+       looks for exactly this and finding it two taps into a settings
+       list is a rejection. See supabase/moderation.sql. The whole
+       block is hidden by renderMeSafety() when the migration has not
+       been run, for the same reason every other optional piece of the
+       app hides — but unlike the others, that hidden state is not
+       shippable. -->
+  <div id="meSafetySection" style="display:none">
+    <div class="section-header">Safety</div>
+    <div class="group">
+      <button class="row tappable has-leading" onclick="openBlockedList()">
+        <span class="row-leading li-slate" id="meBlockedIcon"></span>
+        <span class="row-body"><span class="row-title">Blocked People</span></span>
+        <span class="row-trailing">
+          <span class="row-value" id="meBlockedCount"></span>
+          <span class="row-chevron" id="meBlockedChevron"></span>
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <div class="section-header">Legal</div>
+  <div class="group">
+    <a class="row tappable has-leading" href="legal/privacy.html" target="_blank" rel="noopener">
+      <span class="row-leading li-blue" id="mePrivacyIcon"></span>
+      <span class="row-body"><span class="row-title">Privacy Policy</span></span>
+      <span class="row-chevron" id="mePrivacyChevron"></span>
+    </a>
+    <a class="row tappable has-leading" href="legal/terms.html" target="_blank" rel="noopener">
+      <span class="row-leading li-green" id="meTermsIcon"></span>
+      <span class="row-body"><span class="row-title">Terms of Use</span></span>
+      <span class="row-chevron" id="meTermsChevron"></span>
+    </a>
   </div>
 
   <div class="section-header">Account</div>
@@ -953,6 +1022,46 @@
   </div>
 </div>
 
+<!-- Reporting content, and the list of people you have blocked.
+     Both exist for App Store review as much as for use — see the header
+     of supabase/moderation.sql. The report sheet's body is static
+     markup except for the reasons, which openReportSheet() rebuilds on
+     every open so a previous report's answer is never inherited. -->
+<div class="modal-overlay" id="reportSheet">
+  <div class="modal">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-bar">
+      <button class="navbtn" onclick="closeModal('reportSheet')">Cancel</button>
+      <div class="sheet-title">Report</div>
+      <button class="navbtn strong" id="reportSubmit" onclick="submitReport()" disabled>Send</button>
+    </div>
+    <div class="sheet-body">
+      <p class="report-lead">Tell us what is wrong with
+        <strong id="reportSubject">this content</strong>.</p>
+      <div class="report-reasons" id="reportReasons"></div>
+      <div class="report-detail">
+        <textarea id="reportDetail" maxlength="1000"
+                  placeholder="Anything else we should know? (optional)"></textarea>
+      </div>
+      <div class="report-error" id="reportError"></div>
+      <p class="report-note">We review every report within 24 hours and remove
+        content that breaks the rules.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="blockedSheet">
+  <div class="modal">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-bar">
+      <button class="navbtn" onclick="closeModal('blockedSheet')">Done</button>
+      <div class="sheet-title">Blocked People</div>
+      <span class="navbtn" style="pointer-events:none;opacity:0">Done</span>
+    </div>
+    <div class="sheet-body" id="blockedBody"></div>
+  </div>
+</div>
+
 <!-- Everything at one point on the map.
 
      A map pin is a place, and a place routinely holds more than one
@@ -1073,6 +1182,9 @@
 <!-- Shell + shared UI -->
 <script src="js/auth.js"></script>
 <script src="js/nav.js"></script>
+<!-- The hash router. After nav.js because it reads PAGE_TAB-adjacent
+     state, and before main.js, which asks it what the URL wanted. -->
+<script src="js/router.js"></script>
 <script src="js/modals.js"></script>
 <script src="js/gestures.js"></script>
 
@@ -1086,6 +1198,7 @@
      route their add through dupeGuard(). -->
 <script src="js/dupes.js"></script>
 <script src="js/sharing.js"></script>
+<script src="js/moderation.js"></script>
 <script src="js/home.js"></script>
 <script src="js/upnext.js"></script>
 <script src="js/done.js"></script>

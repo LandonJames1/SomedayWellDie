@@ -420,6 +420,73 @@ function activityListLabel(a,lists){
   return home?home.name:'';
 }
 
+
+/* ==============================================================
+   HOW FAR AWAY IT IS
+
+   Every activity carries location_lat/location_lng and the user
+   carries a Home (see HOME in CLAUDE.md), so the distance between
+   them is arithmetic the app already had every input for and was
+   not doing.
+
+   It answers the half of "what could I do this weekend" that the
+   difficulty rating cannot. Easy/Medium/Hard folds three separate
+   costs — distance, time and money — into one word, deliberately;
+   this pulls the one of the three that is a measurable fact back
+   out. Something can be genuinely easy and four hours away.
+
+   Miles, spelled out. The abbreviation rule in CLAUDE.md is not
+   only about dateInfo(): "12 mi" saves four pixels and makes the
+   reader decode a label they were supposed to be able to glance at.
+
+   Nothing here is stored. Home moves and every distance in the app
+   moves with it, which is the same reason updateHomeActivities()
+   exists rather than a denormalised column.
+   ============================================================== */
+const EARTH_MILES=3958.8;
+
+/* Is there anything to measure from? Home is optional — most of the
+   app works without one — so every distance path has to tolerate its
+   absence rather than defaulting to a point on the equator. */
+function distanceReady(){
+  if(typeof homePlace!=='function') return false;
+  const h=homePlace();
+  return !!(h&&h.lat!=null&&h.lng!=null);
+}
+
+function haversineMiles(lat1,lng1,lat2,lng2){
+  const rad=Math.PI/180;
+  const dLat=(lat2-lat1)*rad, dLng=(lng2-lng1)*rad;
+  const s=Math.sin(dLat/2)**2
+        + Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLng/2)**2;
+  return 2*EARTH_MILES*Math.asin(Math.min(1,Math.sqrt(s)));
+}
+
+/* Miles from Home, or null when either end has no coordinates. Null is
+   a real and common answer — an activity typed offline never got
+   geocoded (see the backlog), and plenty of accounts have no Home — so
+   every caller has to handle it rather than treating it as zero, which
+   would put un-located rows at the top of a nearest-first list. */
+function distanceFromHome(a){
+  if(!a||a.locationLat==null||a.locationLng==null) return null;
+  if(!distanceReady()) return null;
+  const h=homePlace();
+  return haversineMiles(h.lat,h.lng,a.locationLat,a.locationLng);
+}
+
+/* "At home" comes off the location_is_home flag rather than off a
+   small distance, for the same reason updateHomeActivities() reads
+   the flag: picking Home means "my home, wherever that is", and a
+   hike that happens to be in your own town is not at your house. */
+function fmtDistance(a){
+  if(a&&a.locationIsHome&&distanceReady()) return 'At home';
+  const mi=distanceFromHome(a);
+  if(mi==null) return '';
+  if(mi<0.1) return 'At home';
+  const n=mi<10?Math.round(mi*10)/10:Math.round(mi);
+  return n.toLocaleString('en-US')+(n===1?' mile':' miles');
+}
+
 /* ==============================================================
    ORDERING A COLLECTION
 
@@ -479,8 +546,41 @@ const ACT_SORTS={
             || diffRank(a)-diffRank(b)
             || new Date(b.createdAt)-new Date(a.createdAt),
   },
+  nearby:{
+    label:'Distance from home',short:'Nearest',
+    /* Nearest first — the companion to Difficulty, and the other half
+       of the same question. A row with no coordinates sorts last for
+       the reason an un-rated one does: nothing has been said about it,
+       and an unknown at the head of a list of things close to hand is
+       the one wrong answer.
+
+       Written out rather than as a subtraction of ranks because the
+       missing value here is a real null, and the Infinity trick the
+       other comparators could have used yields NaN when both sides
+       are absent — which is not a comparator at all. */
+    cmp:(a,b)=>{
+      if(a.completed!==b.completed) return a.completed?1:-1;
+      const da=distanceFromHome(a),db=distanceFromHome(b);
+      if((da==null)!==(db==null)) return da==null?1:-1;
+      if(da!=null&&da!==db) return da-db;
+      return new Date(b.createdAt)-new Date(a.createdAt);
+    },
+  },
 };
 const DEFAULT_ACT_SORT='added';
+
+/* Distance is the one order that can stop being available: it needs a
+   Home to measure from, and Home can be cleared from the You tab while
+   a collection is sitting sorted by it. Rather than leave curSort
+   naming an order that would silently degrade to "everything is
+   equally far away" — which is createdAt wearing a different label —
+   every reader normalises through here, so the button, the menu and
+   the list cannot disagree about what is actually being applied. */
+function normSortKey(key){
+  if(!ACT_SORTS[key]) return DEFAULT_ACT_SORT;
+  if(key==='nearby'&&!distanceReady()) return DEFAULT_ACT_SORT;
+  return key;
+}
 
 /* ==============================================================
    HOW HARD IT IS
@@ -509,8 +609,7 @@ function diffLabel(a){
    activity cache, and sorting one in place would reorder the cache
    itself for every other screen reading it. */
 function sortActivities(acts,key){
-  const s=ACT_SORTS[key]||ACT_SORTS[DEFAULT_ACT_SORT];
-  return [...acts].sort(s.cmp);
+  return [...acts].sort(ACT_SORTS[normSortKey(key)].cmp);
 }
 
 /* ==============================================================

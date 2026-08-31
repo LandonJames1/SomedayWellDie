@@ -436,8 +436,10 @@ function readPendingJoin(){
      find a password is the single most likely thing they do next. */
   bootKeepLong(JOIN_STASH,code);
   /* readPushLanding() may have stripped this already; doing it twice
-     is harmless and neither can be made to depend on the other. */
-  history.replaceState(null,'',location.pathname);
+     is harmless and neither can be made to depend on the other.
+     The hash is put back untouched — it is the screen's own route (see
+     js/router.js), and this reader owns the query string only. */
+  history.replaceState(null,'',location.pathname+location.hash);
 }
 
 /* ==============================================================

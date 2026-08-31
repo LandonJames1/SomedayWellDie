@@ -47,6 +47,11 @@ const _sheetReturns={};
 function onSheetClose(id,fn){ _sheetReturns[id]=fn; }
 
 function afterSheetClosed(id){
+  /* The activity sheet is the one overlay with a URL, so it is the one
+     that has to give it back. This runs before the return below,
+     because a sheet that reopens another sheet will write its own
+     route on the way in. */
+  if(id==='actDetailSheet') routeSheetClear();
   const fn=_sheetReturns[id];
   if(!fn)return;
   delete _sheetReturns[id];

@@ -48,6 +48,10 @@ function resetAccountState(){
      the previous session's token, so it has to go with the rest. See
      ONE ACCOUNT AT A TIME. */
   resetMessagesState();
+  /* The block list is per-account and is read on every message drawn,
+     so leaving it behind would filter the next account's conversations
+     by the previous one's blocks. See ONE ACCOUNT AT A TIME. */
+  resetModerationState();
   /* Whether the *previous* account still existed says nothing about
      this one. See IS THIS SESSION STILL A REAL ACCOUNT? below. The
      watch is restarted by showApp(), so it never runs without a user
@@ -296,8 +300,24 @@ async function showApp(){
      anything. */
   if(!warm) await probeSharing();
 
-  /* Boot into the dashboard. */
-  nav('home');
+  /* Boot into the dashboard — or into whatever the URL asked for.
+     A route is honoured once per page life (routeEntry() consumes it),
+     so signing out and back in on the same page starts at Home rather
+     than reopening the previous account's collection. A collection
+     that is gone, or was never this account's, bounces to Lists from
+     inside renderDetail(). */
+  const entry=routeEntry();
+  /* '#activity/<id>' names a sheet rather than a screen, so it decides
+     the screen behind it for itself — see ROUTE_SHEET in router.js.
+     Awaited, unlike every other nav here, and only on this path: it
+     has to read the activity back before it knows which list to land
+     on. On a snapshot-primed boot that resolves out of the cache and
+     costs nothing; on a first-ever launch following a shared link it
+     is one round trip, and holding the splash for it is the right
+     trade against dropping to a blank app and correcting it. */
+  if(entry&&entry.sheet==='activity') await routeOpenActivity(entry.id);
+  else if(entry) nav(entry.page,entry.id||undefined);
+  else nav('home');
 
   /* Everything past this point is deliberately not awaited: none of it
      gates the first paint, and awaiting any of it would put it back on
@@ -333,6 +353,14 @@ async function showApp(){
      ACTIVITY IS AT HOME" in api.js. */
   probeHomeFlag();
   probeDifficulty();
+  /* Whether reporting and blocking are available, and — if they are —
+     the block list, which paintConversation() reads synchronously on
+     every message it draws. Not awaited: a cold block list filters
+     nothing, which is the right failure. Hiding a whole conversation
+     behind a pending request would look like the messages were lost.
+     The You tab may already be on screen, so redraw its Safety section
+     when the answer lands. See js/moderation.js. */
+  probeModeration().then(()=>{ if(curPage==='me') renderMeSafety(); });
   /* Spin the geo function's isolate up and open the connection, so the
      first place search of the session pays for neither. */
   warmGeo();
@@ -410,6 +438,14 @@ function applyAuthMode(){
   $('authToggleText').textContent=authIsSignUp?'Already have an account?':'Don’t have an account?';
   $('authToggleBtn').textContent=authIsSignUp?'Sign in':'Create one';
   $('authExtraFields').style.display=authIsSignUp?'':'none';
+  /* There is no password to have forgotten on an account that does not
+     exist yet, and the link under a Create Account button reads as an
+     invitation to give up before starting. */
+  $('authForgot').style.display=authIsSignUp?'none':'';
+  /* The terms have to be agreed to before the account exists, and
+     there is nothing to agree to when signing back into one that
+     already does. See supabase/moderation.sql. */
+  $('authAgree').style.display=authIsSignUp?'':'none';
   $('authPass').setAttribute('autocomplete',authIsSignUp?'new-password':'current-password');
   /* A sign-up that went off to wait for an email left this disabled and
      reading "…", because it returned before handleAuth() could put it
@@ -418,12 +454,12 @@ function applyAuthMode(){
   setAuthError('');
 }
 
-/* The form and the check-your-email panel are one screen in two states,
-   not two screens. */
+/* The form, the check-your-email panel and the set-a-new-password panel
+   are one screen in three states, not three screens. */
 function setAuthView(view){
-  const check=view==='check';
-  $('authForm').style.display=check?'none':'';
-  $('authCheck').style.display=check?'':'none';
+  $('authForm').style.display=view==='form'?'':'none';
+  $('authCheck').style.display=view==='check'?'':'none';
+  $('authReset').style.display=view==='reset'?'':'none';
 }
 function showCheckEmail(email){
   pendingConfirmEmail=email;
@@ -602,6 +638,10 @@ async function handleAuth(){
 let pendingConfirm=null;
 /* Who "Send it again" is for. */
 let pendingConfirmEmail='';
+/* Set when the link that just signed someone in was a recovery one, so
+   main.js lands them on the set-a-new-password panel instead of the
+   app. Consumed by showPasswordReset(). */
+let recoveryLanding=false;
 
 /* Where a confirmation link should come back to. Deliberately
    location-derived rather than a constant: the app is served from
@@ -634,6 +674,12 @@ function readEmailConfirmation(){
     refreshToken:get('refresh_token'),
     type:get('type')||'email',
   };
+  /* Which of the two round trips this is. A recovery link is redeemed
+     by exactly the same verifyOtp() call as a confirmation — the only
+     difference is where the person lands afterwards, and the fact that
+     "send another" has to send a different email. See RESETTING A
+     PASSWORD below. */
+  c.recovery=c.type==='recovery';
   if(!c.error&&!c.code&&!c.tokenHash&&!c.accessToken) return;
   pendingConfirm=c;
 
@@ -655,7 +701,10 @@ function readEmailConfirmation(){
    'access_token','refresh_token','expires_in','expires_at','token_type']
     .forEach(k=>q.delete(k));
   const rest=q.toString();
-  history.replaceState(null,'',location.pathname+(rest?'?'+rest:''));
+  /* location.hash is preserved for the same reason the rest of the
+     query string is: it is somebody else's — the screen's route, read
+     by js/router.js once there is a session to show it to. */
+  history.replaceState(null,'',location.pathname+(rest?'?'+rest:'')+location.hash);
 }
 
 /* Redeem whatever the link carried. Returns the signed-in user, or null
@@ -666,7 +715,7 @@ async function consumeEmailConfirmation(){
   pendingConfirm=null;
   if(!c) return null;
 
-  if(c.error){ setAuthNotice(confirmFailureHTML(c.errorCode,c.error)); return null; }
+  if(c.error){ setAuthNotice(confirmFailureHTML(c.errorCode,c.error,c.recovery)); return null; }
 
   try{
     let res=null;
@@ -680,21 +729,24 @@ async function consumeEmailConfirmation(){
       });
     }
     if(res&&res.error) throw res.error;
-    if(res&&res.data&&res.data.user) return res.data.user;
+    if(res&&res.data&&res.data.user){
+      recoveryLanding=!!c.recovery;
+      return res.data.user;
+    }
     /* An access token with no refresh token beside it: nothing to
        persist, so treat it as a link that did not work rather than
        signing someone in for as long as one token lasts. */
-    setAuthNotice(confirmFailureHTML('','That link did not carry a sign-in.'));
+    setAuthNotice(confirmFailureHTML('','That link did not carry a sign-in.',c.recovery));
   }catch(e){
     console.warn('[auth] confirmation link failed:',e);
-    setAuthNotice(confirmFailureHTML(e.code||e.error_code||'',e.message||''));
+    setAuthNotice(confirmFailureHTML(e.code||e.error_code||'',e.message||'',c.recovery));
   }
   return null;
 }
 
 /* Every failure ends in the same offer, because every one of them is
    fixed the same way: send another link. */
-function confirmFailureHTML(code,message){
+function confirmFailureHTML(code,message,recovery){
   const c=String(code||'').toLowerCase();
   const m=String(message||'').toLowerCase();
   let lead='That link didn’t work.';
@@ -710,8 +762,13 @@ function confirmFailureHTML(code,message){
     lead='That link needs the device you signed up on.';
     body='Open it in the same browser you created the account in, or enter your email below for a fresh link.';
   }
+  /* Which email the one button sends is the whole reason this takes a
+     flag: offering a signup confirmation to somebody whose *password
+     reset* expired sends mail that does nothing, and they would have
+     no way to tell. */
   return '<strong>'+esc(lead)+'</strong>'+esc(body)
-    +'<button onclick="resendFromNotice()">Send a new link</button>';
+    +'<button onclick="resendFromNotice('+(recovery?'true':'')+')">'
+    +(recovery?'Send a new reset link':'Send a new link')+'</button>';
 }
 
 function setAuthNotice(html,ok){
@@ -796,18 +853,173 @@ async function resendConfirmation(){
 /* The same thing from the expired-link notice, where there is no
    remembered address — whoever opened the link may never have had this
    app open before. */
-async function resendFromNotice(){
+async function resendFromNotice(recovery){
   const email=$('authEmail').value.trim();
   if(!email){
     setAuthError('Enter your email above, then press it again.');
     $('authEmail').focus();
     return;
   }
-  const ok=await sendConfirmationEmail(email,null,$('authError'));
+  const ok=recovery
+    ? await sendRecoveryEmail(email,null,$('authError'))
+    : await sendConfirmationEmail(email,null,$('authError'));
   if(ok){
     setAuthNotice('<strong>Sent.</strong>A new link is on its way to '+esc(email)+'.',true);
     setAuthError('');
   }
+}
+
+/* ==============================================================
+   RESETTING A PASSWORD
+
+   Until this existed, a forgotten password was total account loss:
+   there was no way to ask for a link and no screen to set a new one.
+
+   It is deliberately built out of the machinery already here rather
+   than beside it, because it is the *same* round trip as confirming an
+   address — out of the app, through a mail client, very often onto a
+   different device, and back. So it inherits every floor that section
+   put under that trip: the same reader, the same verifyOtp(), the same
+   failure notice, the same per-address cooldown, the same rate-limit
+   wording.
+
+   THE TEMPLATE IS CONFIGURED IN THE DASHBOARD, exactly like the
+   confirmation one, and getting it wrong fails the same silent way:
+
+       Authentication → Emails → Reset password
+
+       {{ .SiteURL }}/index.html?token_hash={{ .TokenHash }}&type=recovery
+
+   That is what makes a reset link work on a device other than the one
+   that asked for it — which here is the *normal* case, because someone
+   who cannot get in on their phone will very often go and ask from a
+   laptop. The default {{ .ConfirmationURL }} comes back as ?code=, and
+   with PKCE that exchange needs the verifier written to localStorage in
+   the browser that made the request; anywhere else it fails with "both
+   auth code and code verifier should be non-empty".
+
+   It also carries `type=recovery`, which is the only thing that tells
+   this client the landing is a reset rather than a confirmation. On the
+   ?code= path there is nothing in the URL that says so, so such a link
+   signs the person in and drops them in the app with their old password
+   unchanged — recoverable (they can ask again from a browser that
+   works) but not what they asked for. One more reason to set the
+   template.
+
+   Where the person lands is the last step of the reset, not a gate in
+   front of the app: verifyOtp() has already established a session by
+   the time the panel is drawn, so a reload from there simply goes in.
+   That is the escape hatch, and it is why there is no "skip" button to
+   explain.
+   ============================================================== */
+
+/* Mirrors Authentication → Providers → Email → Minimum password length,
+   which is 6 by default. Checked here only to spend a round trip on
+   something the server would refuse anyway. */
+const PASSWORD_MIN=6;
+
+/* Asking for the link. Shares confirmResendAt with the confirmation
+   resend deliberately — Supabase rate-limits per address across both,
+   so two independent cooldowns would only manufacture a failure. */
+async function sendRecoveryEmail(email,btn,errEl){
+  const say=msg=>{ if(errEl) errEl.textContent=msg; };
+  if(!email){ say('Enter your email first.'); return false; }
+  const wait=Math.ceil((confirmResendAt-Date.now())/1000);
+  if(wait>0){ say('Just a moment — try again in '+wait+'s.'); return false; }
+
+  const label=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  say('');
+  let ok=false;
+  try{
+    const{error}=await sb.auth.resetPasswordForEmail(email,{
+      redirectTo:confirmRedirectUrl(),
+    });
+    if(error) throw error;
+    confirmResendAt=Date.now()+RESEND_COOLDOWN;
+    ok=true;
+  }catch(e){
+    say(authErrorText(e,'Could not send that email.'));
+  }
+  if(btn){ btn.disabled=false; btn.textContent=label; }
+  return ok;
+}
+
+/* The "Forgot password?" link under the sign-in button.
+
+   It answers the same way whether or not the address has an account,
+   which is not politeness either: replying "no such account" would turn
+   this form into a way to test whether any given person has signed up
+   here. Supabase's own endpoint is silent for the same reason, so there
+   is nothing to report even if we wanted to. */
+async function requestPasswordReset(){
+  const email=$('authEmail').value.trim();
+  if(!email){
+    setAuthError('Enter your email above, then press it again.');
+    $('authEmail').focus();
+    return;
+  }
+  const ok=await sendRecoveryEmail(email,null,$('authError'));
+  if(ok){
+    setAuthError('');
+    setAuthNotice('<strong>Check your email.</strong>'
+      +'A link to set a new password is on its way to '+esc(email)+'.',true);
+  }
+}
+
+/* Where a recovery link lands, called from main.js instead of showApp().
+   The session is already live — see the block comment above. */
+function showPasswordReset(){
+  recoveryLanding=false;
+  $('authPage').style.display='flex';
+  $('appWrap').style.display='none';
+  $('authTitle').textContent='Set a new password';
+  /* The account being reset, not an instruction. On a shared device it
+     is the one thing worth saying, and the link may well have been
+     opened by someone who has two addresses here. */
+  $('authSub').textContent=(currentUser&&currentUser.email)||'';
+  setAuthError('');
+  setAuthNotice('');
+  $('authResetError').textContent='';
+  $('authNewPass').value='';
+  $('authNewPass2').value='';
+  setAuthView('reset');
+  updateAuthInviteNotice();
+  pwaUpdateOnlineState();
+}
+
+async function savePasswordReset(){
+  const a=$('authNewPass').value, b=$('authNewPass2').value;
+  const err=$('authResetError');
+  const say=m=>{ err.textContent=m||''; };
+  if(!a){ say('Enter a new password.'); return; }
+  if(a.length<PASSWORD_MIN){ say('Use at least '+PASSWORD_MIN+' characters.'); return; }
+  if(a!==b){ say('Those two don’t match.'); shakeEl($('authNewPass2')); return; }
+
+  const btn=$('authResetBtn');
+  const label=btn.textContent;
+  btn.disabled=true; btn.textContent='…';
+  say('');
+  try{
+    const{data,error}=await sb.auth.updateUser({password:a});
+    if(error) throw error;
+    if(data&&data.user) currentUser=data.user;
+    $('authNewPass').value='';
+    $('authNewPass2').value='';
+    setAuthView('form');
+    applyAuthMode();
+    /* Arriving here means a real authentication just happened, which is
+       one of the two things that make an invite sweep worth a round
+       trip — see inviteSweepDue(). */
+    authJustAuthenticated=true;
+    await showApp();
+    showToast('Password updated.');
+  }catch(e){
+    say(authErrorText(e,'Could not set that password.'));
+    btn.disabled=false; btn.textContent=label;
+    return;
+  }
+  btn.disabled=false; btn.textContent=label;
 }
 
 /* ==============================================================
@@ -908,5 +1120,10 @@ async function handleSignOut(){
   sb.auth.stopAutoRefresh();
   await sb.auth.signOut();
   currentUser=null;
+  /* Drop the screen's URL too. A lapsed session deliberately keeps it —
+     the same person signs back in and lands where they were — but an
+     explicit sign-out on a shared device must not leave the previous
+     account's collection sitting in the address bar. */
+  routeClear();
   showAuth();
 }

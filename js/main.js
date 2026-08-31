@@ -43,8 +43,17 @@ function paintStaticIcons(){
   set('listPickerSearchIcon',icon('search'));
   set('listPickerNewIcon',icon('plus'));
   set('meInstallChevron',icon('chevron-right'));
-  const lead=document.querySelector('#page-me .li-blue');
-  if(lead) lead.innerHTML=icon('share');
+  /* Addressed by id rather than by "the first .li-blue in #page-me",
+     which is what this used to do — the Legal rows added a second one
+     and a querySelector that depends on source order is a trap waiting
+     for the next row somebody adds. */
+  set('meInstallIcon',icon('share'));
+  set('meBlockedIcon',icon('circle'));
+  set('meBlockedChevron',icon('chevron-right'));
+  set('mePrivacyIcon',icon('flag'));
+  set('mePrivacyChevron',icon('chevron-right'));
+  set('meTermsIcon',icon('rows'));
+  set('meTermsChevron',icon('chevron-right'));
 }
 
 /* ==============================================================
@@ -151,6 +160,18 @@ function hasStoredSession(){ return !!readStoredSession(); }
        new account has been signed in anywhere. showApp() checks this
        via inviteSweepDue(). See js/auth.js. */
     if(confirmed) authJustAuthenticated=true;
+    /* A recovery link signs the person in exactly like a confirmation
+       one — the difference is that they came here to change something,
+       and dropping them straight into the app would leave the old
+       password in place with nothing on screen to say the trip through
+       their inbox had a second half. showPasswordReset() is the last
+       step of the reset, not a gate: the session is already live, so a
+       reload from it goes in. See RESETTING A PASSWORD in js/auth.js. */
+    if(recoveryLanding){
+      showPasswordReset();
+      document.body.classList.remove('booting');
+      return;
+    }
     /* Awaited so the splash holds until Home has actually painted.
        showApp() primes the cache from the disk snapshot before its
        first render (see the note there), which is a few milliseconds

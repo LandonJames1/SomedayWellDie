@@ -153,6 +153,18 @@
       --gx-l: calc(var(--gutter) + var(--safe-left));
       --gx-r: calc(var(--gutter) + var(--safe-right));
       --chrome-top:    calc(var(--nav-h) + var(--safe-top));
+      /* How far below the status bar / notch every screen's content
+         starts. ONE number, used by root tabs and pushed screens alike,
+         so the two can never drift — they used to differ by 14px in a
+         browser, where --safe-top is 0 and the pushed rule's floor
+         applied but the root rule's did not.
+
+         It cannot go below --nav-h (44px) without the back button on a
+         pushed screen overlapping the content beneath it, so the max()
+         is a floor rather than a preference. Change the 40 to retune
+         every screen at once. */
+      --page-gap:      28px;
+      --page-top:      calc(var(--safe-top) + var(--page-gap));
       --chrome-bottom: calc(var(--tab-h) + var(--tab-inset));
 
       --ease: cubic-bezier(.32,.72,0,1);

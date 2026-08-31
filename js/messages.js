@@ -542,7 +542,23 @@ function paintConversation(){
     : '';
   let lastDay='',prev=null;
 
-  for(const m of _convMsgs){
+  /* A blocked person's messages are dropped here rather than at the
+     query, deliberately: they are still legitimately readable by a
+     member of this list, and a select policy that hid them would let
+     an author discover a block by watching their own words disappear
+     for one reader. See js/moderation.js. Dropping them at paint time
+     also means unblocking repaints rather than refetches. */
+  const shown=_convMsgs.filter(m=>!isBlocked(m.sender_id));
+
+  if(!shown.length){
+    scroll.innerHTML=`<div class="empty">${icon('message')}
+      <div class="empty-title">Nothing to show</div>
+      <div class="empty-sub">Every message here is from someone you blocked.</div>
+    </div>`;
+    return;
+  }
+
+  for(const m of shown){
     const day=msgDayLabel(m.created_at);
     if(day!==lastDay){
       h+=`<div class="msg-day"><span>${esc(day)}</span></div>`;
@@ -942,6 +958,29 @@ function openMessageMenu(id){
   if(mine||owner) items.push({label:'Delete message',icon:'trash',role:'destructive',
     onSelect:()=>deleteMessage(m.id)});
 
+  /* Reporting and blocking are offered on somebody else's message and
+     never on your own — there is nothing to report yourself for, and
+     blocking yourself is refused anyway. A message from a deleted
+     account has no uid left to act on, so it can be reported (the
+     snapshot is the point) but not blocked. */
+  if(!mine&&moderationReady()){
+    items.push({label:'Report message',icon:'flag',role:'destructive',
+      onSelect:()=>openReportSheet({
+        kind:'message',
+        id:m.id,
+        reportedId:m.sender_id,
+        reportedName:msgSenderLabel(m.sender_id,m.sender_name),
+        collectionId:m.collection_id,
+        /* The snapshot is why a report survives the author deleting
+           the message the moment they are reported. */
+        snapshot:m.body||'',
+        label:'this message',
+      })});
+    if(m.sender_id) items.push({label:'Block '+msgSenderLabel(m.sender_id,m.sender_name),
+      icon:'circle',role:'destructive',
+      onSelect:()=>confirmBlockUser(m.sender_id,msgSenderLabel(m.sender_id,m.sender_name))});
+  }
+
   showActionSheet({title:msgSenderLabel(m.sender_id,m.sender_name),items});
 }
 
@@ -1130,6 +1169,21 @@ function openConversationMenu(){
   items.push({label:_convMuted?'Unmute notifications':'Mute notifications',
     icon:_convMuted?'circle':'check-circle',
     onSelect:()=>toggleConversationMute()});
+  /* A whole conversation can be reported, not only one message in it —
+     a list somebody has filled with abuse is not well described by
+     reporting the most recent line of it. Not offered on your own
+     list: the control there is deleting it. */
+  if(moderationReady()&&!ownsCollection(_convList)){
+    items.push({label:'Report this list',icon:'flag',role:'destructive',
+      onSelect:()=>openReportSheet({
+        kind:'collection',
+        id:_convList.id,
+        collectionId:_convList.id,
+        reportedId:_convList.ownerId||null,
+        snapshot:_convList.name||'',
+        label:'“'+(_convList.name||'this list')+'”',
+      })});
+  }
   showActionSheet({title:_convList.name,items});
 }
 

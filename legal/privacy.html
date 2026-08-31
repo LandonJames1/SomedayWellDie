@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Privacy Policy — Someday We&rsquo;ll Die</title>
+<link rel="stylesheet" href="_style.css"/>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Someday We&rsquo;ll Die</p>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated 31 August 2026</p>
+
+  <p>Someday We&rsquo;ll Die is an app for keeping track of things you want to
+  do and things you have done. This policy explains what it stores, who it is
+  sent to, and how to get rid of it. It is written to be read rather than
+  survived.</p>
+
+  <div class="note">
+    <p><strong>The short version.</strong> Your lists, photos and messages are
+    stored so the app can show them back to you and to people you deliberately
+    share a list with. They are not sold, not used for advertising, and not
+    used to train anybody&rsquo;s models. You can delete the whole account, and
+    everything in it, from inside the app.</p>
+  </div>
+
+  <h2>1. Who is responsible</h2>
+  <p>The app is operated by <strong>Landon James</strong>,
+  <strong>7474 SW 49th Ct</strong>. Questions, requests and complaints go to
+  <strong>landon.talus@gmail.com</strong>.</p>
+
+  <h2>2. What is stored</h2>
+
+  <h3>Because you typed it</h3>
+  <ul>
+    <li><strong>Account details</strong> — your email address, display name and
+    username. The email address is how you sign in and how a password reset
+    reaches you.</li>
+    <li><strong>Your lists and activities</strong> — names, notes, target dates,
+    priorities, links, and how an activity went once you finished it.</li>
+    <li><strong>Photos and video</strong> you attach to a completed activity,
+    and a profile photo if you set one.</li>
+    <li><strong>Places</strong> — a location on an activity, and one saved home
+    address if you set one. Both are stored as text and as coordinates.</li>
+    <li><strong>Messages and notes</strong> you write in a shared list.</li>
+    <li><strong>The &ldquo;About you&rdquo; paragraph</strong>, if you write
+    one. It is used for one thing only, described in section 4.</li>
+  </ul>
+
+  <h3>Because the app needs it to work</h3>
+  <ul>
+    <li><strong>A session token</strong>, so you stay signed in.</li>
+    <li><strong>A push subscription</strong> if you turn on reminders — an
+    anonymous endpoint issued by your browser or device, plus which browser it
+    was, so an old one can be recognised and removed.</li>
+    <li><strong>Read state</strong> for conversations, so unread counts work.</li>
+    <li><strong>A copy of your data on your own device</strong>, so the app
+    works offline. It is deleted when you sign out.</li>
+  </ul>
+
+  <h3>What is deliberately not collected</h3>
+  <ul>
+    <li>No analytics, no tracking pixels, no advertising identifiers, and no
+    third-party trackers of any kind.</li>
+    <li>No contacts, no calendar, no health data, no browsing history.</li>
+    <li><strong>No background location.</strong> The app asks for your location
+    only if you tap <em>Current location</em> while choosing a place, and it is
+    used for that one search and not stored.</li>
+    <li>Photo metadata is read <em>on your device</em> to offer a location for
+    a photo you just attached. If you decline the offer, nothing is stored.</li>
+  </ul>
+
+  <h2>3. Who it is sent to</h2>
+  <p>The app runs on a small number of services. Each one receives only what it
+  needs to do its job.</p>
+
+  <div class="wrap">
+  <table>
+    <tr><th>Service</th><th>What it receives</th><th>Why</th></tr>
+    <tr>
+      <td>Supabase</td>
+      <td>Your account, lists, activities, messages and notes</td>
+      <td>Database and sign-in. This is where your data lives.</td>
+    </tr>
+    <tr>
+      <td>Cloudflare R2</td>
+      <td>Photos and video you attach</td>
+      <td>Storage and delivery of media.</td>
+    </tr>
+    <tr>
+      <td>HERE</td>
+      <td>What you type into a place field, and an approximate area to search near</td>
+      <td>Finding places. Requests are proxied by our own server, so HERE does not see your IP address or who you are.</td>
+    </tr>
+    <tr>
+      <td>OpenStreetMap / Nominatim</td>
+      <td>A place name, or coordinates from a photo</td>
+      <td>A fallback place lookup, and turning coordinates into a place name.</td>
+    </tr>
+    <tr>
+      <td>Anthropic</td>
+      <td>The name of an activity you are creating, your home city, your &ldquo;About you&rdquo; paragraph, and difficulty ratings already on your activities</td>
+      <td>Guessing where an activity is and how hard it is. See section 4.</td>
+    </tr>
+    <tr>
+      <td>CARTO</td>
+      <td>Which part of the map you are looking at</td>
+      <td>Map tiles.</td>
+    </tr>
+    <tr>
+      <td>Google Fonts</td>
+      <td>A request for two typefaces</td>
+      <td>The app&rsquo;s type. Cached after the first visit.</td>
+    </tr>
+    <tr>
+      <td>Apple / Google push services</td>
+      <td>An anonymous endpoint and the notification text</td>
+      <td>Delivering a reminder or a message notification.</td>
+    </tr>
+  </table>
+  </div>
+
+  <p>Nothing is sold. Nothing is shared with advertisers or data brokers. Data
+  is disclosed to anyone else only if the law requires it, and only to the
+  extent it requires.</p>
+
+  <h2>4. About the AI features</h2>
+  <p>When you create an activity, the app sends its <strong>name</strong> to
+  Anthropic&rsquo;s Claude API to guess two things: whether the name identifies
+  a specific place, and roughly how hard the activity would be for you. To
+  judge the second it also sends your <strong>home city</strong>, your
+  <strong>&ldquo;About you&rdquo; paragraph</strong> if you wrote one, and a
+  small sample of activities you already have with the ratings they carry.</p>
+  <ul>
+    <li>It happens when you create an activity, not when you edit one.</li>
+    <li>Your photos, messages, notes and email address are never sent.</li>
+    <li>Anthropic does not use data submitted through its API to train its
+    models.</li>
+    <li>If you leave &ldquo;About you&rdquo; empty, nothing about you personally
+    is sent beyond a home city.</li>
+  </ul>
+
+  <h2>5. Shared lists</h2>
+  <p>Sharing a list is a deliberate act: you create an invite and send it to
+  someone. Once they accept, <strong>everyone in that list can see the list, its
+  activities, the photos and notes attached to them, and the conversation</strong>,
+  along with your display name and profile photo. They cannot see your email
+  address, your home address, or anything in your other lists.</p>
+  <p>A message you send stays in the conversation for the other members even if
+  you later delete your account, because removing one side of a discussion
+  makes it unreadable for the people who had it. It is shown as coming from a
+  deleted account.</p>
+
+  <h2>6. How long it is kept</h2>
+  <ul>
+    <li><strong>While your account exists</strong> — your lists, activities,
+    media and messages are kept until you delete them or delete the account.</li>
+    <li><strong>Deleted media</strong> — removing a photo from an activity
+    removes it from the activity immediately; the stored file is cleared
+    separately during periodic maintenance.</li>
+    <li><strong>Invites</strong> expire after 30 days.</li>
+    <li><strong>Reports</strong> of content are kept after review so that
+    repeated behaviour can be recognised.</li>
+  </ul>
+
+  <h2>7. Your choices</h2>
+  <ul>
+    <li><strong>Delete everything.</strong> You &rarr; Delete Account. It removes
+    your account, your lists, your activities, your media and your reminders. A
+    list you own and shared is deleted for everyone in it; a list you joined is
+    simply left, and the other members keep it. This cannot be undone.</li>
+    <li><strong>Get a copy.</strong> Email <strong>landon.talus@gmail.com</strong> and
+    we will send you your data in a machine-readable format.</li>
+    <li><strong>Correct something.</strong> Almost everything is editable in the
+    app; anything that is not, we will fix on request.</li>
+    <li><strong>Turn off notifications</strong> in your device settings at any
+    time, or mute one conversation from inside it.</li>
+  </ul>
+  <p>If you are in the UK, EU, or a US state with a privacy statute, these
+  rights are yours by law and this is how to use them. We answer within 30 days.
+  You may also complain to your local data protection authority.</p>
+
+  <h2>8. Security</h2>
+  <p>Data is encrypted in transit. Database access is enforced per-account at
+  the database level, so one account cannot read another&rsquo;s rows. Passwords
+  are stored hashed by our authentication provider and are never visible to us.
+  No system is perfect; if something goes wrong that affects you, we will tell
+  you.</p>
+
+  <h2>9. Children</h2>
+  <p>The app is not intended for children under 13, and accounts are not
+  knowingly created for them. If you believe a child has created one, contact
+  us and it will be removed.</p>
+
+  <h2>10. Where data is held</h2>
+  <p>Data is stored on servers operated by the providers in section 3, which may
+  be located outside your country. Transfers out of the UK and EEA rely on the
+  providers&rsquo; standard contractual clauses.</p>
+
+  <h2>11. Changes</h2>
+  <p>If this policy changes in a way that matters, the date at the top changes
+  and the app tells you the next time you open it.</p>
+
+  <footer>
+    <p><a href="terms.html">Terms of Use</a> &middot; <a href="../index.html">Back to the app</a></p>
+  </footer>
+</main>
+</body>
+</html>
