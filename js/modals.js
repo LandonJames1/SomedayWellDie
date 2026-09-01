@@ -46,6 +46,12 @@ const _sheetReturns={};
 
 function onSheetClose(id,fn){ _sheetReturns[id]=fn; }
 
+/* Whether dismissing this sheet will put something else back on screen.
+   Asked by a Save handler that wants to reveal something afterwards:
+   with a return already registered, revealing would stack a second
+   sheet on top of the one coming back. */
+function sheetHasReturn(id){ return typeof _sheetReturns[id]==='function'; }
+
 function afterSheetClosed(id){
   /* The activity sheet is the one overlay with a URL, so it is the one
      that has to give it back. This runs before the return below,
@@ -105,6 +111,7 @@ document.addEventListener('keydown',e=>{
 
    It only fires when the room is genuinely missing, and is released as
    soon as the field is done with.
+
    ============================================================== */
 const PICKER_ROOM=310;
 

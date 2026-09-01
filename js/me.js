@@ -9,9 +9,6 @@
 async function renderMe(){
   /* Identity first — it needs no network beyond the cached profile. */
   renderMeIdentity();
-  renderMeNotifications();
-  renderMeHome();
-  renderMeSafety();
 
   const lists=await fetchCollections();
   const allActs=await fetchAllActivities(lists);
@@ -32,6 +29,29 @@ async function renderMe(){
       <span>${done} of ${total}</span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+}
+
+/* The Settings screen, pushed from the You tab's gear button. It is a
+   render function here rather than a js/settings.js of its own: every
+   row on it is drawn by something already in this file, and a new file
+   would be four lines calling five functions that live next door.
+   Everything it touches -- notifications, Home, About you, Safety, the
+   install row -- is below. */
+function renderSettings(){
+  renderMeNotifications();
+  renderMeHome();
+  renderMeSafety();
+  renderMeInstallRow();
+}
+
+/* Add to Home Screen is a browser-tab affordance. Inside the native
+   app it is already an icon on a home screen, so the row is nonsense
+   there -- and an installed PWA is in the same position. Hidden rather
+   than deleted so the web version keeps it. */
+function renderMeInstallRow(){
+  const row=$('meInstallRow');
+  if(!row) return;
+  row.style.display=(typeof isStandalone==='function'&&isStandalone())?'none':'';
 }
 
 /* The Safety section — Blocked People, and the count on it. The two

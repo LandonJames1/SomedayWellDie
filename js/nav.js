@@ -11,7 +11,7 @@
 /* Which tab each screen belongs to, so the right tab stays lit while
    a pushed screen is showing. */
 const PAGE_TAB={home:'home',lists:'lists',globalmap:'map',me:'me',detail:'lists',
-  upnext:'home',done:'home',
+  upnext:'home',done:'home',settings:'me',
   messages:'messages',conversation:'messages'};
 
 function nav(page,listId){
@@ -32,7 +32,7 @@ function nav(page,listId){
   if(page==='detail'&&prev!=='detail') curView='list';
 
   /* Pushed screens slide in from the right; switching tabs cross-fades. */
-  const PUSHED=['detail','upnext','done','conversation'];
+  const PUSHED=['detail','upnext','done','conversation','settings'];
   const pushing = PUSHED.includes(page) && !PUSHED.includes(prev);
   if(pushing) backTab=curTab;
   /* One pushed screen opening another that belongs to a DIFFERENT tab.
@@ -135,6 +135,7 @@ const RENDERERS={
   detail:()=>renderDetail(),
   globalmap:()=>renderGlobalMap(),
   me:()=>renderMe(),
+  settings:()=>renderSettings(),
   messages:()=>renderMessages(),
   conversation:()=>renderConversation(),
 };
@@ -288,6 +289,14 @@ function updateNavbar(){
     title.textContent='The Map';   /* the map has its own floating controls */
   } else if(curPage==='me'){
     title.textContent='You';
+    /* Everything that is a preference rather than a fact about you now
+       lives one screen down. A disc in the bar rather than a row at the
+       foot of the list: it is the same shape every other icon bar
+       button in the app uses, and it does not scroll away. */
+    right.innerHTML=`<button class="navbtn disc ghost" onclick="nav('settings')" aria-label="Settings">${icon('sliders')}</button>`;
+  } else if(curPage==='settings'){
+    title.textContent='Settings';
+    left.innerHTML=`<button class="navbtn back" onclick="nav('me')">${icon('chevron-left')}<span>You</span></button>`;
   }
   setFab(fabFn,fabLabel);
   applyNavCondense();
@@ -367,11 +376,40 @@ window.addEventListener('scroll',queueNavCondense,{passive:true});
    so closing one overlay cannot unfreeze the page under another.
    ============================================================== */
 function setBodyScrollLock(lock){
-  if(lock){document.body.style.overflow='hidden';return;}
+  if(lock){document.body.style.overflow='hidden';nativeScrollLock(true);return;}
   if(document.querySelector('.modal-overlay.open'))return;
   if($('actionSheet').classList.contains('open'))return;
   if($('lightbox').classList.contains('open'))return;
   document.body.style.overflow='';
+  nativeScrollLock(false);
+}
+
+/* ==============================================================
+   THE NATIVE HALF OF THE SCROLL LOCK
+
+   `overflow: hidden` is a CSS instruction and the iOS shell is not
+   obliged to honour it. Inside the Capacitor WKWebView the page lives
+   in a native scroll view, and when the keyboard opens iOS scrolls
+   THAT to keep the caret visible — which drags the whole page,
+   including anything `position: fixed`, and is why an open sheet
+   appeared to lift off the bottom of the screen and why the list
+   behind it could still be scrolled through the gap.
+
+   @capacitor/keyboard's setScroll pins that scroll view's offset at
+   zero, which is the only thing that actually stops it. It is applied
+   HERE rather than at boot because it disables the app's own page
+   scrolling too — which is exactly what is wanted while a sheet is
+   open and exactly what is not wanted the rest of the time. Sheet
+   bodies are ordinary overflow scrollers inside the page, so they are
+   unaffected.
+
+   Absent in a browser — window.Capacitor only exists in the native
+   shell — so every guard here is load-bearing rather than defensive.
+   ============================================================== */
+function nativeScrollLock(lock){
+  const kb=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.Keyboard;
+  if(!kb||!kb.setScroll)return;
+  Promise.resolve(kb.setScroll({isDisabled:!!lock})).catch(()=>{});
 }
 
 /* ==============================================================
@@ -397,10 +435,10 @@ function setBodyScrollLock(lock){
      behaviour we are trying to produce. Applying the correction there
      as well would push the bar *below* the bottom of the screen by a
      whole keyboard's height.
-   - **The tab bar and nothing else.** Bottom-anchored sheets *should*
-     rise with the keyboard — that is the entire reason they are
-     bottom-anchored, so a focused field stays put while the keyboard
-     resizes the viewport. They are deliberately untouched.
+   - **The tab bar and nothing else.** Bottom-anchored sheets are held
+     in place by CSS instead — see THE KEYBOARD AND AN OPEN SHEET in
+     modals.css. The conversation composer is *meant* to ride up and is
+     handled in messages.js.
    - **translate3d, not translateY.** The bar carries
      `transform: translateZ(0)` in CSS to force its own layer, without
      which iOS repaints it late during momentum scrolling and it

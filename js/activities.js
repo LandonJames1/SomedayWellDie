@@ -296,8 +296,13 @@ function renderCompMediaCard(){
   sum.textContent=!n?'Add a photo or video'
     :n===1?'1 item':`Cover +${n-1} more`;
   if(chev) chev.innerHTML=icon(n?'chevron-right':'plus');
+  /* Both live in the swapped-in bar. Painted here rather than in
+     paintStaticIcons() because they only matter once a completion
+     sheet has been opened. */
   const back=$('compMediaBack');
   if(back&&!back.innerHTML) back.innerHTML=icon('chevron-left','ic-sm')+'Back';
+  const add=$('compMediaAdd');
+  if(add&&!add.innerHTML) add.textContent='Add';
 }
 
 /* Nothing attached yet means the page would be an empty grid and an Add
@@ -312,6 +317,12 @@ function compShowPane(which){
   Object.keys(panes).forEach(k=>{
     const el=$(panes[k]); if(el) el.classList.toggle('active',k===which);
   });
+  /* The bar is SWAPPED, not stacked. A sub-page drawing its own header
+     under the sheet's left two of them on screen at once, and nothing
+     said whether Cancel and Save still applied. */
+  const main=$('compBarMain'),media=$('compBarMedia');
+  if(main) main.style.display=which==='media'?'none':'';
+  if(media) media.style.display=which==='media'?'':'none';
   const body=document.querySelector('#compSheet .sheet-body');
   if(body) body.scrollTop=0;
 }
@@ -422,6 +433,12 @@ async function confirmComplete(){
     return;
   }
   const wasNew=compNew,src=compSrc;
+  const finishedId=compId;
+  /* Whether closing this sheet already puts something back on screen.
+     openCompFrom() registers a return to the activity sheet, so when
+     the completion was started from there, dismissing lands back on it
+     and the reveal below would be a second copy of the same sheet. */
+  const returns=sheetHasReturn('compSheet');
   closeModal('compSheet');
   compId=null;
   /* Both ends: a list gained needs recounting and so does one it was
@@ -430,6 +447,21 @@ async function confirmComplete(){
   if(wasNew){ confetti(); showToast(offline?'Accomplished — will sync later':'Accomplished'); }
   else showToast(offline?'Saved — will sync later':'Saved');
   refreshAfterChange(src);
+
+  /* THE MOMENT SOMETHING IS ACCOMPLISHED, SHOW WHAT WAS ACCOMPLISHED.
+     Completing used to close the sheet and leave you on the list you
+     started from, so the record you had just written -- the photos, the
+     date, how it went -- was somewhere you then had to go and find. It
+     is the one thing you want to look at, for the same reason
+     revealNewActivity() exists on the add path.
+
+     Only on a NEW completion: editing a record you are already looking
+     at should stay where it is. And only when nothing else is already
+     coming back, or the two would stack. The delay is the sheet's
+     dismissal animation, the same 240ms dupeOpenExisting() waits. */
+  if(wasNew&&finishedId&&!returns){
+    setTimeout(()=>openActDetail(finishedId),240);
+  }
 }
 
 /* The insert half of confirmComplete(). The id is minted client-side by
@@ -992,8 +1024,6 @@ async function openActDetail(id){
       <span class="ad-chip c-${pri}"><small>Priority</small>${cap(pri)}</span>
       ${diff?`<span class="ad-chip c-d-${esc(a.difficulty)}"><small>Difficulty</small>${esc(diff)}</span>`:''}
       ${target?`<span class="ad-chip c-target"><small>Target</small><b>${esc(target)}</b></span>`:''}
-      ${(()=>{const d=fmtDistance(a);return d
-        ?`<span class="ad-chip c-dist"><small>Distance</small>${esc(d)}</span>`:'';})()}
       <span class="ad-chip c-remind"><small>Remind</small>${a.remindAt?esc(fmtDate(a.remindAt)):'None'}</span>
     </div>`;
     if(a.location){

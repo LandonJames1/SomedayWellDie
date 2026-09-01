@@ -170,6 +170,12 @@ function inviteUrl(code){
    THE SHARE SHEET
    ============================================================== */
 let _shareListId=null,_shareInvite='',_shareMembers=[];
+/* The roster from collection_people(). null means the RPC is not
+   installed and _shareMembers is the fallback - see loadSharePeople(). */
+let _sharePeople=null;
+/* The username box's last answer, so the row can be drawn and then
+   acted on without looking the same person up twice. */
+let _shareFound=null,_shareLookupSeq=0;
 
 async function openShareList(){
   if(!sharingReady()){
@@ -190,69 +196,102 @@ async function openShareList(){
   }
 
   /* Reuse a live invite rather than minting one per visit. A list
-     with fourteen dead links in it is a list nobody can audit. */
+     with fourteen dead links in it is a list nobody can audit. The
+     link is no longer shown on this sheet -- adding by username is the
+     path now -- but it is still read, because revokeInvite() has to
+     know whether one is outstanding. */
   const{data:invites}=await sb.from('collection_invites')
     .select('code,revoked').eq('collection_id',l.id).eq('revoked',false).limit(1);
   if(invites&&invites.length) _shareInvite=invites[0].code;
 
-  const{data:members}=await sb.from('collection_members')
-    .select('user_id,display_name,role,created_at').eq('collection_id',l.id);
-  _shareMembers=members||[];
-
+  await loadSharePeople(l.id);
   renderShareList(l);
 }
 
+/* THE ROSTER.
+
+   collection_people() rather than a select on collection_members: that
+   table carries a snapshot display_name and nothing else, so the old
+   sheet could only ever draw "The owner" and a column of "Someone".
+   The RPC returns the real name, handle and photo for everybody in the
+   list, the owner included, scoped by can_use_collection(). See
+   supabase/people.sql.
+
+   It degrades: without the migration it falls back to exactly what the
+   sheet showed before, so a checkout that has not run people.sql keeps
+   working with the poorer roster rather than showing an error. */
+async function loadSharePeople(cid){
+  _sharePeople=null;
+  const{data,error}=await sb.rpc('collection_people',{cid});
+  if(error){
+    console.info('[sharing] collection_people missing - run supabase/people.sql '+
+      'for real names, handles and photos on the roster.');
+    const{data:members}=await sb.from('collection_members')
+      .select('user_id,display_name,role,created_at').eq('collection_id',cid);
+    _shareMembers=members||[];
+    return;
+  }
+  _sharePeople=data||[];
+}
+function peopleReady(){ return Array.isArray(_sharePeople); }
+
+/* THE SHARE SHEET IS A ROSTER NOW.
+
+   It used to be a wall of link machinery: the URL, Copy link & code,
+   Send it, the code on its own, Copy just the code, two paragraphs
+   explaining the difference, then the people at the bottom. Five
+   controls for one idea, and the one thing you actually wanted to know
+   - who is in this list - was last and unreadable.
+
+   So it is inverted. The people are the sheet. Adding somebody is one
+   field at the top, by exact username. The link still exists and is
+   still revocable, but it is not what this screen is about; the button
+   for it sits at the foot, under the roster.
+
+   See supabase/people.sql for why username lookup is exact and
+   case-insensitive rather than a search. */
 function renderShareList(l){
   const owner=ownsCollection(l);
-  const link=_shareInvite?inviteUrl(_shareInvite):'';
+  const people=sharePeopleRows(owner);
 
-  let h=`<p class="shr-lead">${owner
-    ? 'Anyone with this link can open &ldquo;'+esc(l.name)+'&rdquo; and add to it.'
-    : 'You were invited to &ldquo;'+esc(l.name)+'&rdquo;. Only its owner can invite others.'}</p>`;
+  let h='';
 
+  /* Adding, first, because it is why the sheet gets opened. Owner
+     only - a member cannot invite, which RLS enforces regardless. */
   if(owner){
-    h+= link
-      ? `<div class="shr-url" id="shareListUrl">${esc(link)}</div>
-         <button class="btn btn-filled btn-block" onclick="copyInviteLink()">
-           ${icon('link','ic-sm')}Copy link &amp; code</button>
-         ${navigator.share?`<button class="btn btn-tinted btn-block" onclick="sendInviteLink()">
-           ${icon('share','ic-sm')}Send it</button>`:''}
-         <!-- The same invite, as something that can be typed. A link
-              has to survive whatever app it is opened in; a code does
-              not. Both go into the message either button produces —
-              see inviteMessage(). -->
-         <div class="shr-code-head">The code, on its own</div>
-         <button class="shr-code" onclick="copyInviteCode()"
-                 aria-label="Copy the invite code">${esc(_shareInvite)}</button>
-         <button class="btn btn-tinted btn-block" onclick="copyInviteCode()">
-           ${icon('link','ic-sm')}Copy just the code</button>
-         <p class="shr-note">Paste it into its own message. They go to
-           Lists &rarr; Join a List and enter it.</p>
-         <button class="btn btn-plain btn-block" onclick="revokeInvite()">Turn the link off</button>`
-      : `<p class="shr-note">Sharing is off for this list. Creating a link lets
-           anyone who has it join.</p>
-         <button class="btn btn-filled btn-block" onclick="createInvite()">
-           ${icon('link','ic-sm')}Create an invite link</button>`;
+    /* No @ prefix on the field any more: it matches a display name as
+       readily as a handle, and a permanent @ in front of "Sam Rivera"
+       would be wrong. lookupShareUser() still strips a leading @, for
+       anyone who types or pastes one. */
+    h+=`<div class="shr-add">
+      <div class="shr-add-field">
+        <span class="shr-add-icon">${icon('search','ic-sm')}</span>
+        <input id="shareUserInput" autocapitalize="none" autocorrect="off"
+               spellcheck="false" enterkeyhint="search" placeholder="Username or name"
+               oninput="onShareUserInput()"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();lookupShareUser();}" />
+        <button class="shr-add-go" onclick="lookupShareUser()" aria-label="Find">${icon('chevron-right','ic-sm')}</button>
+      </div>
+      <div class="shr-add-result" id="shareUserResult"></div>
+    </div>`;
   }
 
-  /* The roster. The owner is not a member row — they are the owner —
-     so they are prepended rather than queried for. */
-  const people=[{name:owner?'You':'The owner',role:'owner'}]
-    .concat(_shareMembers.map(m=>({
-      name:(currentUser&&m.user_id===currentUser.id)?'You':(m.display_name||'Someone'),
-      role:m.role||'editor',
-      userId:m.user_id,
-    })));
-
   h+=`<div class="shr-people-head">${people.length} ${people.length===1?'person':'people'}</div>
-    <div class="group">${people.map(p=>`
-      <div class="row has-leading">
-        <span class="row-leading li-purple shr-avatar">${esc((p.name||'?').trim().charAt(0).toUpperCase())}</span>
-        <span class="row-body"><span class="row-title">${esc(p.name)}</span></span>
-        <span class="row-trailing"><span class="shr-role">${esc(cap(p.role))}</span>
-        ${owner&&p.userId?`<button class="shr-remove" onclick="removeMember('${p.userId}')"
-            aria-label="Remove ${esc(p.name)}">${icon('x','ic-xs')}</button>`:''}</span>
-      </div>`).join('')}</div>`;
+    <div class="group" id="sharePeopleList">${people.map(p=>sharePersonRowHTML(p,owner)).join('')}</div>`;
+
+  /* The link, demoted. It is still the only way to reach somebody who
+     has not made an account yet, so it cannot go - but it is the
+     second answer now, not the first. */
+  if(owner){
+    h+=`<div class="sheet-actions">`;
+    h+=_shareInvite
+      ? `<button class="btn btn-plain btn-block" onclick="copyInviteLink()">
+           ${icon('link','ic-sm')}Copy invite link</button>
+         <button class="btn btn-plain btn-block" onclick="revokeInvite()">Turn the link off</button>`
+      : `<button class="btn btn-plain btn-block" onclick="createInvite()">
+           ${icon('link','ic-sm')}Create an invite link</button>`;
+    h+=`</div>`;
+  }
 
   if(!owner){
     h+=`<div class="sheet-actions">
@@ -262,6 +301,159 @@ function renderShareList(l){
 
   $('shareListBody').innerHTML=h;
 }
+
+/* One shape for the roster whether it came from collection_people() or
+   from the old members query, so the row template below never has to
+   care which. */
+function sharePeopleRows(owner){
+  if(peopleReady()){
+    return _sharePeople.map(p=>({
+      userId:p.user_id,
+      name:(currentUser&&p.user_id===currentUser.id)?'You':(p.display_name||'Someone'),
+      username:p.username||'',
+      avatar:p.avatar_url||'',
+      role:p.role||'editor',
+      isOwner:!!p.is_owner,
+    }));
+  }
+  /* No people.sql: exactly what the sheet drew before. */
+  return [{name:owner?'You':'The owner',role:'owner',isOwner:true,username:'',avatar:''}]
+    .concat(_shareMembers.map(m=>({
+      userId:m.user_id,
+      name:(currentUser&&m.user_id===currentUser.id)?'You':(m.display_name||'Someone'),
+      username:'',avatar:'',
+      role:m.role||'editor',
+      isOwner:false,
+    })));
+}
+
+function shareAvatarHTML(p){
+  if(p.avatar) return `<span class="row-leading shr-avatar shr-avatar-img"><img src="${esc(p.avatar)}" alt=""/></span>`;
+  return `<span class="row-leading li-purple shr-avatar">${esc((p.name||'?').trim().charAt(0).toUpperCase())}</span>`;
+}
+
+/* The owner can never be removed - there would be nobody to own the
+   list - and you are not offered a button to remove yourself, because
+   Leave is that action and it says so. */
+function sharePersonRowHTML(p,owner){
+  const me=!!(currentUser&&p.userId===currentUser.id);
+  const canRemove=owner&&p.userId&&!p.isOwner&&!me;
+  return `<div class="row has-leading shr-person">
+    ${shareAvatarHTML(p)}
+    <span class="row-body">
+      <span class="row-title">${esc(p.name)}</span>
+      ${p.username?`<span class="row-sub">@${esc(p.username)}</span>`:''}
+    </span>
+    <span class="row-trailing">
+      <span class="shr-role">${esc(p.isOwner?'Owner':cap(p.role))}</span>
+      ${canRemove?`<button class="shr-remove" onclick="confirmRemoveMember('${esc(p.userId)}','${esc(p.name).replace(/'/g,'&#39;')}')"
+          aria-label="Remove ${esc(p.name)}">${icon('x','ic-xs')}</button>`:''}
+    </span>
+  </div>`;
+}
+
+/* ==============================================================
+   ADDING SOMEBODY BY USERNAME
+
+   Exact and case-insensitive, one answer or none - see the header of
+   supabase/people.sql for why this is deliberately not a search. The
+   field therefore does NOT look anybody up as you type: a per-keystroke
+   lookup of an exact match is a request that answers "no" for every
+   character but the last, and it would also be a way to probe handles
+   quickly. It answers on Enter, or on the button.
+   ============================================================== */
+function onShareUserInput(){
+  /* A stale answer must not sit under a field that has moved on. */
+  if(_shareFound){ _shareFound=null; $('shareUserResult').innerHTML=''; }
+}
+
+async function lookupShareUser(){
+  const el=$('shareUserInput');
+  if(!el) return;
+  const handle=(el.value||'').trim().replace(/^@+/,'');
+  const box=$('shareUserResult');
+  _shareFound=null;
+
+  if(handle.length<3){
+    box.innerHTML='<p class="shr-add-msg">Enter their full username or name.</p>';
+    return;
+  }
+  const seq=++_shareLookupSeq;
+  box.innerHTML='<div class="shr-add-msg"><span class="spinner"></span></div>';
+
+  const{data,error}=await sb.rpc('find_user_by_username',{handle});
+  if(seq!==_shareLookupSeq) return;
+
+  if(error){
+    console.info('[sharing] find_user_by_username missing - run supabase/people.sql');
+    box.innerHTML='<p class="shr-add-msg">Adding by username needs supabase/people.sql.</p>';
+    return;
+  }
+  const u=(data&&data[0])||null;
+  if(!u){
+    box.innerHTML='<p class="shr-add-msg">No account with that username or name.</p>';
+    return;
+  }
+  if(currentUser&&u.user_id===currentUser.id){
+    box.innerHTML='<p class="shr-add-msg">That is you.</p>';
+    return;
+  }
+  if(sharePeopleRows(true).some(p=>p.userId===u.user_id)){
+    box.innerHTML=`<p class="shr-add-msg">${esc(u.display_name||u.username)} is already in this list.</p>`;
+    return;
+  }
+
+  _shareFound=u;
+  box.innerHTML=`<div class="row has-leading shr-found">
+    ${shareAvatarHTML({name:u.display_name||u.username,avatar:u.avatar_url||''})}
+    <span class="row-body">
+      <span class="row-title">${esc(u.display_name||'Someone')}</span>
+      <span class="row-sub">@${esc(u.username||'')}</span>
+    </span>
+    <button class="btn btn-tinted btn-sm" onclick="addShareUser()">Add</button>
+  </div>`;
+}
+
+async function addShareUser(){
+  const u=_shareFound;
+  if(!u||!_shareListId) return;
+  const box=$('shareUserResult');
+  box.innerHTML='<div class="shr-add-msg"><span class="spinner"></span></div>';
+
+  const{error}=await sb.rpc('add_collection_member',{cid:_shareListId,target:u.user_id});
+  if(error){
+    console.error('addShareUser:',error);
+    box.innerHTML=`<p class="shr-add-msg">${esc(error.message||'Could not add them.')}</p>`;
+    return;
+  }
+
+  _shareFound=null;
+  $('shareUserInput').value='';
+  box.innerHTML='';
+  showToast((u.display_name||u.username)+' added');
+
+  /* Membership decides which lists have a conversation and which are
+     badged as shared, so both caches have to go. */
+  invalidateSharedIds();
+  if(typeof refreshConversations==='function') refreshConversations();
+
+  await loadSharePeople(_shareListId);
+  const l=await fetchCollection(_shareListId);
+  if(l) renderShareList(l);
+  refreshAfterChange();
+}
+
+/* Removing somebody takes their access away, so it is confirmed the
+   way every other destructive action in the app is. */
+function confirmRemoveMember(uid,name){
+  showConfirm({
+    title:'Remove '+name+'?',
+    message:'They lose access to this list and everything in it. Anything they added stays.',
+    confirmLabel:'Remove',
+    onConfirm:()=>removeMember(uid),
+  });
+}
+
 
 async function createInvite(){
   const code=makeInviteCode();
@@ -348,24 +540,24 @@ async function sendInviteLink(){
   }catch(e){ /* the user dismissed the share sheet */ }
 }
 
+/* The confirm lives in confirmRemoveMember(), which knows the person's
+   name and can say it. This does the work. */
 async function removeMember(userId){
-  showConfirm({
-    title:'Remove them',
-    message:'They lose access to this list. Anything they added stays.',
-    confirmLabel:'Remove',
-    onConfirm:async()=>{
-      const{error}=await sb.from('collection_members').delete()
-        .eq('collection_id',_shareListId).eq('user_id',userId);
-      if(error){showToast(error.message||'Couldn’t remove them.');return;}
-      _shareMembers=_shareMembers.filter(m=>m.user_id!==userId);
-      invalidateSharedIds();
-      /* Membership decides which lists have a conversation at all. */
-      refreshConversations();
-      const l=await fetchCollection(_shareListId);
-      renderShareList(l);
-      showToast('Removed');
-    },
-  });
+  const{error}=await sb.from('collection_members').delete()
+    .eq('collection_id',_shareListId).eq('user_id',userId);
+  if(error){showToast(error.message||'Couldn’t remove them.');return;}
+  _shareMembers=_shareMembers.filter(m=>m.user_id!==userId);
+  invalidateSharedIds();
+  /* Membership decides which lists have a conversation at all. */
+  refreshConversations();
+  /* The roster is what the sheet draws now, so it has to be re-read -
+     filtering _shareMembers alone leaves the removed person on screen
+     whenever collection_people() is the source. */
+  await loadSharePeople(_shareListId);
+  const l=await fetchCollection(_shareListId);
+  if(l) renderShareList(l);
+  showToast('Removed');
+  refreshAfterChange();
 }
 
 /* ==============================================================

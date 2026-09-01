@@ -119,6 +119,17 @@
          will be the one that vanishes in dark mode. */
       --ring: 0 0 0 .5px var(--separator);
 
+      /* A BOX YOU TYPE IN NEEDS MORE EDGE THAN A CARD DOES.
+         --ring is a half-pixel hairline, which is right for a surface
+         resting on the page and far too faint for a field: on the New
+         List sheet you genuinely could not see where the name box
+         ended and the sheet began. A field is an invitation to act, so
+         it gets a full pixel of a stronger colour. Reach for
+         var(--field-ring) on anything editable and var(--ring) on
+         everything else. */
+      --field-edge: rgba(60,48,32,.19);
+      --field-ring: 0 0 0 1px var(--field-edge);
+
       /* ---- Depth ----
          Warm-tinted rather than neutral black, so shadows sit on the
          parchment instead of greying it. */
@@ -204,6 +215,11 @@
         --separator:       rgba(206,193,167,.26);
         --separator-solid: #423b31;
         --ring:            0 0 0 1px var(--separator);
+        /* Lighter than the light-mode value rather than darker: the
+           edge has to separate the field from a near-black behind it,
+           so it works by being brighter, not by being denser. */
+        --field-edge:      rgba(206,193,167,.34);
+        --field-ring:      0 0 0 1px var(--field-edge);
 
         --tint:            #d98f5c;
         --tint-strong:     #e5a273;

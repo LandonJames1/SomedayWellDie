@@ -55,18 +55,54 @@ A label, a placeholder, and nothing else. When in doubt, delete it.
 Explanations belong in *this file*, where the next person editing the
 code reads them, not on the user's screen.
 
-**2. THE BOTTOM TAB BAR MUST NEVER MOVE WHEN THE KEYBOARD OPENS.**
-Focusing any field anywhere — the message composer above all — must
-leave `.tabbar` exactly where it was. iOS re-anchors fixed elements to
-the *visual* viewport when the software keyboard opens, which lifts the
-bar on top of the keyboard. `syncTabbarToKeyboard()` in `nav.js` undoes
-it by **measuring** the bar's real offset from the layout viewport's
-bottom and translating back by that amount — no platform sniffing, no
-assumption about the keyboard's height, so it cannot silently stop
-working. Do not add a guard in front of it, do not remove the
-`visualViewport` listeners, and do not generalise the correction to
-bottom-anchored sheets or the conversation composer, which are *meant*
-to ride up with the keyboard.
+**2. NOTHING ON SCREEN MAY MOVE WHEN THE KEYBOARD OPENS.**
+Focusing any field anywhere must leave `.tabbar` exactly where it was,
+**and must leave an open sheet exactly where it was.** Two different
+mechanisms lift things, one in the web layer and one below it, and the
+second is the one that actually mattered:
+
+- **The tab bar, in the web layer.** iOS anchors fixed elements to the
+  *visual* viewport, which the keyboard shrinks from the bottom, so
+  `.tabbar` climbs and parks on top of the keyboard.
+  `syncTabbarToKeyboard()` in `nav.js` undoes it by **measuring** the
+  bar's real offset from the layout viewport's bottom and translating
+  back by that amount — no platform sniffing, no assumption about the
+  keyboard's height. Do not add a guard in front of it and do not remove
+  the `visualViewport` listeners.
+- **Sheets, in the NATIVE layer, and no amount of CSS can fix it.**
+  Inside the Capacitor WKWebView the page sits in a native scroll view,
+  and when the keyboard opens iOS scrolls *that* to keep the caret
+  visible. It drags everything, `position: fixed` included, so an open
+  sheet lifted off the bottom of the screen — the strip that appeared
+  underneath was the translucent scrim, which is why the sheet looked
+  see-through along the bottom and why the page behind it could still be
+  scrolled. **`@capacitor/keyboard` is what stops it**, and all three of
+  its parts are load-bearing:
+  - `plugins.Keyboard.resize: "none"` in `capacitor.config.json` — the
+    web view's frame is never resized, and the plugin zeroes the scroll
+    view's keyboard content inset on every keyboard event.
+  - `setScroll({isDisabled:true})`, which installs a delegate that forces
+    the scroll view's `contentOffset` back to zero. This is the piece
+    that actually pins the page.
+  - It is called from **`nativeScrollLock()`, inside
+    `setBodyScrollLock()`** in `nav.js`, not at boot — it disables the
+    app's own page scrolling too, which is wanted while a sheet is open
+    and not wanted otherwise. Sheet bodies are ordinary in-page
+    overflow scrollers and are unaffected.
+
+**Three web-layer fixes were tried first and none of them worked**, so
+do not reach for CSS or `visualViewport` maths if this ever regresses —
+check the plugin, its config, and that `setScroll` is still being
+called. Two hardenings from those attempts were kept because they are
+free and correct on their own terms, but neither is the fix: the
+`.modal-overlay` height is stated outright (`height: 100dvh`,
+`bottom: auto`) instead of `inset: 0` so its box cannot resolve against
+a viewport that moves, and `.modal .sheet-body:focus-within::after`
+gives every sheet somewhere to scroll while a field in it is focused.
+Read their comments in `modals.css` before touching either.
+
+Neither correction is applied to the conversation composer, which is not
+an overlay and is *meant* to ride up with the keyboard.
 
 ## ⚠️ Critical constraints — read before editing JS
 

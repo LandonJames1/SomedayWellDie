@@ -4,9 +4,15 @@
   "webDir": "www",
   "ios": {
     "contentInset": "never",
-    "backgroundColor": "#efece6"
+    "backgroundColor": "#efece6",
+    "appendUserAgent": "SomedayWellDie-iOS"
   },
   "server": {
     "iosScheme": "capacitor"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "none"
+    }
   }
 }

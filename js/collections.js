@@ -93,9 +93,26 @@ async function renderCollections(){
 /* ==============================================================
    CREATE / EDIT
    ============================================================== */
+/* The description's hard cap. maxlength on the field is what actually
+   enforces it; this constant is here so the counter and the field
+   cannot disagree about the number. */
+const LIST_DESC_MAX=160;
+
+/* Quiet until the cap is in sight, because a counter that shouts from
+   zero is noise on a field most people leave short or empty. */
+function updateListDescCount(){
+  const el=$('lDesc'),out=$('lDescCount');
+  if(!el||!out)return;
+  const n=(el.value||'').length;
+  out.textContent=`${n}/${LIST_DESC_MAX}`;
+  out.classList.toggle('near',n>=LIST_DESC_MAX-30&&n<LIST_DESC_MAX);
+  out.classList.toggle('full',n>=LIST_DESC_MAX);
+}
+
 function openNewList(){
   editingListId=null;coverPhoto='';
   $('lName').value='';$('lDesc').value='';
+  updateListDescCount();
   renderCoverPreview();
   $('listSheetTitle').textContent='New List';
   $('listSaveBtn').textContent='Add';
@@ -107,22 +124,30 @@ async function openEditList(){
   if(!l)return;
   editingListId=l.id;coverPhoto=l.cover||'';
   $('lName').value=l.name;$('lDesc').value=l.description||'';
+  updateListDescCount();
   renderCoverPreview();
   $('listSheetTitle').textContent='Edit List';
   $('listSaveBtn').textContent='Save';
   openModal('listSheet');
 }
+/* The empty picker and the filled preview are two elements swapped
+   against each other, both .cover-pick, so the block keeps exactly the
+   same size and shape whether or not a photo has been chosen -- the
+   sheet does not jump when you pick one. Tapping the photo re-opens the
+   picker; the ✕ clears it. */
 function renderCoverPreview(){
-  const box=$('coverPreview');
+  const box=$('coverPreview'),zone=$('coverZone');
   if(coverPhoto){
-    box.innerHTML=`<div class="photo-th" style="width:100%;height:120px">
-      <img src="${esc(coverPhoto)}" alt=""/>
-      <button class="rm-photo" onclick="clearCover()" aria-label="Remove cover">${icon('x')}</button>
-    </div>`;
-    $('coverZone').style.display='none';
+    box.innerHTML=`<img src="${esc(coverPhoto)}" alt=""/>
+      <button class="rm-photo" onclick="event.stopPropagation();clearCover()" aria-label="Remove cover">${icon('x')}</button>`;
+    box.onclick=()=>$('coverInput').click();
+    box.hidden=false;
+    zone.hidden=true;
   } else {
     box.innerHTML='';
-    $('coverZone').style.display='';
+    box.onclick=null;
+    box.hidden=true;
+    zone.hidden=false;
   }
 }
 function clearCover(){coverPhoto='';renderCoverPreview();}

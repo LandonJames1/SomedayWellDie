@@ -11,13 +11,38 @@
 /*  ============================================================
     SHEET SHELL
     ============================================================ */
+    /* ⚠️ THE KEYBOARD AND AN OPEN SHEET — DO NOT PUT `inset: 0` BACK.
+
+       `bottom: 0` on a fixed element resolves against whichever viewport
+       the engine has anchored it to, and iOS anchors fixed elements to
+       the **visual** viewport — which the software keyboard and its
+       accessory bar shrink from the bottom. So focusing a field inside a
+       sheet pulled the overlay's bottom edge up off the bottom of the
+       screen. The sheet is its `align-items: flex-end` child, so the
+       sheet's own bottom came up with it, and what appeared in the strip
+       underneath was the translucent scrim: the page showing THROUGH the
+       bottom of the sheet, and touchable, because the overlay's box no
+       longer reached down there to catch the taps.
+
+       An explicit height fixes it because it does not resolve against
+       anything that moves. `dvh` reacts to browser chrome collapsing,
+       never to the keyboard (that is `interactive-widget`, which this app
+       does not set), and the overlay's TOP edge is unaffected either way
+       — the keyboard is at the bottom. So the box stays exactly the size
+       of the screen, the sheet keeps reaching the bottom of it, and the
+       accessory bar simply draws on top of the sheet where it belongs.
+
+       NOTHING MOVES WHEN THE KEYBOARD OPENS. If a sheet is ever seen to
+       shift, or its bottom goes see-through, this rule is what broke. */
     .modal-overlay {
-      position: fixed; inset: 0; z-index: 200;
+      position: fixed; top: 0; left: 0; right: 0; bottom: auto;
+      height: 100dvh; z-index: 200;
       background: var(--scrim);
       display: flex; align-items: flex-end; justify-content: center;
       opacity: 0; pointer-events: none;
       transition: opacity .3s var(--ease);
     }
+    @supports not (height: 100dvh) { .modal-overlay { height: 100vh; } }
     .modal-overlay.open { opacity: 1; pointer-events: auto; }
 
     .modal {
@@ -80,6 +105,60 @@
     .modal.barless .sheet-body { padding-top: 26px; }
 
 /*  ============================================================
+    ⚠️ EVERY SHEET WITH A FIELD IN IT HAS TO BE SCROLLABLE
+
+    THIS IS THE RULE THAT KEEPS SHEETS STILL. Read it before changing
+    anything about .sheet-body's height or overflow.
+
+    Focusing a field opens the keyboard (or, with a hardware keyboard
+    attached, just the accessory bar), which shrinks the visible area,
+    and iOS then keeps the caret in view by scrolling **the nearest
+    ancestor that can actually scroll**.
+
+    When that ancestor is .sheet-body, the sheet absorbs the keyboard
+    and nothing else moves. That is the whole reason the activity
+    sheet's Title field has always behaved: its content is taller than
+    the sheet, so there is scroll for iOS to take.
+
+    When .sheet-body has nothing to give — its content is shorter than
+    the sheet, or it is already scrolled to the end — iOS walks up and
+    moves the sheet itself. Measured on the New / Edit List sheet it
+    rode up by ~72px, the exact height of the accessory bar, and what
+    showed through the gap that opened underneath was the translucent
+    scrim: the page behind, visible through the bottom of the sheet and
+    touchable, because the overlay's box no longer reached down there.
+
+    So every sheet is given scroll room, and it is given it **only
+    while a field inside it is focused** — which is exactly when iOS
+    needs somewhere to put the caret, and means no sheet carries a
+    screenful of dead space the rest of the time.
+
+    A ::after rather than padding, for the same reason .has-picker-room
+    uses one: appearing and disappearing never has to know what the
+    sheet's real padding was. It out-specifies the picker-room rule
+    further down and folds it in with max(), so a focused date field
+    still gets at least the room its native picker needs.
+
+    This replaced a rule that scoped the same spacer to #listSheet
+    alone. It was the right diagnosis and the wrong scope — the sheets
+    it missed are every other short one in the app, which is most of
+    them.
+    ============================================================ */
+    .modal .sheet-body:focus-within::after {
+      content: ''; display: block; flex-shrink: 0;
+      /* Comfortably more than the tallest thing iOS will need to make
+         room for, which is the software keyboard at roughly 40% of a
+         phone screen. Below that figure the sheet can still be forced
+         to move; well above it costs only some empty scroll. */
+      height: max(46dvh, var(--picker-room, 0px));
+    }
+    @supports not (height: 46dvh) {
+      .modal .sheet-body:focus-within::after {
+        height: max(46vh, var(--picker-room, 0px));
+      }
+    }
+
+/*  ============================================================
     FORM CONTROLS
     Fields are grouped-list rows, as in Settings, rather than the
     boxed inputs a web form would use.
@@ -117,12 +196,11 @@
       /* 16px floor: Safari zooms the page when a focused field is smaller. */
       font-size: max(16px, 17px); letter-spacing: -.011em;
       border-radius: var(--r-row);
-      /* The tinted fields below carry a ring in their own hue and the
-         untinted ones carried nothing at all, which on the dark ground
-         meant a fill one value off the sheet behind it and no edge —
-         the field was invisible. Every box you can type in has an edge
-         now, and --ring is what makes that edge hold up in dark mode. */
-      box-shadow: var(--shadow-sm), var(--ring);
+      /* --field-ring, not --ring: a full pixel of a stronger colour.
+         The hairline that is right for a card resting on the page was
+         invisible around a field sitting on a sheet, in BOTH modes -
+         see the token in base.css. */
+      box-shadow: var(--shadow-sm), var(--field-ring);
       -webkit-appearance: none; appearance: none;
     }
     /* The .fg-hero focus ring used to be the only one in the app. Every
@@ -253,15 +331,26 @@
     /* Two fields sharing one rounded card, split by a hairline. */
     .fg-stack {
       background: var(--bg-elevated); border-radius: var(--r-row); overflow: hidden;
-      box-shadow: var(--shadow-sm), var(--ring);
+      box-shadow: var(--shadow-sm), var(--field-ring);
     }
-    /* The children are .fg inputs, which now carry a ring of their own —
-       inside a card that already has one that would be two edges around
-       each field. The card is the edge; the focus ring moves to it. */
-    .fg-stack > * { border-radius: 0; box-shadow: none; }
-    .fg-stack > *:focus { box-shadow: none; }
+    /* The children are .fg inputs, which carry a ring of their own —
+       inside a card that already has one, that would be two edges around
+       each field. The card is the edge; the focus ring moves to it.
+ 
+       ⚠️ THESE SELECTORS MUST OUT-SPECIFY `.fg input`. They were written
+       as `.fg-stack > *`, which is 0-1-0 against that rule's 0-1-1, so
+       they silently lost the cascade and every field kept its own
+       rounded ring — the "box inside a box" the New List sheet showed.
+       Naming the elements is what makes them win. Do not simplify these
+       back to a universal child selector. */
+    .fg .fg-stack > input,
+    .fg .fg-stack > textarea,
+    .fg .fg-stack > select { border-radius: 0; box-shadow: none; }
+    .fg .fg-stack > input:focus,
+    .fg .fg-stack > textarea:focus,
+    .fg .fg-stack > select:focus { box-shadow: none; }
     .fg-stack:focus-within { box-shadow: var(--shadow-sm), 0 0 0 1.5px var(--tint); }
-    .fg-stack textarea { min-height: 62px; padding: 12px 16px; }
+    .fg .fg-stack > textarea { min-height: 96px; padding: 13px 16px; }
     .fg-stack > *:not(:last-child) { border-bottom: .5px solid var(--separator); }
 
 /*  Fields on this sheet sit closer together than elsewhere: it is a
@@ -509,6 +598,85 @@
        26px deep, which made the control for adding media far louder than
        the media itself — the photos are the content here, the button is
        just the way in. */
+    /* THE LIST COVER PICKER.
+
+       A wide short card at the collection banner's own proportions --
+       208px there, 168 here -- because that is where a cover is read
+       at size. The Lists tab crops the same photo to a portrait tile,
+       but a tile is a thumbnail and this is the picture.
+
+       ⚠️ FIXED HEIGHT, NOT aspect-ratio. It was `aspect-ratio: 1/1.24`
+       with a `max-height: 42dvh` cap, and those two fight each other:
+       once the height clamps, an auto width shrinks to match the ratio,
+       so the card rendered narrow and left-aligned inside its gutters
+       -- and the EMPTY picker on a new list collapsed to nothing, which
+       read as the cover feature having disappeared. A height and two
+       margins cannot do that to each other. */
+    .cover-pick-wrap { margin: 0 var(--gx-r) 22px var(--gx-l); }
+    .cover-pick {
+      display: block; width: 100%; height: 168px;
+      box-sizing: border-box;
+      border: 0; padding: 0;
+      border-radius: var(--r-card); overflow: hidden;
+      position: relative;
+      background: var(--fill-3);
+      box-shadow: var(--shadow-sm), var(--ring);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cover-pick[hidden] { display: none; }
+    .cover-pick:active { opacity: .88; }
+    .cover-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    /* The empty state has to read as a control, not as a grey gap, so
+       it takes a dashed tinted edge -- the one place in the app that
+       does, because it is the one control whose whole job is "there is
+       nothing here yet". */
+    /* It has to read as a button, not as a gap. A tinted fill, a solid
+       tinted edge and a glyph in a filled disc - the same disc the map
+       and nav bar use for an icon control, so it is recognisably one. */
+    .cover-pick-empty {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; color: var(--tint);
+      background: var(--tint-soft);
+      box-shadow: inset 0 0 0 1.5px var(--tint);
+      border-radius: var(--r-card);
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      letter-spacing: .12em; text-transform: uppercase;
+    }
+    .cover-pick-empty > span:first-child {
+      display: flex; align-items: center; justify-content: center;
+      width: 46px; height: 46px; border-radius: 50%;
+      background: var(--tint); color: #fff; margin-bottom: 6px;
+    }
+    .cover-pick-empty .ic { width: 24px; height: 24px; }
+
+
+    /* Sits ON the photograph, so it needs its own ground. The shared
+       .rm-photo is a pale disc, which vanished against a bright cover
+       -- and this is the only way to take a cover off. */
+    .cover-pick .rm-photo {
+      position: absolute; top: 10px; right: 10px;
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(20,17,13,.62); color: #fff;
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      box-shadow: 0 1px 6px rgba(0,0,0,.35);
+      opacity: 1;
+    }
+    .cover-pick .rm-photo .ic { width: 16px; height: 16px; }
+
+    /* A character count under a capped field. Mono and quiet until the
+       cap is close, because a counter that shouts from zero is noise on
+       a field most people leave short. */
+    .fg-count {
+      margin-top: 6px; text-align: right;
+      font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+      color: var(--label-3);
+    }
+    .fg-count.near { color: var(--tint); }
+    .fg-count.full { color: var(--red); }
+
     .photo-zone {
       display: inline-flex; flex-direction: row; align-items: center; justify-content: center;
       gap: 7px; padding: 0 14px; height: 38px; width: auto;
@@ -798,7 +966,23 @@
     .comp-pane { display: none; }
     .comp-pane.active { display: block; }
     .comp-media-pane { margin: 14px var(--gx-r) 0 var(--gx-l); }
-    .comp-media-pane .photo-previews { margin: 0 0 16px; }
+    /* A GRID here, not the flex row .photo-previews uses elsewhere.
+       The flex version lays out fixed 92px tiles and wraps them, which
+       is right for the handful shown inline on the completion sheet and
+       wrong for a full page of them: three 92px tiles plus two 9px gaps
+       come to 294px in a ~361px column, so every row ended a ragged
+       67px short of the right edge. Three equal columns fill the width
+       at any phone size, and aspect-ratio keeps them square without a
+       height to keep in step. */
+    .comp-media-pane .photo-previews {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin: 0 0 16px;
+    }
+    .comp-media-pane .photo-th {
+      width: auto; height: auto; aspect-ratio: 1;
+    }
 
     /* The Links card's container, not a card of its own: same elevated
        ground and radius .chip-field uses, so the two read alike. */

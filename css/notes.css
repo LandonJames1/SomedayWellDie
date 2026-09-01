@@ -26,10 +26,37 @@
       font-size: 9px; letter-spacing: 0;
     }
 
+    /* var(--ring) is not optional on a surface -- see DESIGN LANGUAGE
+       in CLAUDE.md. Without it this panel was --bg-elevated sitting on
+       --sheet-bg with only --shadow-sm between them, which in light
+       mode is a couple of values apart and in dark mode is black on
+       near-black and worth nothing. The log had no visible edge at all
+       and read as floating text. */
     .note-log {
       background: var(--bg-elevated);
       border-radius: 12px; overflow: hidden;
-      box-shadow: var(--shadow-sm);
+      box-shadow: var(--shadow-sm), var(--ring);
+    }
+    /* The empty state is the SAME panel, so it has to look like one --
+       it is the first thing seen on the Notes tab and was the case
+       where the missing edge showed worst: centred grey text on a
+       ground barely distinct from the sheet behind it. */
+    .note-empty {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 92px; padding: 18px;
+      /* The same panel .note-log is, because it stands in for it. It
+         had no background and no edge at all, so on the Notes tab --
+         which is the FIRST thing seen on a pending activity -- the
+         words sat directly on the sheet with nothing around them. */
+      background: var(--bg-elevated);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm), var(--ring);
+    }
+    .note-empty p {
+      margin: 0;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: var(--label-3);
     }
     /* 17px to the left, matching .ad-note's padding, so a note's text
        starts on the same line as every other section's content and as

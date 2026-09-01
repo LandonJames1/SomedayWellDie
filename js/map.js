@@ -20,10 +20,40 @@
 
 let actMap=null;
 
-/* Raster basemap — no API key, and the same CARTO tiles the app used
-   before, so nothing new needs allow-listing. */
-const TILE_URL='https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-const MAP_ATTRIB='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+/* Raster basemap. MapTiler when a key is set, CARTO otherwise.
+
+   CARTO was the original choice precisely because it needed no key.
+   That stopped being true: unauthenticated tiles now come back with
+   "API KEY REQUIRED" stamped across them, which is not a thing that
+   can ship. The fallback is kept anyway -- a checkout with no key gets
+   a map that looks wrong rather than no map at all, which is the same
+   trade every other optional key in config.js makes.
+
+   `{s}` is CARTO's subdomain shard. MapTiler serves from one host, so
+   mapTiles() collapses the four shards to a single URL rather than
+   requesting the same tile from four names that do not exist. */
+const CARTO_TILE_URL='https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+/* MapTiler style slug. Any of theirs works -- backdrop, landscape,
+   outdoor-v2, topo-v2, toner-v2, satellite (.jpg, not .png) -- so this
+   is one word to change. streets-v2 is warm cream land against soft
+   blue water, which sits with the app's parchment, and it keeps its
+   labels legible zoomed in where the quieter styles thin out. */
+const MAPTILER_TILE_URL='https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={k}';
+
+const CARTO_ATTRIB='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const MAPTILER_ATTRIB='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+function mapTilerReady(){
+  return !!(typeof MAPTILER_KEY!=='undefined'&&MAPTILER_KEY);
+}
+/* The tile URL list MapLibre is handed. One entry for MapTiler, four
+   sharded ones for CARTO. */
+function mapTiles(){
+  if(mapTilerReady())
+    return [MAPTILER_TILE_URL.replace('{k}',encodeURIComponent(MAPTILER_KEY))];
+  return ['a','b','c','d'].map(sub=>CARTO_TILE_URL.replace('{s}',sub));
+}
+function mapAttrib(){ return mapTilerReady()?MAPTILER_ATTRIB:CARTO_ATTRIB; }
 
 function mapStyle(){
   return {
@@ -31,10 +61,10 @@ function mapStyle(){
     sources:{
       carto:{
         type:'raster',
-        tiles:['a','b','c','d'].map(s=>TILE_URL.replace('{s}',s)),
+        tiles:mapTiles(),
         tileSize:256,
         maxzoom:19,
-        attribution:MAP_ATTRIB,
+        attribution:mapAttrib(),
       },
     },
     layers:[
@@ -748,7 +778,7 @@ async function renderGlobalMap(){
 
   $('globalMapActions').innerHTML=
     `<button class="map-fab" onclick="zoomGlobe()" aria-label="View the whole globe">${icon('compass')}</button>`+
-    `<button class="map-fab" onclick="fitGlobal(true)" aria-label="Fit all places">${icon('locate')}</button>`;
+    `<button class="map-fab" onclick="centerOnHome(true)" aria-label="Back to home">${icon('locate')}</button>`;
 
   const built=globalMapObj;
   const [acts]=await Promise.all([dataP,mapLoaded(built)]);
@@ -765,7 +795,8 @@ async function renderGlobalMap(){
   }
   attachActivityLayer(built,geo,globalMapState);
   globalMapHomeBounds=boundsOf(geo);
-  fitGlobal(false);
+  /* Home if there is one, every pin if there is not. */
+  centerOnHome(false);
   updateGlobalMapMarkers(geo);
 }
 
@@ -785,6 +816,54 @@ function globeFillZoom(){
      log2 -Infinity and pin minZoom there. */
   if(!(short>0)) return 0;
   return Math.log2((short*0.94)/GLOBE_PX_AT_Z0);
+}
+
+/* WHERE THE MAP OPENS.
+
+   Fitting every place sounds right and is wrong for anybody whose list
+   spans continents: the bounding box of Oregon, Japan and Norway has
+   its centre in the Atlantic, so the map opened on empty ocean off
+   Africa with the user's own places scattered off the edges.
+
+   Home is the answer, for the same reason it is the search bias point
+   and the yardstick the difficulty rating is measured against -- it is
+   the one place the user actually is.
+
+   It barely zooms. The globe stays essentially pulled back to
+   globeFillZoom() and turns so home is facing you -- the map answers
+   "where is everything relative to me", and zooming to a region throws
+   the pins outside that region off the screen, which is the whole
+   picture.
+
+   With no Home set there is nothing better to centre on and it falls
+   back to fitting the pins, which is what it always did.
+
+   HOME_VIEW_SCALE is how much bigger than a just-filling globe the
+   opening view is. It is a SCALE, converted with log2, not something
+   added to the zoom: MapLibre's zoom is logarithmic and each whole
+   level doubles what you see, so a bare "+0.25" would be a 19%
+   enlargement and "25% of the zoom number" would be several levels
+   in. A globe a quarter larger means multiplying its size by 1.25,
+   which is log2(1.25) -- about a third of a level. */
+const HOME_VIEW_SCALE=1.5;
+
+function homeMapView(){
+  const h=typeof homePlace==='function'?homePlace():null;
+  if(!h) return null;
+  const lat=parseFloat(h.lat),lng=parseFloat(h.lng);
+  return isFinite(lat)&&isFinite(lng)?{lat,lng}:null;
+}
+
+/* The locate button, and the opening view. Falls through to fitGlobal()
+   whenever there is no Home to centre on. */
+function centerOnHome(animate){
+  if(!globalMapObj) return false;
+  const v=homeMapView();
+  if(!v){ fitGlobal(animate); return false; }
+  const zoom=globeFillZoom()+Math.log2(HOME_VIEW_SCALE);
+  if(animate) globalMapObj.easeTo({center:[v.lng,v.lat],zoom,duration:900});
+  else globalMapObj.jumpTo({center:[v.lng,v.lat],zoom});
+  return true;
 }
 
 /* Fit every place, leaving room for the floating chrome top and bottom.

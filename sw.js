@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v125';
+const CACHE_VERSION = 'v130';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -90,6 +90,11 @@ const VENDOR_HOSTS = [
 /* Remote imagery — default collection covers and map tiles. */
 const IMAGE_HOSTS = [
   'images.unsplash.com',
+  /* Both tile hosts: MapTiler when a key is set in config.js, CARTO as
+     the keyless fallback. Missing MapTiler here would mean the map
+     works online and goes blank in a tunnel, which is the failure the
+     offline shell exists to prevent. */
+  'api.maptiler.com',
   'basemaps.cartocdn.com',
   /* The R2 bucket holding every photo and video. Keys are random and
      never reused, so these are immutable and cache-first is exactly

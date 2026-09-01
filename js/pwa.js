@@ -6,9 +6,35 @@
    exactly as before, just without offline support.
    ============================================================== */
 
-/* True when running from the home screen rather than a browser tab. */
+/* ==============================================================
+   THE NATIVE APP IS NOT A THING YOU INSTALL
+
+   Everything below this comment -- the install bar, the iOS
+   Add-to-Home-Screen walkthrough, the row on the You tab -- exists to
+   get a *browser tab* onto somebody's home screen. Inside the native
+   shell that is already done, permanently, and offering it reads as
+   the app not knowing where it is running.
+
+   isNativeApp() is the gate. It is deliberately separate from
+   isStandalone(): an installed PWA is standalone too, and there the
+   install UI should also stay hidden -- but the native app is a
+   different fact, checked against Capacitor's own global rather than
+   inferred from a display mode. Keeping both means the WEB version's
+   install prompts still work exactly as they did, which is the whole
+   reason this was gated rather than deleted.
+   ============================================================== */
+function isNativeApp(){
+  return !!(window.Capacitor&&window.Capacitor.isNativePlatform
+    ? window.Capacitor.isNativePlatform()
+    : window.Capacitor);
+}
+
+/* True when running from the home screen rather than a browser tab --
+   or inside the native app, which is the same thing from every
+   caller's point of view. */
 function isStandalone(){
-  return window.navigator.standalone===true ||
+  return isNativeApp() ||
+         window.navigator.standalone===true ||
          window.matchMedia('(display-mode: standalone)').matches ||
          window.matchMedia('(display-mode: minimal-ui)').matches;
 }

@@ -218,31 +218,77 @@ async function uploadPhoto(file){
 function videoPoster(file){
   return new Promise(resolve=>{
     const v=document.createElement('video');
-    v.preload='metadata';v.muted=true;v.playsInline=true;
+    v.preload='auto';v.muted=true;v.playsInline=true;
+    /* MUST BE IN THE DOCUMENT. Safari and the WKWebView the native
+       shell runs in will not decode frames for a detached <video>, so
+       drawImage() came back blank or threw and every video ended up
+       with no poster at all -- which reads to the user as "videos do
+       not work", because a posterless video contributes nothing to
+       a.photos and the activity looks empty everywhere except the sheet
+       that plays it. Off-screen rather than display:none, which some
+       versions treat the same as detached. */
+    v.setAttribute('muted','');
+    v.setAttribute('playsinline','');
+    v.style.cssText='position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
+
     const url=URL.createObjectURL(file);
-    let settled=false;
+    let settled=false,tries=0;
     const done=result=>{
       if(settled)return;
       settled=true;
+      clearTimeout(timer);
       URL.revokeObjectURL(url);
+      v.removeAttribute('src');
+      try{ v.load(); }catch(e){}
+      v.remove();
+      if(!result) console.warn('[media] video poster: capture failed');
       resolve(result);
     };
-    /* A frame that is not the very first one: video often opens on black. */
-    v.onloadeddata=()=>{ try{ v.currentTime=Math.min(.6,(v.duration||1)/3); }catch(e){ done(''); } };
-    v.onseeked=()=>{
+
+    /* A frame that is not the very first one: video often opens on
+       black, and a black poster is barely better than none. */
+    const seekTo=()=>{
+      const d=isFinite(v.duration)&&v.duration>0?v.duration:1;
+      try{ v.currentTime=Math.min(.6,d/3); }catch(e){ grab(); }
+    };
+
+    const grab=()=>{
+      /* HAVE_CURRENT_DATA. Seeking can report complete before the frame
+         is actually decodable, and drawing then yields a blank canvas
+         rather than an error -- the silent failure this whole function
+         had. */
+      if(v.readyState<2||!v.videoWidth){
+        if(tries++<20){ setTimeout(grab,150); return; }
+        done('');
+        return;
+      }
       try{
         const scale=Math.min(1,MAX_PHOTO_DIM/Math.max(v.videoWidth,v.videoHeight));
         const c=document.createElement('canvas');
         c.width=Math.round(v.videoWidth*scale);
         c.height=Math.round(v.videoHeight*scale);
         c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-        done(c.toDataURL('image/jpeg',.75));
+        const data=c.toDataURL('image/jpeg',.75);
+        /* A data URL this short is a blank canvas, not a frame. */
+        done(data&&data.length>2048?data:'');
       }catch(e){ done(''); }
     };
+
+    v.onloadedmetadata=seekTo;
+    v.onloadeddata=()=>{ if(v.currentTime<.01) seekTo(); else grab(); };
+    v.onseeked=grab;
     v.onerror=()=>done('');
-    /* Some codecs never fire either event; do not hang the upload on it. */
-    setTimeout(()=>done(''),4000);
+    /* Some codecs never fire a usable event. Do not hang the upload on
+       it -- but give a large clip from a phone longer than 4s, which
+       was short enough to lose real videos on a slow device. */
+    const timer=setTimeout(()=>done(''),12000);
     v.src=url;
+    /* Kicks decoding on iOS, which will not decode from preload alone
+       for a muted off-screen element. Rejection is expected and
+       harmless -- the seek path still runs. */
+    const p=v.play();
+    if(p&&p.catch) p.catch(()=>{});
   });
 }
 
@@ -566,7 +612,13 @@ function mediaDragEnd(){
   if(!d)return;
   mDrag=null;
   clearTimeout(d.hold);
-  if(!d.live){ return; }
+  /* A press that never became a drag is a TAP, and it used to do
+     nothing at all — which left no way to set the cover except by
+     dragging a tile to the front. That is unreachable with a mouse, is
+     awkward on a phone, and is impossible with assistive technology.
+     The menu this opens is the one that was here before the drag
+     replaced it; the drag is still the fast path. */
+  if(!d.live){ openMediaMenu(d.from); return; }
 
   d.box.classList.remove('reordering');
   d.el.classList.remove('dragging');
@@ -580,6 +632,44 @@ function mediaDragEnd(){
   } else {
     renderThumbs();
   }
+}
+
+/* Tapping a tile. Make cover is the reason this exists, and it is
+   first; the two nudges are the keyboard-free way to reorder without
+   dragging. Remove is last and destructive, as everywhere else. */
+function openMediaMenu(i){
+  const m=upMedia[i];
+  if(!m)return;
+  const isCover=coverIndex()===i;
+  /* A video whose poster frame never got captured has no image for a
+     thumbnail, a grid card or a map pin to draw, so it cannot be the
+     cover — coverIndex() skips it, and offering the option would let
+     the badge and the rest of the app disagree. */
+  const canCover=m.type==='video'?!!m.poster:!!m.url;
+  const items=[];
+
+  if(!isCover&&canCover){
+    items.push({label:'Make cover',icon:'photo',onSelect:()=>makeCover(i)});
+  }
+  if(i>0) items.push({label:'Move earlier',icon:'chevron-left',
+    onSelect:()=>moveMedia(i,i-1)});
+  if(i<upMedia.length-1) items.push({label:'Move later',icon:'chevron-right',
+    onSelect:()=>moveMedia(i,i+1)});
+  items.push({label:'Remove',icon:'trash',role:'destructive',
+    onSelect:()=>rmMedia(i)});
+
+  showActionSheet({
+    title:m.type==='video'?'Video':'Photo',
+    message:isCover?'This is the cover.':'',
+    items,
+  });
+}
+
+/* The first item with a usable image IS the cover — see coverIndex() —
+   so making one the cover is moving it to the front. */
+function makeCover(i){
+  moveMedia(i,0);
+  showToast('Cover updated');
 }
 
 function mediaDragCancel(){

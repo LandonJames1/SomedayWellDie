@@ -102,6 +102,16 @@
       transition: opacity .15s, background .15s, transform .15s var(--ease);
     }
     .btn:active { opacity: .7; transform: scale(.985); }
+    /* A .btn that has to sit inside a row rather than own a line: the
+       Add beside a found account, the Unblock beside a blocked one.
+       Still a 36px target, which is under the 44px rule and matches the
+       other in-row controls (.shr-remove, the segmented controls) --
+       the row itself is 44px+ and is not otherwise tappable. */
+    .btn-sm {
+      min-height: 36px; padding: 0 14px;
+      font-size: 10px; letter-spacing: .1em; gap: 5px;
+    }
+    .btn-sm .ic { width: 14px; height: 14px; }
     .btn .ic { width: 18px; height: 18px; }
     .btn-filled  { background: var(--tint); color: #fff; box-shadow: var(--shadow-sm); }
     .btn-green   { background: var(--green); color: #fff; box-shadow: var(--shadow-sm); }

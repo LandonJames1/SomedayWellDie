@@ -359,7 +359,29 @@
   <div class="stats-card" id="meStats"></div>
   <div class="me-progress" id="meProgress"></div>
 
-  <div class="section-header">App</div>
+  <div class="me-version">From essential to extraordinary</div>
+</div>
+
+<!-- ===================================================================
+     SETTINGS — pushed from the You tab's gear button.
+
+     The You tab used to carry all of this beneath its stats, which put
+     four unrelated things on one screen: who you are, what you have
+     done, every preference in the app, and the two buttons that end
+     your account. Splitting them leaves You as a record and makes the
+     settings findable as a set rather than as a tail.
+
+     It is a PUSHED screen owned by the `me` tab -- see PAGE_TAB in
+     nav.js -- so the tab bar keeps You lit while it is showing and Back
+     returns there.
+     =================================================================== -->
+<div class="page" id="page-settings">
+  <div class="large-title">
+    <div class="eyebrow">Preferences and account</div>
+    <h1><em>Settings</em></h1>
+  </div>
+
+  <div class="section-header">Preferences</div>
   <div class="group">
     <button class="row tappable has-leading" id="meNotifyRow" style="display:none">
       <span class="row-leading li-orange" id="meNotifyIcon"></span>
@@ -380,7 +402,10 @@
       <span class="row-leading li-purple" id="meDiffIcon"></span>
       <span class="row-body"><span class="row-title">About you</span></span>
     </button>
-    <button class="row tappable has-leading" onclick="pwaShowInstallHelp()">
+    <!-- Hidden inside the native app by renderMeInstallRow(): there is
+         nothing to add to a home screen when you are already an icon on
+         one. The row stays for the web version. -->
+    <button class="row tappable has-leading" id="meInstallRow" onclick="pwaShowInstallHelp()">
       <span class="row-leading li-blue" id="meInstallIcon"></span>
       <span class="row-body"><span class="row-title">Add to Home Screen</span></span>
       <span class="row-chevron" id="meInstallChevron"></span>
@@ -435,8 +460,6 @@
       <span class="row-body"><span class="row-title">Delete Account</span></span>
     </button>
   </div>
-
-  <div class="me-version">From essential to extraordinary</div>
 </div>
 
 <!-- ===== TAB BAR ===== -->
@@ -472,20 +495,51 @@
       <button class="navbtn strong" id="listSaveBtn" onclick="saveList()">Add</button>
     </div>
     <div class="sheet-body">
+      <!-- COVER FIRST, and at the shape it is actually drawn on the
+           collection banner -- a wide short card, not the portrait the
+           Lists tab crops it to. It was briefly aspect-ratio + a dvh
+           cap, and those two fight: when the height clamps, the width
+           shrinks with it, so the card came out narrow and shoved to
+           the left, and the empty picker on a NEW list collapsed to
+           nothing at all. A fixed height and gutters cannot do that. -->
+      <!-- ⚠️ THE WRAPPER OWNS THE GUTTERS, the button does not.
+           .cover-pick was a <button> with `width: auto`, and a button
+           sizes shrink-to-fit rather than filling its parent - with its
+           only child absolutely positioned it had no intrinsic width at
+           all and collapsed to a 1px vertical line. `width: 100%` plus
+           horizontal margins is not the fix either: that computes wider
+           than the parent and drags fixed elements sideways on iOS (see
+           MOBILE LAYOUT RULES). A wrapper with the margins and a 100%
+           child inside it is, and it is what .home-composer-wrap and
+           .det-ctl-row already do. -->
+      <div class="cover-pick-wrap">
+        <button class="cover-pick" id="coverZone" onclick="$('coverInput').click()">
+          <span class="cover-pick-empty">
+            <span id="coverZoneIcon"></span>
+            <span>Choose a cover</span>
+          </span>
+        </button>
+        <div class="cover-pick" id="coverPreview" hidden></div>
+      </div>
+      <input type="file" id="coverInput" accept="image/*" hidden onchange="handleCoverUpload(event)" />
+
+      <!-- Two labelled fields, not two placeholders in one grouped box.
+           A placeholder disappears the moment you type, so an edit sheet
+           full of existing values had nothing left saying which box was
+           which -- you could not tell the name from the description. -->
       <div class="fg">
-        <div class="fg-stack">
-          <input id="lName" placeholder="List name" maxlength="60" autocapitalize="words" enterkeyhint="next" />
-          <input id="lDesc" placeholder="Description (optional)" maxlength="120" autocapitalize="sentences" />
-        </div>
+        <label for="lName">Name</label>
+        <input id="lName" placeholder="Japan 2027" maxlength="60"
+               autocapitalize="words" enterkeyhint="next" />
       </div>
       <div class="fg">
-        <label>Cover</label>
-        <button class="photo-zone" id="coverZone" onclick="$('coverInput').click()">
-          <span id="coverZoneIcon"></span>
-          <span>Choose a photo</span>
-        </button>
-        <input type="file" id="coverInput" accept="image/*" hidden onchange="handleCoverUpload(event)" />
-        <div id="coverPreview"></div>
+        <label for="lDesc">Description</label>
+        <textarea id="lDesc" placeholder="What is this list for?"
+                  maxlength="160" rows="3" autocapitalize="sentences"
+                  oninput="updateListDescCount()"></textarea>
+        <!-- The cap is enforced by maxlength; this is what stops it
+             being a surprise when typing simply stops. -->
+        <div class="fg-count" id="lDescCount">0/160</div>
       </div>
     </div>
   </div>
@@ -748,10 +802,21 @@
 <div class="modal-overlay" id="compSheet">
   <div class="modal">
     <div class="sheet-grabber"></div>
-    <div class="sheet-bar">
+    <!-- TWO BARS, ONE AT A TIME. The media sub-page used to draw its
+         own Back/Media row *inside* the body, under this one, so the
+         sheet showed two stacked headers and it was not obvious which
+         one Cancel and Save still applied to. Opening the sub-page now
+         replaces the bar rather than adding to it, the way a pushed
+         screen replaces the nav bar. compShowPane() swaps them. -->
+    <div class="sheet-bar" id="compBarMain">
       <button class="navbtn" onclick="closeModal('compSheet')">Cancel</button>
       <div class="sheet-title" id="compSheetTitle">Accomplished</div>
       <button class="navbtn strong" id="compSaveBtn" onclick="confirmComplete()">Done</button>
+    </div>
+    <div class="sheet-bar" id="compBarMedia" style="display:none">
+      <button class="navbtn" onclick="compShowPane('main')" id="compMediaBack"></button>
+      <div class="sheet-title">Media</div>
+      <button class="navbtn strong" onclick="$('photoInput').click()" id="compMediaAdd"></button>
     </div>
     <div class="sheet-body">
      <div class="comp-pane active" id="compPaneMain">
@@ -861,13 +926,10 @@
           pages use: a second pane inside the one sheet, swapped in by
           compShowPane(), so there is no second overlay to dismiss. -->
      <div class="comp-pane" id="compPaneMedia">
-       <div class="ad-navbar">
-         <button class="ad-back" onclick="compShowPane('main')" id="compMediaBack"></button>
-         <span class="ad-navtitle">Media</span>
-       </div>
+       <!-- No header here: the sheet's own bar becomes Back/Media/Add
+            while this pane is showing. See compBarMedia above. -->
        <div class="comp-media-pane">
          <div class="photo-previews" id="photoPrev"></div>
-         <button class="btn btn-tint btn-block" onclick="$('photoInput').click()">Add photo or video</button>
        </div>
      </div>
     </div>

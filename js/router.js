@@ -32,7 +32,7 @@ const ROUTE_PAGE={
   home:'home', upnext:'upnext', done:'done',
   lists:'lists', list:'detail',
   messages:'messages', chat:'conversation',
-  map:'globalmap', you:'me',
+  map:'globalmap', you:'me', settings:'settings',
 };
 /* Which of them address one collection. A conversation is addressed by
    its collection id too — see curConvId in state.js. */

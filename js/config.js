@@ -33,6 +33,23 @@ const APP_NAME='Someday We’ll Die';
 const MEDIA_WORKER_URL='https://swd-media-worker.landon-talus.workers.dev';
 const MEDIA_PUBLIC_BASE='https://pub-316c43a551774a47b23000d0b88a37f0.r2.dev';
 
+/* ---- Map tiles ----
+   MapTiler. The map used CARTO's open basemap, which needed no key --
+   until CARTO started stamping "API KEY REQUIRED" across every
+   unauthenticated tile, which is not something that can ship.
+
+   This key is PUBLIC by design, exactly like HERE's would have been if
+   it were not proxied: it is fetched by the browser on every tile, so
+   there is nowhere to hide it. Restrict it in the MapTiler dashboard
+   instead -- Account -> Keys -> allowed origins. The native app's
+   origin is `capacitor://localhost`, so BOTH that and the web origin
+   have to be listed or the map goes blank in one of the two.
+
+   Left EMPTY it falls back to the watermarked CARTO tiles, so the map
+   still works and looks wrong rather than disappearing -- the same way
+   every other optional key in this file degrades. */
+const MAPTILER_KEY='HMcPs7bBeXAoUvSrp2Xw';
+
 const SUPABASE_URL='https://xxdmendegyxlkikejvps.supabase.co';
 const SUPABASE_KEY='sb_publishable_45ETmiEMgvWn3QAd58ck5Q_opy0TWnX';
 

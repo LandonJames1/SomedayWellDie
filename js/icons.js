@@ -88,6 +88,14 @@ const ICON_PATHS = {
      this is drawn at on the detail screen's control row, a fourth mark
      beside three short lines just reads as noise. */
   'sort':     '<path d="M4.4 6.4h15.2M4.4 12h9.6M4.4 17.6h4.8"/>',
+  /* Settings. Three rails with a solid handle on each -- the app's
+     recurring solid-dot accent, at the size the other glyphs use it,
+     rather than the gear every other app draws. The handles sit at
+     different points on their rails so it reads as adjustable. */
+  'sliders':  '<path d="M4 7h4.2M11.8 7H20M4 12h9.2M16.8 12H20M4 17h2.2M9.8 17H20"/>'+
+              '<circle cx="10" cy="7" r="2" fill="currentColor" stroke="none"/>'+
+              '<circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>'+
+              '<circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/>',
 };
 
 /* Icons whose art is already solid and must not be given a stroke. */
