@@ -68,7 +68,11 @@ function dupeScore(name,location,other){
 }
 
 /* Every activity that might be the same as this one, best first.
-   `excludeId` keeps an activity from matching itself on edit. */
+   `excludeId` keeps a row from matching itself. Nothing passes it
+   today — it was for the edit sheet, which is gone (the new-activity
+   sheet only ever creates) — and it is kept because the next thing
+   that checks an EXISTING name will need it and would otherwise
+   report the row as a duplicate of itself. */
 function findDupes(name,opts){
   const o=opts||{};
   const n=(name||'').trim();

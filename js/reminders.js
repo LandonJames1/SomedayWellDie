@@ -67,13 +67,18 @@ function dueReminders(acts){
    a reminder was actually set without reading the date.
    ============================================================== */
 
-/* "None" until one is set, then "Scheduled". */
+/* The chip's value. MM/DD/YY, not a spelled month and not the word
+   "Scheduled": the chip is ~92px wide on a 320px screen, a date there
+   is scanned rather than read, and this is the same reading the
+   detail sheet's Remind chip gives — the two say the same thing about
+   the same reminder. Everywhere the date is prose, fmtDate() is still
+   the one to use. */
 function updateRemindRow(){
   const val=$('aRemind');
   const label=$('aRemindValue');
   if(!val||!label)return;
   const set=!!val.value;
-  label.textContent=set?'Scheduled':'None';
+  label.textContent=set?fmtDateNumeric(val.value):'None';
   label.classList.toggle('is-set',set);
 }
 
@@ -98,11 +103,15 @@ function updateRemindRow(){
    by matching the stored date back against the target — so a relative
    choice still reads as relative next time, without a column to hold it.
    ============================================================== */
+/* Four, not six. 2 weeks and 3 months were removed: a menu you have to
+   read is worse than one you can take in, and neither was a distinct
+   enough answer from its neighbours to earn a row.
+   ⚠️ Only the RESOLVED date is stored, so dropping an offset changes no
+   data -- a reminder previously set as "2 weeks before" keeps its date
+   and simply reads back as a specific one. */
 const REMIND_OFFSETS=[
   {id:'1w', label:'1 week before',   days:7},
-  {id:'2w', label:'2 weeks before',  days:14},
   {id:'1m', label:'1 month before',  months:1},
-  {id:'3m', label:'3 months before', months:3},
   {id:'6m', label:'6 months before', months:6},
   {id:'1y', label:'1 year before',   years:1},
 ];
@@ -122,7 +131,137 @@ function remindOffsetDate(targetISO,id){
 /* The target the activity sheet currently holds — which is the staged
    value, not what is in the database, so choosing a date and setting a
    relative reminder in the same visit works. */
+/* ==============================================================
+   SETTING A REMINDER FROM THE ACTIVITY DETAIL SHEET
+
+   The sheet was built to STAGE: it writes into the activity sheet's
+   hidden #aRemind/#aRemindNote inputs and nothing reaches the database
+   until that sheet is saved. That is right while an activity is being
+   created, and wrong for the Remind chip on a row that already exists
+   -- the same split every other in-place editor makes (see EDITING IN
+   PLACE in activities.js).
+
+   So the sheet gains a second mode rather than a second copy.
+   _remindFor holds the activity id when it was opened from the chip;
+   Done and Remove then write straight through and clear it. The hidden
+   inputs are still the transport in both modes, so there is one set of
+   fields to keep in step and one inferRemindMode() to trust.
+
+   ⚠️ _remindTargetFor exists because currentTargetDate() reads the
+   NEW-ACTIVITY sheet's date select, which on the detail sheet holds
+   whatever the last edit happened to leave there. The relative offsets
+   ("1 month before") are computed from it, so without the override they
+   would count back from the wrong activity's target. */
+let _remindFor=null;
+let _remindTargetFor='';
+
+/* ==============================================================
+   THE REMINDER, AS A MENU AND THEN A QUESTION
+
+   Two things have to be answered -- WHEN, and an optional note that
+   rides along in the push -- and they are asked one at a time rather
+   than on one form. When is a closed list, so it is an action sheet.
+   The note is one short answer, so it is showPrompt(): the iOS alert
+   with a field in it, asked only AFTER a date exists, because a note
+   with nothing to fire it is not a reminder.
+
+   The full #remindSheet is still what the NEW-ACTIVITY sheet uses --
+   staging is right while the activity does not exist yet. This is the
+   in-place path for a row that does. Both write through the same hidden
+   inputs and the same inferRemindMode(), so they cannot disagree. */
+async function openRemindFor(id){
+  const a=await fetchActivity(id);
+  if(!a||a.completed) return;
+  _remindFor=id;
+  _remindTargetFor=a.targetDate||'';
+  const stored=a.remindAt||'';
+  const note=a.remindNote||'';
+  /* ⚠️ Seeded even though the menu below does not read them. The
+     no-showPicker fallback in pickRemindDate() opens the full
+     #remindSheet, which builds itself entirely from these two inputs --
+     without this it would open showing the PREVIOUS activity's
+     reminder. */
+  $('aRemind').value=stored;
+  $('aRemindNote').value=note;
+  const relative=isCustomDate(_remindTargetFor);
+  const mode=inferRemindMode(stored,_remindTargetFor);
+
+  const items=[];
+  /* Offsets only when there is a specific target to count back from.
+     Against a band they would all resolve to the end of its window --
+     "1 week before" on everything set to This Year fires on Christmas
+     Eve. See the note on REMIND_OFFSETS. */
+  if(relative) REMIND_OFFSETS.forEach(o=>items.push({
+    label:o.label,
+    checked:mode===o.id,
+    onSelect:()=>askRemindNote(id,remindOffsetDate(_remindTargetFor,o.id),note),
+  }));
+  items.push({
+    label:(stored&&mode==='date')?fmtDate(stored,true):'On a specific date\u2026',
+    checked:!!stored&&mode==='date',
+    onSelect:()=>pickRemindDate(id,stored,note),
+  });
+  if(stored) items.push({
+    label:'Remove reminder',
+    role:'destructive',
+    /* Its own card, the way iOS separates a destructive action from the
+       choices above it -- red text alone read as one more option. */
+    separated:true,
+    onSelect:()=>{ resetRemindFor(); patchActivity(id,{remind_at:null,reminder_note:null}); },
+  });
+
+  showActionSheet({title:'Remind Me',items});
+}
+
+function pickRemindDate(id,stored,note){
+  showCalendar({
+    title:'Remind Me On',
+    value:stored||'',
+    onPick:iso=>askRemindNote(id,iso,note),
+  });
+}
+
+/* Asked after the date, never before it. Cancel keeps the date and
+   whatever note was already there -- it means "no note now", not "undo
+   the reminder". */
+function askRemindNote(id,when,note){
+  if(typeof showPrompt!=='function'){ commitRemind(id,when,note); return; }
+  showPrompt({
+    title:'Reminder Note',
+    /* Optional, and said in the two places a label may say it: the
+       placeholder, and the button you leave by. */
+    placeholder:'Optional \u2014 e.g. book the permit',
+    cancelLabel:'Skip',
+    value:note||'',
+    maxLength:200,
+    onSave:v=>commitRemind(id,when,v),
+    /* Dismissing keeps the date and whatever note was already there --
+       it means "no note now", not "forget the reminder". */
+    onCancel:()=>commitRemind(id,when,note),
+  });
+}
+
+function commitRemind(id,when,note){
+  resetRemindFor();
+  if(typeof patchActivity!=='function') return;
+  patchActivity(id,{remind_at:when||null,reminder_note:(note||'').trim()||null});
+}
+
+/* Called by openActDetail() on every render: a sheet dismissed by the
+   scrim or a swipe never reaches Done, and a stale id here would send
+   the NEXT reminder to the previous activity. */
+function resetRemindFor(){ _remindFor=null;_remindTargetFor=''; }
+
+async function commitRemindFor(remindAt,note){
+  const id=_remindFor;
+  resetRemindFor();
+  closeModal('remindSheet');
+  if(typeof patchActivity!=='function') return;
+  await patchActivity(id,{remind_at:remindAt||null,reminder_note:note||null});
+}
+
 function currentTargetDate(){
+  if(_remindFor) return _remindTargetFor;
   try{ return readTargetDate()||''; }catch(e){ return ''; }
 }
 
@@ -182,7 +321,9 @@ async function updateRemindAudience(){
 
   /* The activity being edited may not be filed yet — a new one takes
      its destination from the sheet's List row. */
-  const listId=targetListId||curListId;
+  const listId=(_remindFor
+    ? (cachedActivities().find(x=>x.id===_remindFor)||{}).listId
+    : null)||targetListId||curListId;
   if(!listId)return;
   const list=cachedCollections().find(c=>c.id===listId);
   if(!list)return;
@@ -235,6 +376,7 @@ function saveRemindSheet(){
   /* A note with no date has nothing to fire it — mirrors saveActivity(). */
   $('aRemindNote').value=$('rmNote').value.trim();
   updateRemindRow();
+  if(_remindFor){ commitRemindFor(d,$('rmNote').value.trim()); return; }
   closeModal('remindSheet');
 }
 
@@ -242,6 +384,7 @@ function clearRemindSheet(){
   $('aRemind').value='';
   $('aRemindNote').value='';
   updateRemindRow();
+  if(_remindFor){ commitRemindFor('',''); return; }
   closeModal('remindSheet');
 }
 
@@ -285,10 +428,18 @@ async function clearReminder(id){
 /* ==============================================================
    NOTIFICATIONS — the bonus layer
    ============================================================== */
+/* Two transports behind one question. In a browser this is Web Push
+   through the service worker; in the native shell there is neither a
+   service worker nor a Notification API, and the answer comes from
+   APNs instead (js/nativepush.js). Every caller below asks these two
+   functions and never looks at Notification directly, so the branch
+   is made once. */
 function notificationsSupported(){
+  if(nativePushAvailable()) return true;
   return 'Notification' in window && 'serviceWorker' in navigator;
 }
 function notificationState(){
+  if(nativePushAvailable()) return nativePushState();
   if(!notificationsSupported()) return 'unsupported';
   return Notification.permission;          /* default | granted | denied */
 }
@@ -296,6 +447,22 @@ function notificationState(){
 async function requestNotifications(){
   if(!notificationsSupported()){
     showToast('This browser can’t show notifications');
+    return;
+  }
+  /* ---- The native app ----
+     iOS asks once and never again: a declined prompt can only be
+     changed in Settings, so there is nothing to re-ask and saying so
+     is the only useful answer. */
+  if(nativePushAvailable()){
+    const state=await refreshNativePushState();
+    if(state==='denied'){
+      showToast('Turn on notifications for this app in Settings');
+      if(curPage==='me') renderMe();
+      return;
+    }
+    const ok=await requestNativePush();
+    showToast(ok?'Reminders on':'Reminders not enabled');
+    if(curPage==='me') renderMe();
     return;
   }
   if(Notification.permission==='denied'){
@@ -338,6 +505,11 @@ function urlBase64ToUint8Array(base64){
 }
 
 async function subscribeToPush(){
+  /* The native shell has no PushManager to subscribe to. It registers
+     with APNs and stores a device token in the same table instead, so
+     both send-reminders and send-message-push reach it from the one
+     query they already make. */
+  if(nativePushAvailable()) return registerNativePush();
   if(!pushConfigured()){
     console.info('[reminders] VAPID_PUBLIC_KEY not set — background push disabled, '+
       'falling back to the Home banner. See supabase/README.md.');
@@ -372,6 +544,7 @@ async function subscribeToPush(){
 /* Drop this device's subscription — used on sign-out so a shared phone
    does not keep pushing the previous account's reminders. */
 async function unsubscribeFromPush(){
+  if(nativePushAvailable()) return unregisterNativePush();
   try{
     const reg=await navigator.serviceWorker.ready;
     const sub=await reg.pushManager.getSubscription();
@@ -397,6 +570,20 @@ async function checkDueReminders(){
   const seen=notifiedSet();
   const fresh=due.filter(a=>!seen.has(a.id+'@'+a.remindAt));
   if(!fresh.length) return;
+
+  /* ---- The middle tier does not exist natively, and does not need to ----
+     This is tier 2 of the three in the header: a local notification
+     fired because the app happened to be opened on or after the day.
+     It exists for browsers that can show a notification but cannot
+     receive a push. The native app CAN receive one — send-reminders
+     delivers over APNs whether or not the app is running — so the
+     banner it would draw here is one the user has already had. The
+     Home banner (tier 1) is unaffected and still renders.
+
+     It is also mechanically impossible: showNotification lives on the
+     service worker registration, and WKWebView gives the capacitor://
+     scheme no service worker at all. */
+  if(nativePushAvailable()||!('serviceWorker' in navigator)) return;
 
   try{
     const reg=await navigator.serviceWorker.ready;

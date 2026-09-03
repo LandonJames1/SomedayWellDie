@@ -108,7 +108,23 @@ const json = (body: unknown, status = 200) =>
    cheap, needs no model, and belongs next to the code that writes
    the value into the field.
    ============================================================== */
-const PLACE_MODEL = 'claude-opus-5';
+/* ⚠️ THIS IS THE APP'S ONLY PER-CAPTURE MODEL COST, so it is the one
+   constant here with a bill attached: one call per distinct activity
+   name, cached for the session and nothing across sessions.
+
+   Haiku rather than Opus, deliberately. This is a closed two-field
+   classification — does the name identify one specific place, and is
+   it easy/medium/hard — sitting behind three further gates (the
+   `certain` flag, Nominatim actually finding the place, and
+   guessMatchesName() on the client). The prompt does the work here,
+   not depth of deliberation, which is the same argument that already
+   set `effort: 'low'` and `max_tokens: 256` below.
+
+   If recall drops on names that plainly do name a place, raise the
+   effort before touching the prompt, and change the model last. Going
+   back to Opus multiplies the running cost of every activity anyone
+   ever adds. */
+const PLACE_MODEL = 'claude-haiku-4-5-20251001';
 
 const PLACE_SCHEMA = {
   type: 'object',
@@ -272,12 +288,27 @@ async function predictPlace(
   home: string,
   profile: string,
   examples: DiffExample[],
-): Promise<{ location: string; lat: number | null; lng: number | null; difficulty: string | null }> {
+): Promise<{
+  location: string;
+  lat: number | null;
+  lng: number | null;
+  difficulty: string | null;
+  error?: string;
+}> {
   const empty = { location: '', lat: null, lng: null, difficulty: null };
   const key = Deno.env.get('ANTHROPIC_API_KEY');
   /* No key means no prediction and no error: the client treats an empty
      answer and a missing backend identically, because the user-visible
      result is the same — the field is left for them to fill in. */
+  /* ⚠️ ALSO THE WARM PATH. warmGuess() (js/location.js) calls this
+     function at sign-in with an empty name purely to boot the isolate —
+     this file imports the Anthropic SDK, which is the one real cold
+     start in the project — and this line is what makes that free: it
+     returns before the client is constructed, so no model call and no
+     geocode is spent. There is deliberately no `?warm=1` branch: a warm
+     ping must be a request EVERY deployed copy of this function already
+     answers 2xx, or it logs an error in the browser console until
+     somebody remembers to redeploy. */
   if (!key || name.trim().length < 3) return empty;
 
   try {
@@ -289,13 +320,21 @@ async function predictPlace(
          between the user and the field being filled. */
       max_tokens: 256,
       system: PLACE_SYSTEM,
-      /* `low` rather than `medium`. The prompt does the work here — the
-         rules and the worked examples decide the answer, not depth of
-         deliberation — and this is the one model call in the app that
-         runs while somebody is watching an empty field. If recall drops
-         on names that plainly do identify a place, raise this before
-         touching the prompt. */
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: PLACE_SCHEMA } },
+      /* ⚠️ NO `effort` HERE, AND THAT IS NOT AN OVERSIGHT. `effort` is
+         only supported from Opus 4.5 upward; on Haiku 4.5 it is
+         REJECTED WITH A 400. This request carried `effort: 'low'` while
+         PLACE_MODEL was an Opus, where it was correct — and the moment
+         the model moved to Haiku it took the whole feature down, in the
+         quietest possible way: the throw lands in the catch below,
+         which returns `empty`, so the app showed no location and no
+         difficulty and no error anywhere.
+
+         Nothing is lost by dropping it. `effort` tunes how much a
+         thinking model deliberates; Haiku is the small fast model and
+         this is a closed two-field classification behind three further
+         gates. If it ever moves back to an Opus-tier model, `effort`
+         can come back WITH it — the two are one decision. */
+      output_config: { format: { type: 'json_schema', schema: PLACE_SCHEMA } },
       messages: [{
         role: 'user',
         /* Home, then who they are, then how they have rated things
@@ -333,8 +372,19 @@ async function predictPlace(
     if (!geo) return { ...empty, difficulty };
     return { location: parsed.place, lat: geo.lat, lng: geo.lng, difficulty };
   } catch (e) {
+    /* ⚠️ SAY WHAT WENT WRONG, IN THE RESPONSE — not only in a log
+       nobody is reading. This function failing looks, from inside the
+       app, exactly like the model declining to answer: an empty
+       location and a null difficulty, which is also the normal result
+       for most activity names. So a broken deploy is indistinguishable
+       from the feature working, and stayed that way until somebody
+       noticed nothing had been rated in a while.
+
+       The message is for the console, never for the user, and the
+       client refuses to cache an answer carrying one — see
+       maybeGuessLocation() in js/location.js. */
     console.error('predictPlace:', e);
-    return empty;
+    return { ...empty, error: (e as Error)?.message || String(e) };
   }
 }
 
@@ -344,13 +394,38 @@ async function predictPlace(
    Same public Nominatim endpoint js/location.js uses. It is the third
    gate on a predicted place: somewhere the map cannot plot is worthless
    here, because plotting it is the only reason to have guessed.
+
+   ⚠️ IT IS ON THE CRITICAL PATH OF A FIELD SOMEBODY IS WATCHING, and it
+   is the one part of this round trip that is not ours. The difficulty
+   rating is already decided by the time it runs and has nothing to do
+   with it, so an unbounded call here holds a finished answer behind a
+   free public endpoint having a slow morning.
+
+   So it is capped. On a timeout the place is dropped — which is exactly
+   what gate three means, "the map cannot plot this" — and the caller
+   still returns the difficulty. Losing an occasional location to a slow
+   geocoder is much the better trade: the user is looking at an empty
+   field either way, and the alternative is looking at it for longer.
    ============================================================== */
+const GEOCODE_TIMEOUT_MS = 2500;
+
 async function geocode(place: string): Promise<{ lat: number; lng: number } | null> {
   if (!place) return null;
   try {
+    /* ⚠️ INSIDE the try, not above it. This function's failure mode has
+       to be "no place", which the caller already handles — it is gate
+       three. Thrown out of here instead, it lands in predictPlace()'s
+       catch, which returns `empty` and takes the DIFFICULTY down with
+       it: a rating that was already decided and has nothing to do with
+       the geocode. Anything added to this function goes inside the try
+       for the same reason. */
+    const stop = AbortSignal.timeout(GEOCODE_TIMEOUT_MS);
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`,
-      { headers: { 'User-Agent': 'BucketList/1.0', 'Accept-Language': 'en' } },
+      {
+        headers: { 'User-Agent': 'BucketList/1.0', 'Accept-Language': 'en' },
+        signal: stop,
+      },
     );
     if (!res.ok) return null;
     const d = await res.json();

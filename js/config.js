@@ -13,6 +13,57 @@
    one signs everyone out or orphans their cached data. */
 const APP_NAME='Someday We’ll Die';
 
+/* ---- The app's public web address ----
+
+   Two jobs, and the first one is a bug fix rather than a feature.
+
+   1. INVITE LINKS. inviteUrl() builds a link out of location.origin.
+      In a browser that is the site. Inside the Capacitor WKWebView it
+      is `capacitor://localhost` — so every invite shared from the iOS
+      app was a link nobody else on earth could open, and it failed
+      silently: the sheet copied happily, the recipient got a URL their
+      phone did not recognise. A native app has no origin worth sharing,
+      so it has to be told the canonical one.
+
+   2. UNIVERSAL LINKS. This is the domain iOS matches an incoming link
+      against, and the one that has to serve
+      /.well-known/apple-app-site-association. See js/deeplink.js.
+
+   ⚠️ SET THIS TO WHERE index.html ACTUALLY LIVES — scheme, host, and
+   the subdirectory if there is one, with no trailing slash. It is a
+   base, not strictly an origin: the two consumers both append
+   `/index.html`, so a project site served from a subpath has to carry
+   that subpath here or every link 404s. Left EMPTY the app behaves
+   exactly as it did before: links are built from location.origin, and
+   Universal Links are simply off.
+
+   ⚠️ THE TWO JOBS ABOVE HAVE DIFFERENT REQUIREMENTS, and on a host
+   like GitHub Pages only the first one is satisfiable. Job 1 needs
+   this to be a URL a recipient can open — a subpath is fine. Job 2
+   needs the DOMAIN ROOT to serve /.well-known/apple-app-site-association,
+   which on a project site (`user.github.io/repo/`) belongs to the
+   user's own root Pages site and not to this repo at all. Whenever the
+   host here, the `applinks:` entry in ios/App/App/App.entitlements and
+   the AASA file do not all name one domain that actually serves it,
+   iOS silently declines to open the app and the link opens in Safari
+   — which is a degradation and not a breakage: joining is a
+   server-side membership row, so an invite accepted in Safari is
+   already in effect in the app. See the Shared lists section of
+   CLAUDE.md. */
+const APP_WEB_ORIGIN='https://landonjames1.github.io/SomedayWellDie';
+
+/* The origin to build a shareable link from: the configured one when
+   there is one, and otherwise wherever the page is actually being
+   served — which is right in a browser and is the pre-existing
+   behaviour everywhere. */
+function publicOrigin(){
+  if(APP_WEB_ORIGIN) return APP_WEB_ORIGIN.replace(/\/+$/,'');
+  /* capacitor://localhost is not somewhere anyone else can reach, so
+     it is worse than nothing in a link. Nothing is what they get. */
+  if(/^capacitor:|^ionic:|^file:/.test(location.protocol)) return '';
+  return location.origin;
+}
+
 /* ---- Media storage ----
    Photos and video live in Cloudflare R2 rather than Supabase Storage,
    for one reason: R2 does not charge for egress. A photo in a shared

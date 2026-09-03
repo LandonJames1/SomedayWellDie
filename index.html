@@ -78,6 +78,10 @@
   <link rel="stylesheet" href="css/notes.css" />
   <link rel="stylesheet" href="css/moderation.css" />
   <link rel="stylesheet" href="css/pwa.css" />
+  <!-- The palette as tuned in theme-lab.html. It overrides base.css and
+       every component file, so it must load after all of them — and it
+       stays before responsive.css, which has to be last. -->
+  <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/responsive.css" />
 </head>
 <body class="booting">
@@ -545,146 +549,237 @@
   </div>
 </div>
 
-<!-- New / edit activity -->
+<!-- New activity.
+
+     ⚠️ IT CREATES; IT DOES NOT EDIT. The Edit sheet is gone — every
+     field on a pending activity is changed by tapping it on the
+     activity's own detail sheet, so a second form holding the same
+     six values was a second place for them to disagree. See
+     "Editing a pending activity in place" in CLAUDE.md.
+
+     Its shape is the detail sheet's, deliberately and to the pixel:
+     the same plate (list, name, target), the same chip row, the same
+     tinted Where card. What you are filling in is what you will be
+     looking at a moment later, so the two must not read as different
+     screens — and it means the controls are learned once.
+
+     THE ONE DIFFERENCE THAT MATTERS IS INVISIBLE: every control here
+     STAGES. Nothing is written until Add, because there is no row yet
+     and Cancel has to mean "never mind". The detail sheet's editors
+     write immediately, which is right there and wrong here. -->
 <div class="modal-overlay" id="actSheet">
   <div class="modal">
     <div class="sheet-grabber"></div>
-    <div class="sheet-bar">
-      <button class="navbtn" onclick="closeModal('actSheet')">Cancel</button>
-      <div class="sheet-title" id="actSheetTitle">New Activity</div>
-      <button class="navbtn strong" id="actSaveBtn" onclick="saveActivity()">Add</button>
+    <!-- A TITLE AND NOTHING ELSE. The actions live in the dock at the
+         foot; this row only names the sheet. newSheetPane() hides it on
+         the Links and Notes pages, which carry their own .ad-navbar —
+         one header at a time, never two stacked. -->
+    <div class="sheet-bar sheet-bar-title" id="actSheetHead">
+      <div class="sheet-title">New Activity</div>
     </div>
-    <div class="sheet-body">
-      <!-- The name is what the whole sheet is about, so it is set apart
-           rather than being the first of six identical boxes: the serif
-           face is how an activity name is set everywhere else in the
-           app, so the field states what it holds. -->
-      <div class="fg fg-hero">
-        <label>Activity</label>
-        <!-- Two triggers, both landing on maybeGuessLocation(). `change`
-             fires on blur; the debounced `input` fires after a pause in
-             typing, which is the whole latency win — the round trip runs
-             while the user is still filling the sheet instead of starting
-             when they leave the field. One call per pause, not per
-             keystroke; the name cache and _guessFor between them mean the
-             blur almost never asks again. See location.js. -->
-        <input id="aName" placeholder="What do you want to do?" maxlength="100"
-               autocapitalize="sentences" enterkeyhint="done"
-               oninput="queueLocationGuess()" onchange="maybeGuessLocation()" />
-      </div>
+    <div class="sheet-body" id="actSheetBody">
+     <div class="ad-pane active" id="aPaneMain">
 
-      <!-- Target date and list share a line. Both are one-tap choices
-           with a short value, and with no disclosure left to hide
-           anything behind, two full-width rows for them pushed the rest
-           of the sheet off the screen. The List half hides itself when
-           there are no lists (renderActListPicker) and the date then
-           spans the line on its own — which is why this is a flex row
-           and not a two-column grid. -->
-      <div class="fg-pair">
-        <div class="fg fg-tint fg-c-target">
-          <label>Target Date</label>
-          <!-- Every activity gets a real horizon. "Someday" and "No date"
-               are gone: they were the default, so most things landed in a
-               bucket that never came up in Up Next.
-               openEditAct() re-adds a legacy value as an option when an
-               existing activity still carries one, so editing an old row
-               cannot silently rewrite its date. -->
-          <select id="aDate" onchange="onTargetDateChange()">
-            <option value="This Month">This month</option>
-            <option value="This Year">This year</option>
-            <option value="Next Year">Next year</option>
-            <option value="In 2-3 Years">2&ndash;3 years</option>
-            <option value="In 5+ Years">5+ years</option>
-            <option value="__custom__">Specific date&hellip;</option>
-          </select>
-        </div>
-        <!-- Which list this belongs to. Hidden when there are no lists;
-             populated by renderActListPicker(). -->
-        <!-- "List" becomes "Lists" once the schema can hold more than
-             one — see renderActListPicker() in activities.js. -->
-        <div class="fg" id="actListRow" style="display:none">
-          <label id="actListLabel">List</label>
-          <button type="button" class="picker-btn" id="actListBtn">
-            <span class="picker-btn-value" id="actListName"></span>
-            <span class="picker-btn-chevron" id="actListChevron"></span>
+      <!-- The plate: which list, the name, the target date. Same three
+           controls in the same three places as the detail sheet, so the
+           name is the largest thing on screen and the target reads as
+           its caption rather than as the first of six form rows. -->
+      <!-- ad-req: the red rail marking what blocks the save. The plate
+           carries it for the LIST and the NAME; the Target inside it is
+           optional and rides along, which is the imprecision the rail
+           costs and the reason it is on the card rather than the two
+           controls. See THE REQUIRED RAIL in detail.css. -->
+      <div class="ad-plate ad-req">
+        <div class="ad-plate-main">
+          <!-- Hidden by renderActListPicker() when there are no lists
+               to choose between. -->
+          <button class="t-eyebrow ad-eyebrow-btn" id="actListBtn" type="button">
+            <span id="actListName">Choose List</span><span id="actListChevron"></span>
           </button>
+          <!-- A <textarea> carrying .ad-title-edit, exactly as the
+               detail sheet's rename field does: a name wraps to three
+               lines on a 320px screen and an input would put it on one
+               scrolling line. Enter dismisses rather than adding a
+               newline — a name is one line semantically however it is
+               drawn.
+
+               Two guess triggers, both landing on maybeGuessLocation():
+               `change` fires on blur, the debounced `input` fires after
+               a pause in typing — which is the whole latency win, since
+               the round trip then overlaps the rest of the sheet being
+               filled in. One call per pause, never one per keystroke. -->
+          <textarea class="ad-title ad-title-edit" id="aName" rows="1" maxlength="100"
+                    placeholder="What&apos;s the plan?" spellcheck="false"
+                    autocapitalize="sentences" enterkeyhint="done"
+                    oninput="growNameField();queueLocationGuess()"
+                    onkeydown="onNameFieldKey(event)"
+                    onchange="maybeGuessLocation()"></textarea>
         </div>
-      </div>
-
-      <!-- Revealed only when "specific date" is chosen. The ISO value
-           goes into the same target_date column as the presets. -->
-      <div class="fg" id="aDateCustomRow" style="display:none">
-        <label>Date</label>
-        <input type="date" id="aDateCustom" />
-      </div>
-
-      <!-- Priority is its own field rather than a row in the stack above,
-           because a native <select> cannot show what each level looks
-           like — and the colour IS the thing you read in the lists. Each
-           option carries its own swatch, so all three hues are visible
-           while choosing, not just the one already picked. The real value
-           lives in the hidden input so saveActivity() still reads
-           $('aPri').value. -->
-      <div class="fg">
-        <label>Priority</label>
-        <div class="seg seg-pri" id="aPriSeg" role="radiogroup" aria-label="Priority">
-          <button type="button" class="pri-opt" data-pri="low" onclick="setPriorityChoice('low')">
-            <span class="pri-swatch"></span>Low
-          </button>
-          <button type="button" class="pri-opt" data-pri="medium" onclick="setPriorityChoice('medium')">
-            <span class="pri-swatch"></span>Medium
-          </button>
-          <button type="button" class="pri-opt" data-pri="high" onclick="setPriorityChoice('high')">
-            <span class="pri-swatch"></span>High
-          </button>
-        </div>
-        <input type="hidden" id="aPri" value="medium" />
-      </div>
-
-      <!-- Where it happens sits with the rest of the activity, not behind
-           the disclosure: it is the field that decides whether the thing
-           ever shows up on the map, so hiding it meant most activities
-           silently never did. -->
-      <div class="fg fg-tint fg-c-where">
-        <label>Location</label>
-        <div class="loc-wrap">
-          <input id="aLoc" placeholder="Search for a place" maxlength="200" autocomplete="off"
-                 oninput="onActLocInput();locSearch(this,'aLocResults')"
-                 onfocus="locSearch(this,'aLocResults')" />
-          <input type="hidden" id="aLocLat" /><input type="hidden" id="aLocLng" />
-          <div class="loc-results" id="aLocResults"></div>
-        </div>
-        <p class="fg-hint" id="aLocError" style="display:none"></p>
-        <!-- Shown when maybeGuessLocation() has written the field from
-             the activity's name. Unlike the EXIF chip on the completion
-             sheet this marks a value already in the box rather than
-             offering one — the ✕ takes it back out. See location.js. -->
-        <div class="loc-guess" id="aLocGuess" hidden></div>
-      </div>
-
-      <!-- 4: the reminder. A row that opens its own sheet, sitting right
-           under Priority. It used to be a date field plus a textarea
-           buried at the bottom of "More options", where a two-part
-           optional field made the disclosure look like the sheet's main
-           event. The row states whether one is set; the sheet is where
-           it is set. Hidden entirely until the remind_at column exists —
-           see probeRemindColumn() in api.js. -->
-      <div class="fg fg-tint fg-c-remind" id="aRemindRow" style="display:none">
-        <label>Reminder<span class="opt"> optional</span></label>
-        <button type="button" class="row tappable" id="aRemindBtn" onclick="openRemindSheet()">
-          <span class="row-body"><span class="row-title">Remind me</span></span>
-          <span class="row-trailing">
-            <span id="aRemindValue">None</span>
-            <span class="row-chevron" id="aRemindChevron"></span>
-          </span>
+        <button class="ad-target" id="aTargetBtn" type="button" onclick="openNewTargetMenu()">
+          <span class="ad-target-k">Target<span id="aTargetChevron"></span></span>
+          <b id="aTargetValue"></b>
         </button>
-        <!-- Staged by the reminder sheet; written by saveActivity(). -->
-        <input type="hidden" id="aRemind" /><input type="hidden" id="aRemindNote" />
-        <!-- Inferred, never asked for: filled in by maybeGuessLocation()
-             from the activity's name. There is no control for it. -->
-        <input type="hidden" id="aDiff" />
       </div>
 
+      <!-- The plan, as chips. Priority and Difficulty are menus;
+           Remind opens the sheet it always did. The Remind chip hides
+           itself until the remind_at column exists — see
+           probeRemindColumn() in api.js. -->
+      <div class="ad-chips">
+        <!-- ⚠️ REQUIRED, AND NO LONGER DEFAULTED. It used to open on
+             "Medium", which is a value nobody chose sitting in a field
+             that looks answered — so every activity captured without a
+             thought about it claimed a priority it had not been given,
+             and Up Next ranked on it. Blank and asked for instead.
+             setPriorityChoice() maintains the c-* class with classList
+             so this one survives. -->
+        <button class="ad-chip ad-chip-btn ad-req" id="aPriChip" type="button"
+                onclick="openNewPriorityMenu()">
+          <small>Priority</small>
+          <span class="ad-chip-v"><span class="ad-chip-t" id="aPriValue"></span>
+            <span id="aPriChevron"></span></span>
+        </button>
+        <!-- Inferred, never asked for: maybeGuessLocation() fills it in
+             from the name on the same round trip that guesses the
+             place. It is a control anyway, for the same reason the
+             detail sheet's is — a rating nobody can argue with files
+             the activity into a derived list they will not look in.
+             See "Correcting a rating" in CLAUDE.md. -->
+        <button class="ad-chip ad-chip-btn" id="aDiffChip" type="button"
+                onclick="openNewDifficultyMenu()">
+          <small>Difficulty</small>
+          <span class="ad-chip-v"><span class="ad-chip-t" id="aDiffValue"></span>
+            <span id="aDiffChevron"></span></span>
+        </button>
+        <button class="ad-chip ad-chip-btn c-remind" id="aRemindChip" type="button"
+                style="display:none" onclick="openRemindSheet()">
+          <small>Remind</small>
+          <span class="ad-chip-v"><span class="ad-chip-t" id="aRemindValue">None</span>
+            <span id="aRemindChevron"></span></span>
+        </button>
+      </div>
+
+      <!-- Where it happens. The same plum card the detail sheet draws,
+           with one difference: the field is live from the start rather
+           than swapping in on a tap. There is no value to display yet,
+           and this is the field that decides whether the activity ever
+           appears on the map — an extra tap in front of it is the
+           friction that made it the one people skip. -->
+      <div class="ad-place c-where ad-req" id="aPlaceRow">
+        <span class="ad-place-disc" id="aWhereIcon"></span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Where</span>
+          <span class="loc-wrap ad-place-edit">
+            <input id="aLoc" type="text" placeholder="Search for a place" maxlength="200"
+                   autocomplete="off" aria-label="Location"
+                   oninput="onActLocInput();locSearch(this,'aLocResults')"
+                   onfocus="locSearch(this,'aLocResults')" />
+            <input type="hidden" id="aLocLat" /><input type="hidden" id="aLocLng" />
+            <div class="loc-results" id="aLocResults"></div>
+          </span>
+        </span>
+      </div>
+      <p class="fg-hint" id="aLocError" style="display:none"></p>
+      <!-- Shown when maybeGuessLocation() has written the field from the
+           activity's name. Unlike the EXIF chip on the completion sheet
+           this marks a value already in the box rather than offering
+           one — the ✕ takes it back out. See location.js. -->
+      <div class="loc-guess" id="aLocGuess" hidden></div>
+
+      <!-- Links and Notes, both optional and both a page rather than a
+           field on this one. A link is a reference and a note is a
+           sentence; neither is something most people have at the moment
+           of capture, so neither may cost the sheet height it would
+           spend empty. The cards say whether there is anything in them,
+           which a field that vanishes when empty cannot. -->
+      <div class="ad-place c-link" id="aLinkCard" role="button" tabindex="0"
+           onclick="openNewLinks()" onkeydown="onRowKey(event)">
+        <span class="ad-place-disc" id="aLinkIcon"></span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Links</span>
+          <span class="ad-place-v" id="aLinkSummary">None</span>
+        </span>
+        <span class="ad-place-chev" id="aLinkChevron"></span>
+      </div>
+
+      <!-- ⚠️ THE SAME .ad-nsec THE ACTIVITY SHEET DRAWS, not a card of
+           its own: head on the left, count-or-Add on the right, a
+           .note-card preview under it, and the whole block a button
+           onto the Notes page. Filled by renderNewNoteCard(), which is
+           paintActivityNotes() over one staged entry instead of a
+           fetched log.
+
+           #aNotesRow is the id resetActivityNoteField() hides when the
+           activity_notes migration has not been run — the same name it
+           had as a .fg, so notes.js needs no change. -->
+      <div class="ad-nsec" id="aNotesRow" role="button" tabindex="0"
+           onclick="openNewNotes()" onkeydown="onRowKey(event)"></div>
+     </div><!-- /aPaneMain -->
+
+     <!-- THE LINKS PAGE. The same shape as the one on the activity's own
+          sheet, staged: rows come off the `aLinks` array and nothing is
+          written until Add. -->
+     <div class="ad-pane" id="aPaneLinks">
+       <div class="ad-navbar">
+         <button class="ad-back" type="button" onclick="newSheetPane('main')">
+           <span id="aLinksBackIcon"></span>Back</button>
+         <span class="ad-navtitle">Links</span>
+       </div>
+       <div class="ad-links-pane" id="aLinksList"></div>
+       <div class="ad-links-pane note-add" id="aLinkAdd">
+         <input id="aLinkNew" type="url" inputmode="url" autocomplete="off"
+                autocapitalize="off" spellcheck="false" placeholder="Paste a URL"
+                onkeydown="onNewLinkKey(event)" aria-label="Add a link" />
+         <button class="note-add-go show" onclick="addNewLink()"
+                 aria-label="Add link" id="aLinkGo"></button>
+       </div>
+     </div>
+
+     <!-- THE NOTES PAGE. One field, because what is staged here is the
+          log's FIRST ENTRY and not the log — that is append-only and
+          lives on the activity, which does not exist yet. -->
+     <div class="ad-pane" id="aPaneNotes">
+       <div class="ad-navbar">
+         <button class="ad-back" type="button" onclick="newSheetPane('main')">
+           <span id="aNotesBackIcon"></span>Back</button>
+         <span class="ad-navtitle">Notes</span>
+       </div>
+       <div class="fg ad-notes-pane">
+         <textarea id="aNotes" class="fg-note" rows="6" maxlength="1000"
+                   placeholder="Anything worth remembering about this one"
+                   autocapitalize="sentences" oninput="renderNewNoteCard()"></textarea>
+       </div>
+     </div>
+
+      <!-- Staged, every one of them. #aDate holds either a band or the
+           __custom__ sentinel and #aDateCustom the ISO date behind it,
+           which is the pair readTargetDate() collapses back into the
+           single value that gets stored. -->
+      <input type="hidden" id="aDate" /><input type="hidden" id="aDateCustom" />
+      <!-- Empty, not "medium": priority is required now and an
+           unanswered one must read as unanswered. saveActivity() checks
+           it, and firstMissingRequired() is what the Add button and the
+           nudge both read. -->
+      <input type="hidden" id="aPri" value="" />
+      <input type="hidden" id="aDiff" /><input type="hidden" id="aDiffManual" />
+      <input type="hidden" id="aRemind" /><input type="hidden" id="aRemindNote" />
+
+    </div>
+    <!-- THE DOCK. Cancel and Add sit exactly where Delete and "Mark
+         accomplished" sit on the activity's own sheet — the same
+         disc-plus-block pair, pinned to the foot of the sheet rather
+         than riding a bar at the top of it. So the two sheets agree
+         about where an action lives as well as about what the fields
+         look like, and the left button is no longer Cancel and Back at
+         once: a page's way out is the Back bar at the top of that page,
+         and the sheet's way out is here. -->
+    <div class="ad-dock" id="actSheetDock">
+      <div class="ad-dock-view">
+        <button class="ad-dock-disc" id="actCancelBtn" type="button"
+                aria-label="Cancel" onclick="closeModal('actSheet')"></button>
+        <button class="btn btn-filled btn-block" id="actSaveBtn"
+                onclick="saveActivity()">Add</button>
+      </div>
     </div>
   </div>
 </div>
@@ -739,6 +834,98 @@
         <label>What makes something easy or hard for you</label>
         <textarea id="diffProfileText" rows="6" maxlength="600"
                   placeholder="No car, tight budget, hike most weekends, won’t fly"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     THE TARGET DATE, FROM THE ACTIVITY SHEET
+
+     The one field on a pending activity that is still edited in a sheet
+     rather than in place. The name and the location are typed straight
+     into the detail sheet (see EDITING IN PLACE in activities.js); a
+     date is picked, not typed, and a band picker plus a date input is
+     more than a row can hold.
+
+     It writes on its own Done and nothing else; the activity sheet
+     repaints underneath. Cancel leaves the row exactly as it was, which
+     is what makes writing immediately safe.
+     ============================================================ -->
+<!-- ============================================================
+     THE ONE-FIELD PROMPT — the iOS alert with a text box in it.
+     Centred rather than bottom-anchored: a sheet is a place you go, an
+     alert is a question you answer. Driven by showPrompt() in modals.js.
+     ============================================================ -->
+<div class="modal-overlay" id="promptSheet">
+  <div class="pr-card">
+    <div class="pr-head"><div class="pr-title"></div></div>
+    <div class="pr-body">
+      <!-- A textarea, not an input: it grows with what is typed rather
+           than scrolling a single line sideways. maxlength is a hard
+           stop, set per caller by showPrompt(). -->
+      <textarea id="promptInput" rows="1" autocomplete="off"
+                autocapitalize="sentences" enterkeyhint="done"
+                oninput="growPromptInput()"
+                onkeydown="onPromptKey(event)"></textarea>
+    </div>
+    <div class="pr-actions">
+      <button id="promptCancel" onclick="closePrompt()">Cancel</button>
+      <button id="promptSave" class="strong" onclick="savePrompt()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     THE CALENDAR — the app's own, not <input type="date">'s.
+     One month, a tap picks and closes. See showCalendar() in modals.js.
+     ============================================================ -->
+<div class="modal-overlay" id="calSheet">
+  <div class="cal-card">
+    <div class="cal-head">
+      <div class="cal-title" id="calTitle"></div>
+      <div class="cal-nav">
+        <button id="calPrev" onclick="calStep(-1)" aria-label="Previous month"></button>
+        <span id="calMonth"></span>
+        <button id="calNext" onclick="calStep(1)" aria-label="Next month"></button>
+      </div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-actions">
+      <button onclick="closeCalendar()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="targetSheet">
+  <div class="modal">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-bar">
+      <button class="navbtn" onclick="closeModal('targetSheet')">Cancel</button>
+      <div class="sheet-title">Target Date</div>
+      <button class="navbtn strong" onclick="saveTargetSheet()">Done</button>
+    </div>
+    <div class="sheet-body">
+      <div class="fg fg-c-target">
+        <label>When</label>
+        <!-- The same five bands and the same sentinel as the activity
+             sheet's own picker, so the two cannot offer different
+             answers. A legacy value on an old row is added back by
+             openTargetSheet() for that one activity -- otherwise
+             opening this and pressing Done would silently rewrite a
+             date nobody touched. -->
+        <select id="tgBand" onchange="onTargetSheetChange()">
+          <option value="This Month">This month</option>
+          <option value="This Year">This year</option>
+          <option value="Next Year">Next year</option>
+          <option value="In 2-4 Years">2&ndash;4 years</option>
+          <option value="In 5+ Years">5+ years</option>
+          <option value="__custom__">Specific date&hellip;</option>
+        </select>
+      </div>
+      <div class="fg fg-c-target" id="tgDateRow" style="display:none">
+        <label>Date</label>
+        <input type="date" id="tgDate" />
       </div>
     </div>
   </div>
@@ -802,21 +989,13 @@
 <div class="modal-overlay" id="compSheet">
   <div class="modal">
     <div class="sheet-grabber"></div>
-    <!-- TWO BARS, ONE AT A TIME. The media sub-page used to draw its
-         own Back/Media row *inside* the body, under this one, so the
-         sheet showed two stacked headers and it was not obvious which
-         one Cancel and Save still applied to. Opening the sub-page now
-         replaces the bar rather than adding to it, the way a pushed
-         screen replaces the nav bar. compShowPane() swaps them. -->
-    <div class="sheet-bar" id="compBarMain">
-      <button class="navbtn" onclick="closeModal('compSheet')">Cancel</button>
-      <div class="sheet-title" id="compSheetTitle">Accomplished</div>
-      <button class="navbtn strong" id="compSaveBtn" onclick="confirmComplete()">Done</button>
-    </div>
-    <div class="sheet-bar" id="compBarMedia" style="display:none">
-      <button class="navbtn" onclick="compShowPane('main')" id="compMediaBack"></button>
-      <div class="sheet-title">Media</div>
-      <button class="navbtn strong" onclick="$('photoInput').click()" id="compMediaAdd"></button>
+    <!-- A title and nothing else, like the new-activity sheet's. The
+         mode is also in the button you leave by (Done completes, Save
+         edits a record, Add files something that was never a plan);
+         this says it in words. compShowPane() hides the row on the
+         media page, which has its own .ad-navbar. -->
+    <div class="sheet-bar sheet-bar-title" id="compSheetHead">
+      <div class="sheet-title" id="compSheetTitle">Mark as Accomplished</div>
     </div>
     <div class="sheet-body">
      <div class="comp-pane active" id="compPaneMain">
@@ -926,12 +1105,37 @@
           pages use: a second pane inside the one sheet, swapped in by
           compShowPane(), so there is no second overlay to dismiss. -->
      <div class="comp-pane" id="compPaneMedia">
-       <!-- No header here: the sheet's own bar becomes Back/Media/Add
-            while this pane is showing. See compBarMedia above. -->
+       <div class="ad-navbar">
+         <button class="ad-back" type="button" onclick="compShowPane('main')">
+           <span id="compMediaBackIcon"></span>Back</button>
+         <span class="ad-navtitle">Media</span>
+       </div>
        <div class="comp-media-pane">
          <div class="photo-previews" id="photoPrev"></div>
        </div>
      </div>
+    </div>
+    <!-- THE DOCK, one view per page — the same arrangement the activity
+         sheet's dock makes, where the details page gets the actions and
+         each sub-page gets its own. compShowPane() swaps them.
+
+         On the media page the sheet's Cancel and Save are deliberately
+         out of reach: Back is one tap and the page's own job is adding
+         media, which belongs under the thumb while you are there. -->
+    <div class="ad-dock" id="compSheetDock">
+      <div class="ad-dock-view" id="compDockMain">
+        <button class="ad-dock-disc" id="compCancelBtn" type="button"
+                aria-label="Cancel" onclick="closeModal('compSheet')"></button>
+        <!-- The label is the mode: Done, Save or Add. Set by openComp()
+             and openCompDraft(); shaken by requireLocation() and
+             disabled while the write is in flight, both by id. -->
+        <button class="btn btn-filled btn-block" id="compSaveBtn"
+                onclick="confirmComplete()">Done</button>
+      </div>
+      <div class="ad-dock-view" id="compDockMedia" hidden>
+        <button class="btn btn-filled btn-block" id="compMediaAdd"
+                onclick="$('photoInput').click()">Add a photo or video</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1237,6 +1441,9 @@
 <script src="js/fuzzy.js"></script>
 <!-- Pure binary parsing, no dependencies; media.js calls it. -->
 <script src="js/exif.js"></script>
+<!-- The Taptic Engine, in the native shell only. No dependencies, and
+     silent no-ops in a browser. activities.js calls it. -->
+<script src="js/haptics.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/offline.js"></script>
 <script src="js/api.js"></script>
@@ -1247,6 +1454,10 @@
 <!-- The hash router. After nav.js because it reads PAGE_TAB-adjacent
      state, and before main.js, which asks it what the URL wanted. -->
 <script src="js/router.js"></script>
+<!-- Universal Links. After router.js, which it hands an incoming
+     hash to rather than re-implementing the routing table, and
+     before main.js, which registers it during boot. -->
+<script src="js/deeplink.js"></script>
 <script src="js/modals.js"></script>
 <script src="js/gestures.js"></script>
 
@@ -1264,6 +1475,10 @@
 <script src="js/home.js"></script>
 <script src="js/upnext.js"></script>
 <script src="js/done.js"></script>
+<!-- APNs. Before reminders.js, which asks it whether native push is
+     the transport before reaching for PushManager — there is no
+     service worker and no Notification API inside the iOS shell. -->
+<script src="js/nativepush.js"></script>
 <script src="js/reminders.js"></script>
 <!-- Easy / Medium / Hard: three lists derived from the difficulty
      rating rather than stored. Before collections.js and detail.js,

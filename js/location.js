@@ -156,6 +156,37 @@ function warmGeo(){
   }).catch(()=>{});
 }
 
+/* The same trick for `unfurl`, and it matters MORE there. `geo` has no
+   imports at all by design; `unfurl` pulls in the Anthropic SDK, so its
+   cold start is the slowest thing between typing an activity's name and
+   the location and difficulty appearing.
+
+   ⚠️ IT WARMS WITH A REAL CALL THAT COSTS NOTHING — an empty name —
+   AND THAT IS THE WHOLE POINT. predictPlace() returns before it
+   constructs an Anthropic client, because `name.trim().length < 3` is
+   already a guard it has for other reasons: so this is a 200, with the
+   isolate booted, the SDK loaded and the TLS connection open, and no
+   model call and no geocode spent.
+
+   ⚠️ DO NOT WARM WITH A REQUEST THE FUNCTION REJECTS. Two earlier
+   versions did, and both were wrong the same way. POSTing `{}` earned a
+   red `400 (Bad Request)`; a GET `?warm=1` earned `405 (Method Not
+   Allowed)` from any copy of the function deployed before that branch
+   existed. A fake error is a real cost — somebody eventually spends an
+   afternoon chasing it — and a pure optimisation must never be able to
+   log one, least of all one whose quietness depends on somebody
+   remembering to redeploy.
+
+   Through sb.functions.invoke() rather than fetch(), unlike warmGeo():
+   it is the exact path the real guess takes, so it warms whatever that
+   path touches, and the auth header comes for free. */
+function warmGuess(){
+  if(!SUPABASE_URL) return;
+  try{
+    sb.functions.invoke('unfurl',{body:{activity:{name:''}}}).catch(()=>{});
+  }catch(e){}
+}
+
 /* Resolves to an array, or null when the function could not answer at
    all — which is the signal to fall back to Nominatim. An empty array
    means "asked, and there is nothing", which is a real answer. */
@@ -364,6 +395,12 @@ function locApply(resultsId,r,isHome){
      A place the user chose themselves is not that, so take the mark
      off — otherwise the caption claims credit for their answer. */
   if(input&&input.id==='aLoc'&&typeof clearLocationGuessMark==='function') clearLocationGuessMark();
+  /* ⚠️ SETTING .value FIRES NO `input` EVENT, so the new-activity
+     sheet's Add button cannot learn about a place picked from the
+     dropdown, from the Home shortcut, from Current location or from
+     the name guess — all four land here. Without this the button went
+     on reading "Add a place" over a filled field. */
+  if(input&&input.id==='aLoc'&&typeof updateNewSaveButton==='function') updateNewSaveButton();
 }
 
 async function locUseCurrent(resultsId){
@@ -649,7 +686,7 @@ let _guessSeq=0,_guessFor='',_guessFilled=false,_guessDismissed=false;
 /* Called on every open of the activity sheet, so a guess from one
    activity cannot leak into the next one started in the same session.
 
-   `arm` is false from openEditAct(): guessing is for an activity being
+   `arm` is false wherever the name is not a NEW one: guessing is for something being
    created. Renaming an existing one is not an invitation to rewrite
    the place it happens, and an activity that has been around long
    enough to edit has already had its chance to be guessed at. */
@@ -668,6 +705,11 @@ function resetLocationGuess(arm){
 function onActLocInput(){
   if(_guessFilled||_guessDismissed) clearLocationGuessMark();
   _guessDismissed=true;
+  /* The new-activity sheet's Add button names the first outstanding
+     field, and the place is one of them — see NEW_REQUIRED in
+     activities.js. Guarded because this file also loads in contexts
+     where that sheet's script has not defined it. */
+  if(typeof updateNewSaveButton==='function') updateNewSaveButton();
 }
 
 function clearLocationGuessMark(){
@@ -685,29 +727,64 @@ function undoLocationGuess(){
   $('aLoc').value='';$('aLocLat').value='';$('aLocLng').value='';
   _guessDismissed=true;
   clearLocationGuessMark();
+  /* Emptying the field puts the place back on the outstanding list, so
+     the Add button has to go back to asking for it. */
+  if(typeof updateNewSaveButton==='function') updateNewSaveButton();
 }
 
 /* ==============================================================
    MAKING THE GUESS ARRIVE SOONER
 
-   Three levers, none of which changes what the feature will answer:
+   Five levers, none of which changes what the feature will answer:
 
-   1. **Ask while they are still typing, not on blur.** The round trip
+   1. **Warm the isolate at sign-in.** `warmGuess()`, the exact
+      counterpart of `warmGeo()`, and the biggest single win here —
+      `unfurl` imports the Anthropic SDK, which is the one thing in this
+      app with a real cold start, and without this the FIRST guess of
+      every session pays for it. The ping costs one 400 and no model
+      call; what it buys is a booted isolate and an open TLS connection.
+   2. **Ask while they are still typing, not on blur.** The round trip
       is the whole cost, and firing it at a pause in typing overlaps it
       with the rest of the sheet being filled in — the answer is
       frequently already there by the time they would have left the
       field. Still one call per *pause*, never one per keystroke: that
       is what GUESS_IDLE_MS buys, and it is why the original comment
       said "not on input".
-   2. **Remember the answers for the session.** Most names are asked
+   3. **Say that it is working.** The chip read "None" and the location
+      sat empty for the whole round trip, so a guess that landed two
+      seconds later looked like the app changing its mind rather than
+      like an answer arriving. `guessPending()` marks the two controls
+      while one is in flight — see .is-guessing in detail.css. It makes
+      nothing faster and it is the half the user actually feels.
+   4. **Remember the answers for the session.** Most names are asked
       about once, but the ones that repeat — a name retyped after a
       correction, the same activity added to two lists — return
       instantly and free. Negative answers are cached too, and they are
       the majority.
-   3. **Never ask twice for the same name.** `_guessFor` already did
+   5. **Never ask twice for the same name.** `_guessFor` already did
       this within one sheet; the cache extends it across sheets.
+
+   ⚠️ AND WHEN THE MODEL CALL ITSELF FAILS, THE FUNCTION SAYS SO. A
+   thrown call used to return an empty answer and log to the Supabase
+   console, which nobody reads — and an empty answer is exactly what a
+   name identifying no place returns, so a broken deploy was
+   indistinguishable from the feature working normally. It returns an
+   `error` string with it now; this file logs it and refuses to cache
+   an answer carrying one.
+
+   ⚠️ THE OTHER HALF OF THE LATENCY IS ON THE FUNCTION, and it is not a
+   model call: when the model DOES name a place, `predictPlace()` then
+   waits on public Nominatim before answering — so the difficulty, which
+   was ready and has nothing to do with the geocode, is held behind it.
+   That call is bounded by a timeout there rather than left open-ended;
+   see GEOCODE in functions/unfurl/index.ts.
    ============================================================== */
-const GUESS_IDLE_MS=650;
+/* 450ms, down from 650. The pause it has to sit behind is the one
+   between words, not the one at the end of a sentence — at 650 a
+   two-second answer started counting from noticeably after the user had
+   stopped typing. Lower than this and it starts firing mid-name, which
+   spends a model call on a prefix. */
+const GUESS_IDLE_MS=450;
 let _guessTimer=null;
 
 /* Session-lived, name → {location,lat,lng} or null. Deliberately not
@@ -754,12 +831,23 @@ function difficultyExamples(){
     if(!a||!by[a.difficulty]) continue;
     const n=(a.name||'').trim();
     if(n.length<3) continue;
-    by[a.difficulty].push({n,at:a.createdAt||''});
+    by[a.difficulty].push({n,at:a.createdAt||'',mine:!!a.difficultyManual});
   }
   const out=[];
   for(const tier of ['easy','medium','hard']){
     if(!by[tier]) continue;
-    by[tier].sort((x,y)=>y.at.localeCompare(x.at));
+    /* ⚠️ CORRECTED RATINGS COME FIRST, newest within each group.
+       Everything else in this sample is the model's own past output, so
+       a lean feeds itself: judge one thing wrongly and it becomes the
+       example that argues for judging the next one the same way. A
+       rating the user changed by hand is the only genuinely new
+       information in the loop, and putting it at the head of its tier
+       is what lets DIFF_EX_PER_TIER spend its slots on corrections
+       before it spends them on echoes.
+
+       It is a re-ordering and NOT a filter: somebody who has never
+       corrected anything sends exactly the sample they sent before. */
+    by[tier].sort((x,y)=>(y.mine-x.mine)||y.at.localeCompare(x.at));
     for(const e of by[tier].slice(0,DIFF_EX_PER_TIER)) out.push({name:e.n.slice(0,120),difficulty:tier});
   }
   return out;
@@ -769,6 +857,22 @@ function difficultyExamples(){
    Called from saveDiffProfileSheet(). */
 function resetGuessCache(){ _guessCache.clear();_guessFor=''; }
 
+
+/* ⚠️ A STATE ON THE TWO CONTROLS, NOT A MESSAGE ANYWHERE. The rule
+   against help text is not a style preference — see the two
+   non-negotiable rules at the top of CLAUDE.md — so this says "working"
+   the way a control says it: the difficulty chip and the Where row go
+   quiet and pulse while the answer is coming.
+
+   The Where row is marked only while it is EMPTY. A location the user
+   has already typed is theirs, the guess will not overwrite it, and
+   greying it would say otherwise. */
+function guessPending(on){
+  const chip=$('aDiffChip'),row=$('aPlaceRow'),loc=$('aLoc');
+  const wantLoc=on&&loc&&!loc.value.trim();
+  if(chip) chip.classList.toggle('is-guessing',!!on);
+  if(row)  row.classList.toggle('is-guessing',!!wantLoc);
+}
 
 function queueLocationGuess(){
   clearTimeout(_guessTimer);
@@ -789,8 +893,8 @@ async function maybeGuessLocation(){
   if(!nameEl||!locEl) return;
   const name=nameEl.value.trim();
 
-  /* Every reason not to ask, cheapest first. Editing an existing
-     activity is excluded by openEditAct() never arming this. */
+  /* Every reason not to ask, cheapest first. This sheet only ever
+     creates, so there is no existing rating here to protect. */
   if(_guessDismissed||!navigator.onLine||name.length<3) return;
   if(fuzzyNorm(name)===_guessFor) return;      /* already answered for this name */
   /* Note what is NOT a reason to skip: a location field that is already
@@ -821,6 +925,7 @@ async function maybeGuessLocation(){
          exactly what it was. See TEACHING THE RATING above. */
       const profile=(typeof difficultyProfile==='function'&&difficultyProfile())||'';
       const examples=difficultyExamples();
+      guessPending(true);
       const r=await sb.functions.invoke('unfurl',{
         body:{activity:{name,home,profile,examples}},
       });
@@ -831,12 +936,31 @@ async function maybeGuessLocation(){
          Without it the field is simply left for the user. A failure is
          deliberately NOT cached — it says nothing about the name. */
       console.info('[location] no guess:',e&&e.message||e);
+      guessPending(false);
       return;
+    }finally{
+      /* Only the request that is still the current one may clear the
+         mark: a superseded call finishing after a newer one started
+         would otherwise turn the pending state off while that newer one
+         is still in flight. */
+      if(seq===_guessSeq) guessPending(false);
     }
-    /* The whole answer is cached, not just the useful half: a name that
-       identifies no place still carries a difficulty, and storing null
-       for it would throw that away and re-ask on the next keystroke. */
-    _guessCache.set(key,data||null);
+    /* ⚠️ AN ANSWER CARRYING AN ERROR IS NOT CACHED, for the same reason
+       a failed request is not: it says nothing about the NAME. The
+       function returns `error` when the model call itself threw — a
+       rejected parameter, a bad model id, an expired key — and every
+       one of those looks identical to "this name names no place".
+       Cached, one broken deploy would pin an empty answer to every name
+       typed during it and keep serving it after the fix. */
+    if(data&&data.error){
+      console.warn('[guess] backend error, not cached:',data.error);
+    } else {
+      /* The whole answer is cached, not just the useful half: a name
+         that identifies no place still carries a difficulty, and
+         storing null for it would throw that away and re-ask on the
+         next keystroke. */
+      _guessCache.set(key,data||null);
+    }
   }
 
   /* Stale, or the sheet is gone, or the user has since typed
@@ -849,8 +973,25 @@ async function maybeGuessLocation(){
      not shown as an offer, has no undo, and none of the location gates
      below have anything to say about it. An answer the model declined
      to give leaves whatever is already there. */
-  const diffEl=$('aDiff');
-  if(diffEl&&data.difficulty) diffEl.value=data.difficulty;
+  /* ⚠️ A RATING THE USER CORRECTED IS NEVER REACHED FROM HERE, and it
+     is worth knowing why rather than adding a guard that would never
+     fire. Corrections are made on the activity detail sheet
+     (openDifficultyMenu in js/activities.js), which acts on a row that
+     already exists -- and the only sheet that can re-ask is the NEW
+     activity sheet, which only ever CREATES -- there is no edit sheet
+     any more. So "only on create" is not merely a cost decision: it is
+     what makes the correction stick.
+
+     Anything that arms this guess on an existing row has to check the
+     row's difficulty_manual first, or it will silently overwrite a
+     decision somebody made. */
+  /* ⚠️ THROUGH setDifficultyChoice(), never straight into the input.
+     The chip on the new-activity sheet is painted by that function, so
+     writing the value directly left it reading "None" over a rating
+     the model had already returned. `false` because nobody chose it —
+     see difficulty_manual in js/activities.js. */
+  if(data.difficulty&&typeof setDifficultyChoice==='function')
+    setDifficultyChoice(data.difficulty,false);
 
   /* A location that is there stays there — except one we filled in
      ourselves, which a renamed activity should be allowed to replace. */

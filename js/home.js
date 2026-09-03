@@ -352,10 +352,12 @@ document.addEventListener('click',e=>{
    it has to ask anyway — and once a sheet is opening, showing the rest
    of the fields costs nothing.
 
-   openNewActivity() seeds the sheet: DEFAULT_TARGET_DATE, medium
-   priority, and the List row so the destination is a visible choice
-   rather than a guess. saveActivity() runs the duplicate check, so
-   there is none here. */
+   openNewActivity() seeds the sheet with the List row so the
+   destination is a visible choice rather than a guess. It seeds NO
+   target date and NO priority: both are required and both used to be
+   defaulted, which meant every hurried capture claimed a deadline and
+   an importance nobody had chosen. See NEW_REQUIRED in activities.js.
+   saveActivity() runs the duplicate check, so there is none here. */
 async function homeQuickAdd(){
   const input=$('homeComposerInput');
   const name=input.value.trim();

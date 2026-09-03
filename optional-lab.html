@@ -1,0 +1,683 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Required vs Optional — new activity sheet</title>
+
+<!-- ==============================================================
+     OPTIONAL-LAB — ways to say which fields the sheet needs.
+
+     A bench for one decision: the new-activity sheet is the detail
+     sheet's shape with the values empty, and NOTHING on it says that
+     the list, the name and the place block the save while the target,
+     the chips, the links and the notes do not. Today you find that out
+     by pressing Add and being shaken at, which is the dead end the
+     completion sheet's media hint already exists to avoid.
+
+     ⚠️ THE LETTERS SKIP, AND THE GAPS ARE THE RECORD. A, C, D, E, F, G
+     and H were built here and dropped; every one of them is written up
+     at the foot of this file, because three failed in ways worth not
+     rediscovering. B and I survived. J, K and L are the third round and
+     are all B plus a different way of marking the required half.
+
+     ⚠️ IT LINKS THE APP'S OWN STYLESHEETS, theme.css included, exactly
+     as theme-lab.html does — so what you are looking at is the real
+     sheet in its real palette, not a sketch of it. modal-lab.html
+     COPIES its tokens and has drifted; do not copy anything here.
+
+     ⚠️ AND THEREFORE EVERY CLASS IT INVENTS MUST BE ONE THE APP DOES
+     NOT USE. A collision is silent and reads as the lab's own CSS
+     being ignored — `.chip` and `.empty` both bit theme-lab. Everything
+     the lab owns is prefixed `lab-`, and each variant is scoped under
+     `.lab-v-<letter>`. The audit is one grep of the class names in the
+     <style> block below against css/*.css.
+
+     ⚠️ THE FOUR CARD HUES ARE READ OFF THE LIVE CASCADE, NOT COPIED.
+     theme.css sets --c-where / --c-link / --c-target / --c-remind on a
+     selector list of IDS (#actSheetBody and friends), and six frames
+     cannot all carry one id. So the lab stands up a single hidden
+     probe carrying that id, reads the four values back with
+     getComputedStyle, and writes them onto each frame — which is the
+     one thing here that cannot drift when the palette is retuned.
+
+     Dev tool only: not linked from index.html, not in sw.js, and
+     outside build-www.js's allowlist (it excludes *-lab.html by name).
+     Follows the OS light/dark setting — theme.css keys its dark half
+     off prefers-color-scheme, so there is deliberately no toggle here
+     to lie about which half you are seeing.
+
+     Open it directly.
+       ?state=empty|partial|full   which of the three steps to open on
+       ?audit=1                    measure every frame for overflow,
+                                   clipped text and a wrapped title,
+                                   and print the findings on the page
+       #j / #k / #l                scroll to one variant
+     ============================================================== -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+
+<!-- The app's own files, in the app's own order. theme.css is
+     second-to-last for the reason CLAUDE.md gives: its rule overrides
+     have the same specificity as the rules they replace and win on
+     source order alone. responsive.css is left out — its media queries
+     key off the VIEWPORT, so on a wide bench they would apply tablet
+     layout to 390px frames. -->
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/layout.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/detail.css" />
+<link rel="stylesheet" href="css/modals.css" />
+<link rel="stylesheet" href="css/map.css" />
+<link rel="stylesheet" href="css/notes.css" />
+<link rel="stylesheet" href="css/theme.css" />
+
+<style>
+  /* ---- the lab's own chrome. Literal hex, never app tokens: the
+     panel has to stay readable whatever the palette does. ---- */
+  html, body { margin: 0; background: #1b1f24; color: #e6e9ec; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 13px; line-height: 1.45;
+  }
+  .lab-head {
+    position: sticky; top: 0; z-index: 10;
+    padding: 16px 20px 13px; background: #1b1f24;
+    border-bottom: 1px solid #2e353d;
+  }
+  .lab-head h1 { margin: 0 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .lab-head p { margin: 0; max-width: 78ch; color: #9aa4ae; font-size: 12px; }
+  .lab-states { display: flex; gap: 7px; margin-top: 12px; flex-wrap: wrap; }
+  .lab-states button {
+    -webkit-appearance: none; appearance: none; cursor: pointer;
+    padding: 7px 13px; border-radius: 8px;
+    border: 1px solid #39424c; background: #232931; color: #cdd4db;
+    font: inherit; font-size: 12px;
+  }
+  .lab-states button.on { background: #d98f5c; border-color: #d98f5c; color: #1b1f24; font-weight: 600; }
+  .lab-legend { margin-top: 10px; display: flex; gap: 16px; font-size: 11.5px; color: #9aa4ae; }
+  .lab-legend b { color: #e6e9ec; font-weight: 600; }
+
+  /* ---- the stage ---- */
+  .lab-stage {
+    display: flex; gap: 26px; align-items: flex-start;
+    padding: 24px 20px 60px; overflow-x: auto;
+  }
+  .lab-col { flex: none; width: 390px; scroll-margin-top: 150px; }
+  .lab-col > h2 {
+    margin: 0 0 3px; font-size: 13.5px; font-weight: 600; letter-spacing: -.01em;
+  }
+  .lab-col > h2 span { color: #d98f5c; }
+  /* Fixed, not min: a four-line note pushed one frame below its
+     neighbours and the six sheets stopped being comparable at a
+     glance, which is the only thing this bench is for. */
+  .lab-col > p { margin: 0 0 13px; min-height: 82px; color: #9aa4ae; font-size: 11.5px; }
+  .lab-col.lab-base > h2 span { color: #7f8b96; }
+
+  /* ---- teach the app's sheet to live inside a 390-wide box ----
+     The same corrections theme-lab makes: .modal-overlay is
+     position: fixed at 100dvh and .modal translates in, both of which
+     anchor to the WINDOW rather than to the frame. -->  */
+  .lab-phone {
+    --content-max: 640px;
+    position: relative; width: 390px; height: 760px;
+    border-radius: 26px; overflow: hidden;
+    border: 1px solid #2e353d; box-shadow: 0 18px 50px rgba(0,0,0,.55);
+    background: var(--bg); color: var(--label);
+    font-family: var(--sans); font-size: 17px; line-height: 1.29;
+    letter-spacing: -.01em;
+  }
+  .lab-phone .modal-overlay {
+    position: absolute; inset: 0; height: 100%;
+    opacity: 1; pointer-events: auto;
+  }
+  .lab-phone .modal { transform: none; height: 94%; max-height: none; }
+
+  /* ══════════════════════════════════════════════════════════════
+     THE DOCK BUTTON — B, and inherited by J, K and L.
+     The answer arrives on the control you are already reaching for,
+     rather than in a caption somewhere above it. Same shape as
+     updateMediaRequirement() on the completion sheet, which swaps its
+     head between "optional" and "required" and shows a hint while the
+     rule is unmet.
+     ══════════════════════════════════════════════════════════════ */
+  .lab-dock-blocked {
+    background: var(--fill-3); color: var(--label-3);
+    box-shadow: var(--ring);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     THE WORD, on the optional half. I is now its only user.
+
+     ⚠️ IT DOES NOT FIT WHERE THE APP PUTS ITS SMALLEST LABELS, and
+     that is I's real cost rather than a bug in the bench. Two places
+     had to be taught to wrap instead of overflowing, and both are
+     worth reading before adding the word anywhere else:
+
+     - THE CHIPS. Three share a 320px row, so an 8.5px
+       "PRIORITY · OPTIONAL" is wider than its own control and the
+       three labels ran into each other. Stacked, at 7.5px with tight
+       leading so the chip grows by one short line rather than a full
+       one.
+     - THE TARGET. .ad-target is `max-width: 44%` and sizes to its
+       content, so a wider label STEALS WIDTH FROM THE TITLE — which
+       is what put "Judahs Food Cart" on two lines while the same name
+       fitted on one in every other frame. .ad-target-k is nowrap by
+       design, so the fix is to let that flex line wrap and give the
+       tag the whole second row: the column stays TARGET-wide and the
+       title keeps its space.
+     ══════════════════════════════════════════════════════════════ */
+  .lab-opt-tag { font-weight: 400; opacity: .62; }
+  .lab-opt-tag::before { content: " · "; }
+  .ad-chip small .lab-opt-tag,
+  .ad-target-k .lab-opt-tag {
+    display: block; font-size: 7.5px; line-height: 1.25;
+  }
+  .ad-chip small .lab-opt-tag::before,
+  .ad-target-k .lab-opt-tag::before { content: none; }
+  .ad-target-k:has(.lab-opt-tag) { flex-wrap: wrap; justify-content: flex-end; }
+  .ad-target-k .lab-opt-tag { flex-basis: 100%; text-align: right; }
+
+  /* ══════════════════════════════════════════════════════════════
+     I — the app's own rail, in a colour it already owns.
+     .pri-high/.pri-medium/.pri-low draw a rail down a row's leading
+     edge, so a reader has met this mark before. --tint rather than red
+     keeps the destructive hue destructive.
+
+     ⚠️ IT IS BLOCK-LEVEL, WHICH IS ITS IMPRECISION: the rail marks the
+     plate and the Where card, and the plate also holds the Target —
+     which is optional. J inherits exactly this geometry, so it
+     inherits exactly this imprecision.
+     ══════════════════════════════════════════════════════════════ */
+  .lab-rail { position: relative; }
+  .lab-rail::before {
+    content: ""; position: absolute;
+    left: 0; top: 12px; bottom: 12px; width: 3px;
+    border-radius: 0 3px 3px 0; background: var(--tint);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     J — the same rail, in red and louder.
+     4px rather than 3, and --red at full strength rather than --tint.
+
+     ⚠️ THIS GIVES RED A SECOND MEANING. CLAUDE.md is explicit that
+     --red is destructive only, and the warm end is already spoken for
+     twice besides — the deadline badge owns overdue/urgent and
+     --pri-high owns high priority. A required field is none of those:
+     nothing has gone wrong and the sheet is in its normal state. That
+     is the trade J is asking you to make, and it is the same trade K
+     and L ask, so decide it once.
+     ══════════════════════════════════════════════════════════════ */
+  .lab-rail-red { position: relative; }
+  .lab-rail-red::before {
+    content: ""; position: absolute;
+    left: 0; top: 10px; bottom: 10px; width: 4px;
+    border-radius: 0 4px 4px 0; background: var(--red);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     K — an asterisk on each required label.
+     The oldest convention on this list and the one needing least
+     explanation.
+
+     ⚠️ THE NAME HAS NO LABEL TO HANG ONE ON, and that is K's real
+     problem rather than an oversight here. CHOOSE LIST and WHERE are
+     mono labels and take the mark cleanly; the name field is the
+     largest thing on the sheet and deliberately carries no label at
+     all — the value IS the control. So the third mark is absolutely
+     positioned in the field's top-right corner, which is the best
+     available spot and still reads as floating rather than attached.
+     Watch it against a three-line name.
+     ══════════════════════════════════════════════════════════════ */
+  .lab-star { color: var(--red); font-weight: 600; }
+  .ad-place-k .lab-star,
+  .ad-eyebrow-btn .lab-star { margin-left: 3px; }
+  /* ⚠️ THE WRAPPER HAS TO *BECOME* THE FIELD'S BOX, NOT SIT INSIDE IT.
+     .ad-title-edit is `width: calc(100% + 16px)` with `margin: 0 -8px`
+     — deliberately wider than its parent so the resting title and the
+     edit field share one box to the pixel (read the note in
+     detail.css). Two wrong versions of this wrapper before the right
+     one, and the audit caught both:
+
+       - a plain block wrapper: the field is +16 on the WRAPPER now, so
+         it hung 8px out of it;
+       - a wrapper carrying the negative margin as well: the field's
+         own calc() then measured against an already-widened parent and
+         went +32, for a 24px bleed out of .ad-plate-main.
+
+     The wrapper takes the field's exact box — the calc, the margin and
+     border-box — and the field flattens to a plain 100% inside it. Net
+     geometry against the baseline: identical. An element wider than its
+     parent is the shape CLAUDE.md blames for a sideways scroll that
+     drags every position:fixed element on iOS, so "it looked fine" was
+     never going to be enough here. */
+  .lab-namewrap {
+    position: relative; display: block;
+    width: calc(100% + 16px); margin: 0 -8px; box-sizing: border-box;
+  }
+  .lab-namewrap .ad-title-edit { width: 100%; margin-left: 0; margin-right: 0; }
+  .lab-namewrap .lab-star {
+    position: absolute; top: 4px; right: 6px;
+    font-family: var(--mono); font-size: 13px; line-height: 1;
+    pointer-events: none;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     L — a red outline around each required box.
+     The loudest of the three and the only one that marks the box you
+     actually type in rather than something beside it.
+
+     ⚠️ `outline` WITH `outline-offset`, NOT A BORDER AND NOT PADDING.
+     Two of these three boxes have no padding of their own — the
+     eyebrow is inline, the Where input is `padding: 0` inside an
+     already-tinted card — so the obvious build gives them padding and
+     hands it back as negative margin, the way the title does. The
+     audit caught what that costs: the ring ended up 8px wider than
+     .ad-place-body, and an element wider than its parent is the exact
+     shape CLAUDE.md blames for a sideways scroll that drags every
+     position:fixed element on iOS.
+
+     An outline is drawn outside the box and takes part in no layout at
+     all, so offsetting it needs no padding, no margin and no reflow —
+     and it follows border-radius. Nothing here moves by a pixel
+     against the baseline, which is the property that makes L
+     comparable to the others rather than a different sheet.
+     ══════════════════════════════════════════════════════════════ */
+  .ad-eyebrow-btn.lab-outline {
+    outline: 1.5px solid var(--red); outline-offset: 3px; border-radius: 5px;
+  }
+  /* The field already carries its own 10px box, so this one sits on it
+     rather than outside it. */
+  .ad-title-edit.lab-outline { outline: 1.5px solid var(--red); outline-offset: 0; }
+  .ad-place-edit.lab-outline {
+    outline: 1.5px solid var(--red); outline-offset: 4px; border-radius: 4px;
+  }
+
+  /* ---- the audit panel (?audit=1) ---- */
+  .lab-audit {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    max-height: 40vh; overflow: auto;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 0 18px;
+    padding: 12px 18px; background: #fff; color: #111;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+    line-height: 1.5; box-shadow: 0 -6px 24px rgba(0,0,0,.4);
+  }
+  .lab-audit section { min-width: 0; overflow-wrap: anywhere; }
+  .lab-audit b { display: block; margin: 0 0 2px; }
+  .lab-audit .lab-bad { color: #a8102a; }
+  .lab-audit .lab-ok  { color: #14713a; }
+
+  /* The probe. It exists only to be measured — see the note at the top
+     of the file — so it must not be display:none, which suppresses the
+     computed values on some engines. */
+  #actSheetBody.lab-probe {
+    position: absolute; left: -9999px; top: 0;
+    width: 1px; height: 1px; overflow: hidden;
+  }
+</style>
+
+<div class="lab-head">
+  <h1>New activity sheet — saying which fields are required</h1>
+  <p>
+    <code>saveActivity()</code> blocks on exactly three things, in this order:
+    a <b>list</b>, a <b>name</b>, and a <b>place</b>. The target, the three chips,
+    the links and the notes are all optional and none of the seven says so.
+    Step the sheet through filling in the required three and watch how each
+    option behaves. <b>B</b> and <b>I</b> are carried over;
+    <b>J</b>, <b>K</b> and <b>L</b> are all B plus a different mark, with no
+    “optional” text anywhere.
+  </p>
+  <div class="lab-states" id="labStates"></div>
+  <div class="lab-legend">
+    <span><b>Required</b> — list · name · where</span>
+    <span><b>Optional</b> — target · priority · difficulty · remind · links · notes</span>
+  </div>
+</div>
+
+<div class="lab-stage" id="labStage"></div>
+
+<div id="actSheetBody" class="lab-probe"></div>
+
+<script src="js/icons.js"></script>
+<script>
+/* The three moments worth comparing. Not a slider over every
+   permutation — what matters is empty, half-answered, and satisfiable,
+   because those are the three states the sheet has to be honest about. */
+const STATES = [
+  { key:'empty',   label:'Nothing filled',      list:false, name:false, where:false },
+  { key:'partial', label:'List + name',         list:true,  name:true,  where:false },
+  { key:'full',    label:'All three required',  list:true,  name:true,  where:true  },
+];
+
+/* Each variant declares WHAT IT DOES rather than being asked for by
+   letter all over the template — so adding a sixth is one row here
+   plus its CSS block, and no new branches in sheetHTML(). */
+const VARIANTS = [
+  { id:'base', letter:'', title:'Current',
+    dock:false, word:false, mark:'none',
+    note:'What ships today. The seven optional controls and the three required '
+       + 'ones are drawn identically, so the only way to learn the rule is to '
+       + 'press Add and be shaken at.' },
+
+  { id:'b', letter:'B', title:'The button names the blocker',
+    dock:true, word:false, mark:'none',
+    note:'Kept. The answer lands on the control you are reaching for, in the '
+       + 'order saveActivity() checks it. Fixes the dead end directly — and '
+       + 'says nothing until you look down at the dock, so it corrects rather '
+       + 'than prevents. J, K and L all include this.' },
+
+  { id:'i', letter:'I', title:'Rail + “optional”, no button',
+    dock:false, word:true, mark:'rail',
+    note:'Kept. The required half marked with the rail the priority scale '
+       + 'already draws on every row, in --tint; the optional half marked with '
+       + 'the word. The only variant here still spending the word — compare it '
+       + 'against J, which is this rail without it.' },
+
+  { id:'j', letter:'J', title:'B + a red rail',
+    dock:true, word:false, mark:'rail-red',
+    note:'The button, and I’s rail in --red at 4px instead of --tint at 3. No '
+       + '“optional” anywhere, which is what buys the title its second line '
+       + 'back. Quietest of the three new ones — a rail is an edge, not a box.' },
+
+  { id:'k', letter:'K', title:'B + a red asterisk',
+    dock:true, word:false, mark:'star',
+    note:'The button, and the oldest convention on the list. Reads instantly '
+       + 'and costs almost no pixels. ⚠️ The name field has no label to attach '
+       + 'one to, so its mark floats in the corner — the one thing to judge '
+       + 'here.' },
+
+  { id:'l', letter:'L', title:'B + a red outline',
+    dock:true, word:false, mark:'outline',
+    note:'The button, and a red ring around each box you actually have to fill. '
+       + 'Loudest and least ambiguous — it marks the input itself rather than '
+       + 'something beside it. Three red boxes on an otherwise calm sheet is '
+       + 'the question.' },
+];
+
+let state = STATES[0];
+
+/* ---- the sheet, one template, drawn six times ----
+   Deliberately the real markup from index.html rather than a
+   simplification: the whole point of linking the app's stylesheets is
+   that a spacing bug in one of these options shows up here. */
+function sheetHTML(v){
+  const { list:listOn, name:nameOn, where:whereOn } = state;
+
+  const opt  = v.word ? '<span class="lab-opt-tag">optional</span>' : '';
+  const star = v.mark==='star' ? '<span class="lab-star">*</span>' : '';
+  /* A mark that goes on the required FIELD (L), and one that goes on
+     the required CARD (I and J). No variant does both. */
+  const field = v.mark==='outline' ? ' lab-outline' : '';
+  const card  = v.mark==='rail'     ? ' lab-rail'
+              : v.mark==='rail-red' ? ' lab-rail-red' : '';
+
+  /* K needs a positioned parent for the name's floating asterisk, and
+     nothing else does — so the wrapper only appears for K. A <span>
+     forced to display:block rather than a <div>, because .ad-plate-main
+     is laid out around exactly these two children. */
+  const nameField = `
+    <textarea class="ad-title ad-title-edit${field}" rows="1"
+      placeholder="What's the plan?">${nameOn ? 'Judahs Food Cart' : ''}</textarea>`;
+
+  return `
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-bar sheet-bar-title">
+          <div class="sheet-title">New Activity</div>
+        </div>
+        <div class="sheet-body">
+          <div class="ad-pane active">
+
+            <div class="ad-plate${card}">
+              <div class="ad-plate-main">
+                <button class="t-eyebrow ad-eyebrow-btn${field}" type="button">
+                  <span>${listOn ? 'Boyz Summa' : 'Choose List'}</span>${star}${icon('chevron-right','ic-eyebrow')}
+                </button>
+                ${star ? `<span class="lab-namewrap">${nameField}${star}</span>` : nameField}
+              </div>
+              <button class="ad-target" type="button">
+                <!-- ⚠️ The chevron goes BEFORE the tag. .ad-target-k wraps for the
+                       tag (flex-basis: 100%), so a chevron written after it
+                       lands on a third line of its own. -->
+                  <span class="ad-target-k">Target${icon("chevron-right")}${opt}</span>
+                <b>None</b>
+              </button>
+            </div>
+
+            <div class="ad-chips">
+              <button class="ad-chip ad-chip-btn" type="button">
+                <small>Priority${opt}</small>
+                <span class="ad-chip-v"><span class="ad-chip-t">Medium</span>${icon('chevron-right')}</span>
+              </button>
+              <button class="ad-chip ad-chip-btn c-d-none" type="button">
+                <small>Difficulty${opt}</small>
+                <span class="ad-chip-v"><span class="ad-chip-t">None</span>${icon('chevron-right')}</span>
+              </button>
+              <button class="ad-chip ad-chip-btn c-remind" type="button">
+                <small>Remind${opt}</small>
+                <span class="ad-chip-v"><span class="ad-chip-t">None</span>${icon('chevron-right')}</span>
+              </button>
+            </div>
+
+            <div class="ad-place c-where${card}">
+              <span class="ad-place-disc">${icon('pin')}</span>
+              <span class="ad-place-body">
+                <span class="ad-place-k">Where${star}</span>
+                <span class="loc-wrap ad-place-edit${field}">
+                  <input type="text" placeholder="Search for a place"
+                         value="${whereOn ? "Judah&#39;s Delicatessen" : ''}" />
+                </span>
+              </span>
+            </div>
+
+            <div class="ad-place c-link">
+              <span class="ad-place-disc">${icon('link')}</span>
+              <span class="ad-place-body">
+                <span class="ad-place-k">Links${opt}</span>
+                <span class="ad-place-v">None</span>
+              </span>
+              <span class="ad-place-chev">${icon('chevron-right')}</span>
+            </div>
+
+            <div class="ad-nsec">
+              <div class="ad-nsec-h">
+                <p class="h">Notes${opt}</p>
+                <span class="ad-nsec-more">Add ${icon('chevron-right','ic-xs')}</span>
+              </div>
+              <div class="note-empty"><p>No notes yet</p></div>
+            </div>
+
+          </div>
+        </div>
+        ${dockHTML(v, listOn, nameOn, whereOn)}
+      </div>
+    </div>`;
+}
+
+/* The dock says what is missing, in the order saveActivity() checks
+   it. Variants without `dock` keep the plain "Add". */
+function dockHTML(v, listOn, nameOn, whereOn){
+  let label = 'Add', cls = '';
+  if(v.dock){
+    if(!listOn)       { label = 'Pick a list';  cls = ' lab-dock-blocked'; }
+    else if(!nameOn)  { label = 'Name it';      cls = ' lab-dock-blocked'; }
+    else if(!whereOn) { label = 'Add a place';  cls = ' lab-dock-blocked'; }
+  }
+  return `
+    <div class="ad-dock">
+      <div class="ad-dock-view">
+        <button class="ad-dock-disc" type="button">${icon('x')}</button>
+        <button class="btn btn-filled btn-block${cls}">${label}</button>
+      </div>
+    </div>`;
+}
+
+/* ---- the four card hues, read off the live cascade ----
+   See the note at the top of the file: theme.css keys them to an id,
+   and six frames cannot share one. */
+const CARD_VARS = ['--c-target','--c-remind','--c-where','--c-link'];
+function paintCardVars(){
+  const cs = getComputedStyle(document.getElementById('actSheetBody'));
+  const vals = CARD_VARS.map(v => [v, cs.getPropertyValue(v).trim()]);
+  document.querySelectorAll('.lab-phone').forEach(el => {
+    vals.forEach(([v,val]) => { if(val) el.style.setProperty(v, val); });
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THE AUDIT (?audit=1)
+
+   Eyeballing six 390px frames at a third of their size is how the last
+   round shipped a title wrapping in two frames and not in the other
+   four. This measures instead. Three checks, and the third is the one
+   that caught it:
+
+     1. horizontal overflow — scrollWidth past clientWidth, which on a
+        phone drags every position:fixed element sideways;
+     2. a content edge outside the frame;
+     3. the WIDTH of the title column, per frame, against the
+        baseline's. This started out as a line count off the title
+        field and that does not work: a <textarea>'s scrollHeight
+        counts its content and NOT its placeholder, so an empty sheet
+        measures one line in every frame however the column is sized,
+        and the check reported the same number six times. The width is
+        the quantity a variant can actually steal — .ad-target is
+        `max-width: 44%` and sizes to its content, so anything that
+        widens its label takes the difference out of the title beside
+        it. That is exactly what the "optional" tag did, and it is
+        measurable in every state including the empty one.
+
+   CLAUDE.md's headless note applies: measure the CONTENT box, not the
+   border box, or every padded full-width block reports as touching the
+   glass.
+   ══════════════════════════════════════════════════════════════ */
+function runAudit(){
+  /* Every frame's findings, keyed by frame id. */
+  const found = {};
+  const titles = {};
+  document.querySelectorAll('.lab-col').forEach(col => {
+    const phone = col.querySelector('.lab-phone');
+    const box = phone.getBoundingClientRect();
+    const hits = new Set();
+
+    phone.querySelectorAll('*').forEach(el => {
+      const cs = getComputedStyle(el);
+      if(cs.overflowX === 'auto' || cs.overflowX === 'scroll') return;
+      if(el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
+        hits.add(`overflows by ${el.scrollWidth - el.clientWidth}px · ${sig(el)}`);
+      const r = el.getBoundingClientRect();
+      if(r.width && (r.left < box.left - 1 || r.right > box.right + 1))
+        hits.add(`outside the frame · ${sig(el)}`);
+    });
+
+    found[col.id] = hits;
+    const main = phone.querySelector('.ad-plate-main');
+    titles[col.id] = main ? Math.round(main.getBoundingClientRect().width) : 0;
+  });
+
+  /* ⚠️ THE FINDINGS ARE DIFFED AGAINST THE BASELINE, and that is what
+     makes them readable. The app's own plate deliberately bleeds 8px
+     past .ad-plate-main — the title's padding, handed back as negative
+     margin so the resting title and the edit field share one box — so
+     an absolute report flags six frames for something none of them
+     did. The only question worth asking a variant is what it broke
+     that the CURRENT sheet does not already do. */
+  const baseline = found.base || new Set();
+  const baseTitle = titles.base;
+
+  const cols = VARIANTS.map(v => {
+    const only = [...(found[v.id] || [])].filter(h => !baseline.has(h));
+    const w = titles[v.id];
+    const titleLine = Math.abs(w - baseTitle) <= 1
+      ? `<span class="lab-ok">title col ${w}px</span>`
+      : `<span class="lab-bad">title col ${w}px (base ${baseTitle}px)</span>`;
+    return `<section><b>${v.id}</b>${titleLine}<br>` + (only.length
+      ? only.map(h => `<span class="lab-bad">${h}</span>`).join('<br>')
+      : '<span class="lab-ok">nothing new</span>') + '</section>';
+  });
+
+  let panel = document.querySelector('.lab-audit');
+  if(!panel){ panel = document.createElement('div'); panel.className = 'lab-audit'; document.body.append(panel); }
+  panel.innerHTML = cols.join('');
+}
+/* Enough to find the element again, and no more — a full selector path
+   is unreadable at 11px. */
+function sig(el){
+  return el.tagName.toLowerCase()
+       + (el.className && typeof el.className === 'string'
+            ? '.' + el.className.trim().split(/\s+/).join('.') : '');
+}
+
+function render(){
+  document.getElementById('labStage').innerHTML = VARIANTS.map(v => `
+    <div class="lab-col ${v.id==='base'?'lab-base':''}" id="${v.id}">
+      <h2><span>${v.letter || '—'}</span> &nbsp;${v.title}</h2>
+      <p>${v.note}</p>
+      <div class="lab-phone ${v.id==='base'?'':'lab-v-'+v.id}">${sheetHTML(v)}</div>
+    </div>`).join('');
+  paintCardVars();
+
+  document.querySelectorAll('#labStates button').forEach(b => {
+    b.classList.toggle('on', b.dataset.k === state.key);
+  });
+
+  /* growNameField()'s job, done once: the textarea carries the title's
+     29px serif and an unsized one shows a single line of it. */
+  document.querySelectorAll('.ad-title-edit').forEach(t => {
+    t.style.height = 'auto';
+    t.style.height = t.scrollHeight + 'px';
+  });
+
+  if(new URLSearchParams(location.search).has('audit')) runAudit();
+}
+
+document.getElementById('labStates').innerHTML =
+  STATES.map(s => `<button data-k="${s.key}">${s.label}</button>`).join('');
+document.getElementById('labStates').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  state = STATES.find(s => s.key === b.dataset.k);
+  render();
+});
+
+/* ?state=empty|partial|full opens on one of the three, so a particular
+   comparison can be linked to or screenshotted. An unknown value falls
+   through to the first rather than erroring — this is a bench. */
+state = STATES.find(s => s.key === new URLSearchParams(location.search).get('state'))
+     || STATES[0];
+
+render();
+if(location.hash) document.querySelector(location.hash)?.scrollIntoView({inline:'start'});
+</script>
+
+<!-- ==============================================================
+     WHAT THE EARLIER ROUNDS TAUGHT, kept so it is not rediscovered.
+
+     A — optional controls held at opacity .42 until answered. No new
+     words at all, and it read as polish rather than as a rule. Dropped
+     for being too quiet to be the only signal, not for being wrong; it
+     composes with anything here.
+
+     C — "optional" on all six optional labels and nothing else.
+     Dropped because marking one half only still leaves the reader
+     inferring the other.
+
+     D — the sheet split into a required block and an optional block by
+     a labelled rule. Best-looking of its round and the most expensive:
+     it moves the chips BELOW the Where card, so the new-activity sheet
+     stops being pixel-identical to the detail sheet — which is the one
+     property the whole sheet was rebuilt to have.
+
+     E — the Where card given the name field's raised-surface treatment
+     so the two required inputs look alike. ⚠️ THE FIRST ATTEMPT SWAPPED
+     THE PLUM FOR --bg-elevated AND THAT IS WRONG: the app keeps that
+     card tinted precisely because it has no resting state to lose the
+     tint from (.ad-place.editing takes the tint off rows that DO), and
+     losing it breaks the four-card hue system this sheet shares with
+     the detail sheet.
+
+     F, G, H — a --red-soft WASH behind the three required boxes: with
+     the word (F), without it (G), and clearing as each field was
+     answered (H). All three dropped in favour of the sharper marks in
+     J/K/L, but H is worth remembering as the only version that left a
+     satisfiable sheet looking exactly like today's.
+     ============================================================== -->

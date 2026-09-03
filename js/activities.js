@@ -101,6 +101,519 @@ async function toggleComplete(id,isDone){
 }
 
 /* ==============================================================
+   EDITING IN PLACE
+
+   A pending activity's fields are changed by tapping them on its own
+   detail sheet -- the name, the list, the target date, the location,
+   the priority and the difficulty -- rather than by opening a separate
+   Edit form and hunting for the row that is wrong.
+
+   The argument is the one the difficulty chip already made and the one
+   the completion sheet made before it: the thing that displays a value
+   is the obvious place to change it, and a whole form is the wrong
+   weight for "that name has a typo". "Edit details" still exists and
+   still opens the full sheet; this is the fast path, not a replacement.
+
+   ⚠️ THESE WRITE IMMEDIATELY, WHICH THE COMPLETION SHEET DELIBERATELY
+   DOES NOT. That is not a contradiction, and the line is worth stating
+   because the next person will read it as one:
+
+     - STAGED is right when the thing does not exist yet (the new
+       activity sheet -- Cancel means "never mind, do not create it"),
+       or when several fields change together as one event (completing
+       something: the date, the photos and the note are one act).
+     - IMMEDIATE is right for one field on a row that already exists,
+       because the picker itself carries the Cancel. Choosing "High"
+       from a menu is not something you arrive at by accident, and
+       there is no half-filled state to lose.
+
+   Every one of these ends the same way: dbUpdate (so it queues offline
+   like any other write), then repaint the activity sheet, then
+   refreshAfterChange() for the screen behind it. The order matters --
+   the sheet the user is looking at should change first. */
+
+/* role="button" is not a button: it gets no keyboard activation for
+   free. Both reference rows on this sheet use it -- see the note on
+   .ad-place in detail.css for why they are divs and not <button>s. */
+function onRowKey(e){
+  if(e.key!=='Enter'&&e.key!==' ') return;
+  e.preventDefault();
+  e.currentTarget.click();
+}
+
+/* Shared by all of them. Returns false when the write failed, so a
+   caller can leave its own sheet open rather than closing over an
+   error the user never saw. */
+async function patchActivity(id,fields){
+  const{error}=await dbUpdate('Activities',fields,{id});
+  if(error){
+    console.error('patchActivity:',error,fields);
+    showToast(error.message||'Couldn’t save that.');
+    return false;
+  }
+  /* ⚠️ REPAINT THE HEAD, NOT THE SHEET. openActDetail() awaits a notes
+     fetch before it paints and then replaces every node in the body --
+     so changing a priority left the old values on screen for a round
+     trip, then blanked the media grid and the notes log and rebuilt
+     them. Every one of these edits touches only the plate, the chips or
+     the Where row, so only those are redrawn; the photos and the log
+     are never even touched. Falls back to the full render when the
+     sheet is showing something else (or nothing). */
+  if(!await repaintActDetailHead(id)) await openActDetail(id);
+  await refreshAfterChange();
+  return true;
+}
+
+/* Redraws #adHead in place. Returns false when the detail sheet is not
+   open on this activity, so the caller can fall back. */
+async function repaintActDetailHead(id){
+  const box=$('adHead');
+  if(!box||!$('actDetailSheet').classList.contains('open')) return false;
+  const a=await fetchActivity(id);
+  if(!a||a.completed) return false;
+  const lists=(await fetchCollections()).filter(c=>(a.listIds||[]).includes(c.id));
+  const canMove=lists.length>0&&(await fetchCollections()).length>1;
+  setHTML(box,actDetailHeadHTML(a,lists,dateInfo(a),canMove));
+  /* The location field is rebuilt with it, so the text/coordinate
+     contract has to be re-established exactly as openActDetail() does. */
+  const adLoc=$('adLoc');
+  if(adLoc){ locGeoMark(adLoc); locSetHome('adLoc',!!a.locationIsHome); }
+  _titleEditFor=null;_placeEditFor=null;
+  return true;
+}
+
+/* ---- the name, edited where it is written ------------------------ */
+
+/* A sheet to change one line of text was the wrong weight -- it covered
+   the thing being renamed, and the name is right there. Tapping the
+   title turns it into a field in place, at the same 29px serif, so
+   nothing moves when the keyboard arrives.
+
+   A <textarea> rather than an <input> because .ad-title WRAPS: a name
+   can run to three lines on a 320px screen and an input would put it on
+   one scrolling line. Enter still commits -- a name is one line
+   semantically even when it is drawn as three. */
+
+let _titleEditFor=null;      /* the activity being renamed */
+let _titleWas='';            /* what to put back on Escape */
+let _titleBusy=false;        /* Enter commits, which blurs, which would commit again */
+
+function startTitleEdit(id){
+  if(_titleEditFor) return;
+  const btn=$('adTitleBtn'),box=$('adTitleEdit');
+  if(!btn||!box) return;
+  _titleEditFor=id;
+  _titleWas=btn.textContent;
+  box.value=_titleWas;
+  btn.hidden=true;box.hidden=false;
+  growTitleEdit();
+  box.focus();
+  const n=box.value.length;
+  try{ box.setSelectionRange(n,n); }catch(e){}
+}
+
+/* The field is its own height. Reset first, or it can only ever grow. */
+function growTitleEdit(){
+  const box=$('adTitleEdit');
+  if(!box) return;
+  box.style.height='auto';
+  box.style.height=box.scrollHeight+'px';
+}
+
+function onTitleEditKey(e){
+  if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.blur(); }
+  else if(e.key==='Escape'){ e.preventDefault(); cancelTitleEdit(); }
+}
+
+function cancelTitleEdit(){
+  const btn=$('adTitleBtn'),box=$('adTitleEdit');
+  _titleEditFor=null;
+  if(box){ box.hidden=true;box.value=_titleWas; }
+  if(btn) btn.hidden=false;
+}
+
+async function commitTitleEdit(){
+  if(!_titleEditFor||_titleBusy) return;
+  const id=_titleEditFor,box=$('adTitleEdit');
+  const name=(box?box.value:'').trim();
+  /* An empty name is the one value this field cannot take -- it is what
+     every row, card, pin and chip draws the activity as. Put the old one
+     back rather than refusing and holding the keyboard open. */
+  if(!name||name===_titleWas.trim()){ cancelTitleEdit(); return; }
+  _titleBusy=true;
+  _titleEditFor=null;
+  await patchActivity(id,{name});
+  _titleBusy=false;
+}
+
+/* ---- where it is, edited where it is written --------------------- */
+
+/* Same argument as the title, with one extra requirement: the dropdown
+   has to come with it. The row's static text is swapped for a .loc-wrap
+   holding the field, the hidden lat/lng and the results box -- the same
+   shape every other location field in the app uses, because
+   locFieldsFor() finds the coordinates by looking inside .loc-wrap.
+
+   ⚠️ The results are picked with onmousedown, not onclick (see
+   locItemHTML). That is what makes commit-on-blur safe here: the pick
+   lands BEFORE the blur, so the value being committed is the one that
+   was tapped. */
+
+let _placeEditFor=null;
+let _placeWas=null;          /* {text,lat,lng,home} to restore on Escape */
+let _placeBusy=false;
+
+function startPlaceEdit(id){
+  if(_placeEditFor) return;
+  const row=$('adPlaceRow'),stat=$('adPlaceStatic'),wrap=$('adPlaceEdit'),el=$('adLoc');
+  if(!row||!el) return;
+  _placeEditFor=id;
+  _placeWas={text:el.value,lat:$('adLocLat').value,lng:$('adLocLng').value,
+             home:el.dataset.isHome==='1'};
+  row.classList.add('editing');
+  stat.hidden=true;wrap.hidden=false;
+  el.focus();
+  const n=el.value.length;
+  try{ el.setSelectionRange(n,n); }catch(e){}
+  /* Opens on the shortcuts (Home, Current location) with an empty field,
+     which is the whole reason those exist. */
+  locSearch(el,'adLocResults');
+}
+
+function onPlaceEditKey(e){
+  if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.blur(); }
+  else if(e.key==='Escape'){ e.preventDefault(); cancelPlaceEdit(); }
+}
+
+function endPlaceEdit(){
+  const row=$('adPlaceRow'),stat=$('adPlaceStatic'),wrap=$('adPlaceEdit');
+  _placeEditFor=null;
+  locClose($('adLocResults'));
+  if(row) row.classList.remove('editing');
+  if(stat) stat.hidden=false;
+  if(wrap) wrap.hidden=true;
+}
+
+function cancelPlaceEdit(){
+  const el=$('adLoc');
+  if(el&&_placeWas){
+    el.value=_placeWas.text;
+    $('adLocLat').value=_placeWas.lat;
+    $('adLocLng').value=_placeWas.lng;
+    locGeoMark(el);
+    locSetHome('adLoc',_placeWas.home);
+  }
+  endPlaceEdit();
+}
+
+async function commitPlaceEdit(){
+  if(!_placeEditFor||_placeBusy) return;
+  const id=_placeEditFor,el=$('adLoc');
+  const typed=el.value.trim();
+
+  /* Unchanged: no write, no round trip, no repaint. */
+  if(_placeWas&&typed===_placeWas.text.trim()){ endPlaceEdit(); return; }
+
+  _placeBusy=true;
+  _placeEditFor=null;
+
+  if(!typed){
+    /* Cleared on purpose. Not the same as failing to resolve -- the user
+       has said this has no place, and it drops off the map as asked. */
+    endPlaceEdit();
+    await patchActivity(id,{location:null,location_lat:null,location_lng:null,
+      ...(homeFlagReady()?{location_is_home:false}:{})});
+    _placeBusy=false;
+    return;
+  }
+
+  /* Turns typed text into coordinates when the two have drifted apart.
+     Offline it accepts the text as-is -- the same exemption
+     requireLocation() makes, and for the same reason. */
+  const res=await resolveLocationField('adLoc');
+  if(res&&res.ok===false&&navigator.onLine){
+    /* Keep the typed text: it is what they meant, and only the pin is
+       missing. Saying so and moving on beats holding the field open. */
+    showToast('Saved, but we couldn’t find that place on the map.');
+  }
+
+  const lat=$('adLocLat').value,lng=$('adLocLng').value;
+  const fields={
+    location:el.value.trim()||null,
+    location_lat:lat===''?null:Number(lat),
+    location_lng:lng===''?null:Number(lng),
+  };
+  if(homeFlagReady()) fields.location_is_home=locIsHome('adLoc');
+  endPlaceEdit();
+  await patchActivity(id,fields);
+  _placeBusy=false;
+}
+
+/* ---- which list it is in ----------------------------------------- */
+
+async function openActivityListPicker(id){
+  const a=await fetchActivity(id);
+  if(!a) return;
+  const lists=await fetchCollections();
+  /* Nowhere to move it to. The eyebrow is still drawn, just not as a
+     control -- see adListHTML(). */
+  if(lists.length<2) return;
+  openListPicker({
+    title:'Move to List',
+    subtitle:a.name||'',
+    currentId:a.listId,
+    onPick:async(cid)=>{
+      if(!cid||cid===a.listId) return;
+      const cols=listFieldsFor([cid]);
+      if(!cols) return;
+      const from=a.listId;
+      if(!await patchActivity(id,cols)) return;
+      /* Both ends changed, and neither count is read from the row we
+         just wrote. */
+      updateCollectionStats(from);
+      updateCollectionStats(cid);
+    },
+  });
+}
+
+/* ---- priority ----------------------------------------------------- */
+
+/* The same action sheet the new-activity sheet opens
+   (openNewPriorityMenu), with patchActivity() in place of staging.
+   Both draw all three hues through the items' `tone`, which is what
+   the swatched .seg-pri control used to be for. */
+async function openPriorityMenu(id){
+  const a=await fetchActivity(id);
+  if(!a||a.completed) return;
+  const cur=a.priority||'medium';
+  showActionSheet({
+    title:'Priority',
+    items:['high','medium','low'].map(p=>({
+      label:cap(p),
+      checked:cur===p,
+      /* The scale the rails, capsules and map pins already draw. */
+      tone:p,
+      onSelect:()=>{ if(p!==cur) patchActivity(id,{priority:p}); },
+    })),
+  });
+}
+
+/* ---- the target date ---------------------------------------------- */
+
+let targetingId=null;
+
+/* The five bands, in the order the old select offered them. */
+const TARGET_BANDS=[
+  {value:'This Month',   label:'This month'},
+  {value:'This Year',    label:'This year'},
+  {value:'Next Year',    label:'Next year'},
+  {value:'In 2-4 Years', label:'2\u20134 years'},
+  {value:'In 5+ Years',  label:'5+ years'},
+];
+
+/* ==============================================================
+   PICKING A TARGET DATE
+
+   A menu, not a form. Six choices and no free text, which is exactly
+   what an action sheet is for -- and it removes a whole class of bug
+   the sheet had to defend against: there is no Done here, so nothing is
+   written unless something is chosen, and a legacy band on an old row
+   can no longer be silently rewritten by opening the picker and
+   confirming. openTargetSheet() survives underneath as the fallback for
+   a browser with no showPicker().
+   ============================================================== */
+async function openTargetMenu(id){
+  const a=await fetchActivity(id);
+  if(!a) return;
+  const stored=a.targetDate||'';
+  /* A stored date that is exactly what a band resolves to today reads
+     back as that band -- the same reverse lookup the sheet used. */
+  const band=stored
+    ? (isCustomDate(stored)
+        ? (typeof bandForStored==='function'?bandForStored(stored):'')
+        : stored)
+    : '';
+  const specific=!!stored&&isCustomDate(stored)&&!band;
+
+  const items=TARGET_BANDS.map(b=>({
+    label:b.label,
+    checked:band===b.value,
+    onSelect:()=>{ if(band!==b.value) patchActivity(id,{target_date:resolveTargetDate(b.value)||null}); },
+  }));
+  /* The row shows the date once one is set, rather than saying
+     "Specific date" over the top of the answer it already has. */
+  items.push({
+    label:specific?fmtDate(stored,true):'Specific date\u2026',
+    checked:specific,
+    onSelect:()=>openTargetDatePicker(id,specific?stored:''),
+  });
+  showActionSheet({title:'Target Date',items});
+}
+
+/* The app's own calendar, opened straight from the menu row. It is not
+   <input type="date">: that hands you a different widget on every
+   platform, anchored to a field rather than the screen. See
+   showCalendar() in modals.js. */
+function openTargetDatePicker(id,cur){
+  showCalendar({
+    title:'Target Date',
+    value:cur||'',
+    onPick:iso=>patchActivity(id,{target_date:iso}),
+  });
+}
+
+async function openTargetSheet(id){
+  const a=await fetchActivity(id);
+  if(!a) return;
+  targetingId=id;
+  const sel=$('tgBand'),date=$('tgDate');
+
+  /* Anything this row carries that the picker does not offer -- the
+     retired "Before I Die", or a band from before target-rollover.sql --
+     is added back for this one activity. Without it, opening this sheet
+     and pressing Done would silently rewrite a value nobody touched.
+     The new-activity sheet cannot reach one -- it only ever creates. */
+  [...sel.options].forEach(o=>{ if(o.dataset.legacy) o.remove(); });
+  const stored=a.targetDate||'';
+  const band=stored&&!isCustomDate(stored)?stored:'';
+  if(band&&![...sel.options].some(o=>o.value===band)){
+    const o=document.createElement('option');
+    o.value=band;o.textContent=band;o.dataset.legacy='1';
+    sel.insertBefore(o,sel.lastElementChild);
+  }
+
+  if(!stored){
+    /* No target yet. "This month" is the nearest band and the one a
+       person setting a date at all is most likely to mean; nothing is
+       written unless they press Done. */
+    sel.value='This Month';
+    date.value='';
+  } else if(isCustomDate(stored)){
+    /* A stored date that is EXACTLY what a band resolves to today
+       reopens as that band, so an untouched save writes back the
+       identical value. bandForStored() is the same reverse lookup the
+       edit sheet uses. */
+    const b=typeof bandForStored==='function'?bandForStored(stored):'';
+    if(b){ sel.value=b;date.value=''; }
+    else { sel.value=CUSTOM_DATE;date.value=stored; }
+  } else {
+    sel.value=band;date.value='';
+  }
+
+  onTargetSheetChange();
+  openModal('targetSheet');
+}
+
+function onTargetSheetChange(){
+  const custom=$('tgBand').value===CUSTOM_DATE;
+  $('tgDateRow').style.display=custom?'':'none';
+  if(custom&&!$('tgDate').value) $('tgDate').value=todayISO();
+}
+
+async function saveTargetSheet(){
+  const id=targetingId,v=$('tgBand').value;
+  /* Resolved on the way IN, never on the way out -- a band is a
+     relative label and target_date is an absolute field. See
+     A BAND IS RESOLVED ON THE WAY IN in CLAUDE.md. */
+  const target=v===CUSTOM_DATE?($('tgDate').value||null):(resolveTargetDate(v)||null);
+  if(v===CUSTOM_DATE&&!target){ shakeEl($('tgDate')); return; }
+  closeModal('targetSheet');
+  await patchActivity(id,{target_date:target});
+}
+
+/* ==============================================================
+   DISAGREEING WITH THE RATING
+
+   Easy / Medium / Hard is inferred at capture and was, until this,
+   unarguable. Two reasons that was worse than an ordinary missing
+   control:
+
+   1. The rating decides membership of the three derived lists (see
+      THREE LISTS NOBODY EDITS in CLAUDE.md), so a wrong one files an
+      activity somewhere the user will not look for it and there was no
+      way to move it.
+
+   2. The user's existing ratings are sent back to the model as
+      examples of where this person's lines fall. Every one of them was
+      the model's own past output, so a lean reinforced itself with
+      nothing anywhere able to break the cycle. A correction is the
+      only new information in that loop.
+
+   THE CHIP IS THE CONTROL, exactly as the profile photo on the You tab
+   is: it is the one thing on that row that displays a rating, so there
+   is nothing else a tap on it could plausibly mean, and a "Change
+   difficulty" row underneath would be the caption this app does not
+   write. The chevron is what makes that legible without one.
+
+   ⚠️ IT IS DRAWN EVEN WHEN THERE IS NO RATING, which is a deliberate
+   departure from the rule that a null difficulty draws nothing. That
+   rule exists so an un-judged row is never labelled with a tier it was
+   never given, and this keeps it -- the chip reads "Not rated", which
+   states no tier. The rule as written would have hidden the control on
+   precisely the rows that most need it: everything captured before the
+   feature existed is un-rated, and is the bulk of most libraries.
+
+   Only on a PENDING activity. A completed one has no next, which is
+   the same reason its sheet shows no priority and offers no edit. */
+async function openDifficultyMenu(id){
+  const a=await fetchActivity(id);
+  if(!a||a.completed) return;
+  const cur=a.difficulty||'';
+  /* ⚠️ DIFF_ORDER is a rank MAP, not a list -- {easy:0,medium:1,hard:2}.
+     Reading it in rank order rather than writing the three out again
+     means the picker cannot drift from the sort. */
+  const tiers=Object.keys(DIFF_ORDER).sort((x,y)=>DIFF_ORDER[x]-DIFF_ORDER[y]);
+  const items=tiers.map(tier=>({
+    label:DIFF_LABELS[tier],
+    checked:cur===tier,
+    /* The same hues the three list buttons on the Lists tab use.
+       Namespaced 'd-*' -- priority already owns as-t-medium, and a
+       shared class is why Medium here drew as priority's violet. */
+    tone:'d-'+tier,
+    onSelect:()=>setActivityDifficulty(id,tier),
+  }));
+  /* ⚠️ THERE IS DELIBERATELY NO "CLEAR RATING". Un-rated is not an
+     answer anybody wants to give -- it is what a row looks like before
+     anyone has judged it, and it costs the activity its place in the
+     three derived lists and sorts it last under Difficulty. Every
+     reason to open this menu is a reason to pick one of the three. */
+  /* ⚠️ No `message`. It said where the rating came from, which is help
+     text, and the rule against it is not a style preference -- see the
+     two non-negotiable rules at the top of CLAUDE.md. */
+  showActionSheet({title:'Difficulty',items});
+}
+
+/* Writes the tier AND the flag saying a person chose it. The flag is
+   what stops maybeGuessLocation() overwriting the answer on the next
+   edit, and what puts this row at the head of its tier in
+   difficultyExamples() -- see THE CORRECTION HAS TO OUTRANK THE GUESS
+   in js/location.js. Without the migration the tier is still written
+   and still works for the session; only the memory of who chose it is
+   lost, which is the same degradation every optional column here
+   makes. */
+async function setActivityDifficulty(id,tier){
+  if(!difficultyReady()){
+    showToast('Ratings aren\u2019t set up on this project yet.');
+    return;
+  }
+  const fields={difficulty:tier};
+  /* Reaching this at all means a person chose the tier -- the menu
+     offers nothing else. */
+  if(difficultyManualReady()) fields.difficulty_manual=true;
+  const{error}=await dbUpdate('Activities',fields,{id});
+  if(error){
+    console.error('setActivityDifficulty:',error);
+    showToast(error.message||'Couldn\u2019t update that.');
+    return;
+  }
+  /* The sheet is still open on the old value. Repaint it before the
+     screen behind it, so the chip the user just tapped is the first
+     thing that changes. */
+  await openActDetail(id);
+  await refreshAfterChange();
+}
+
+/* ==============================================================
    COMPLETING SOMETHING
 
    One sheet does the whole job, and every field is on it: the name,
@@ -169,7 +682,9 @@ async function openComp(id,source){
   renderCompListRow();
 
   compShowPane('main');
-  $('compSheetTitle').textContent=compNew?'Accomplished':'Edit';
+  /* Said twice on purpose, in the two places somebody looks: the header
+     names the sheet, the dock button names what pressing it does. */
+  $('compSheetTitle').textContent=compNew?'Mark as Accomplished':'Edit';
   $('compSaveBtn').textContent=compNew?'Done':'Save';
   openModal('compSheet');
 }
@@ -206,7 +721,7 @@ async function openCompDraft(prefillName){
   await renderCompListRow();
 
   compShowPane('main');
-  $('compSheetTitle').textContent='Accomplished';
+  $('compSheetTitle').textContent='Mark as Accomplished';
   $('compSaveBtn').textContent='Add';
   openModal('compSheet');
   /* After the sheet has finished sliding in, as everywhere else — a
@@ -229,13 +744,10 @@ async function renderCompListRow(){
 
   const known=new Set(lists.map(l=>l.id));
   setTargetLists(targetListIds.filter(id=>known.has(id)));
-  /* An activity that already exists must always be in at least one
-     list, so an edit falls back to the first. A NEW one created from
-     outside a collection deliberately does not: filing it into
-     whichever list happens to sort first is a silent, wrong answer the
-     user never gave, and the one they wanted is one tap away. The row
-     reads "Choose" and saveActivity() refuses until it is answered. */
-  if(!targetListIds.length&&editingActId) setTargetLists([lists[0].id]);
+  /* Nothing is filed into a list nobody chose: filing it into whichever
+     one happens to sort first is a silent, wrong answer the user never
+     gave, and the one they wanted is one tap away. The row reads
+     "Choose" and confirmComplete() refuses until it is answered. */
 
   $('compListLabel').textContent='List';
   renderActListValue(lists,'compListName');
@@ -296,13 +808,6 @@ function renderCompMediaCard(){
   sum.textContent=!n?'Add a photo or video'
     :n===1?'1 item':`Cover +${n-1} more`;
   if(chev) chev.innerHTML=icon(n?'chevron-right':'plus');
-  /* Both live in the swapped-in bar. Painted here rather than in
-     paintStaticIcons() because they only matter once a completion
-     sheet has been opened. */
-  const back=$('compMediaBack');
-  if(back&&!back.innerHTML) back.innerHTML=icon('chevron-left','ic-sm')+'Back';
-  const add=$('compMediaAdd');
-  if(add&&!add.innerHTML) add.textContent='Add';
 }
 
 /* Nothing attached yet means the page would be an empty grid and an Add
@@ -317,12 +822,21 @@ function compShowPane(which){
   Object.keys(panes).forEach(k=>{
     const el=$(panes[k]); if(el) el.classList.toggle('active',k===which);
   });
-  /* The bar is SWAPPED, not stacked. A sub-page drawing its own header
-     under the sheet's left two of them on screen at once, and nothing
-     said whether Cancel and Save still applied. */
-  const main=$('compBarMain'),media=$('compBarMedia');
-  if(main) main.style.display=which==='media'?'none':'';
-  if(media) media.style.display=which==='media'?'':'none';
+  /* One dock view per page, the same swap adShowPane() makes. The
+     sheet has no bar at all now: a page's Back is the .ad-navbar in
+     the page itself, so nothing can be ambiguous about which header
+     Cancel and Save belong to — they are not in a header. */
+  const docks={main:'compDockMain',media:'compDockMedia'};
+  Object.keys(docks).forEach(k=>{
+    const el=$(docks[k]); if(el) el.hidden=(k!==which);
+  });
+  /* And one header at a time, exactly as newSheetPane() does it: the
+     title row on the main page, the media page's own .ad-navbar on the
+     other. Two stacked headers is the confusion the bar swap this
+     replaced was written to avoid, and it still applies. */
+  const head=$('compSheetHead'),modal=document.querySelector('#compSheet .modal');
+  if(head) head.hidden=which!=='main';
+  if(modal) modal.classList.toggle('barless',which!=='main');
   const body=document.querySelector('#compSheet .sheet-body');
   if(body) body.scrollTop=0;
 }
@@ -338,33 +852,28 @@ function openCompDatePicker(){
 
 /* The name the check button and the date pill call. Completing and
    correcting a date are the same sheet now. */
-function openCompletedDate(id,source){ return openComp(id,source); }
+/* The check has been pressed, from a row or from the activity sheet.
+   Both toggleComplete() and home.js's toggleCompleteFrom() funnel
+   here, so this is the one place the touch can be acknowledged — and
+   deliberately not openComp() itself, which openCompFrom() also
+   reaches when *editing* something already finished. Light: this
+   acknowledges the press, and hapticSuccess() announces the result
+   once the sheet is actually saved. See js/haptics.js. */
+function openCompletedDate(id,source){
+  hapticTap();
+  return openComp(id,source);
+}
 
 /* Opened *from* the activity sheet, which is the only place both the
    Edit button and the date pill live. Registering the return before
    opening means every way out of the edit sheet — Save, Cancel, the
    scrim, Escape, a swipe down — lands you back where you started rather
    than on the bare page behind it. */
-/* Same contract as openCompFrom(), for the edit sheet: every way out of
-   it — Save, Cancel, the scrim, Escape, a swipe down — lands back on the
-   activity sheet it was opened from, freshly re-read so the edit shows. */
-/* The detail sheet is deliberately LEFT OPEN underneath. Closing it
-   first meant the edit sheet slid away over a bare page and the detail
-   sheet slid back in a beat later, so Save and Cancel both flashed the
-   screen behind — where the notes page, which only swaps panes inside
-   one sheet, is seamless. #actSheet sits at a higher z-index so it
-   covers the sheet it was opened from, and the return re-renders that
-   sheet in place rather than re-presenting it. */
-function openEditActFrom(id){
-  onSheetClose('actSheet',()=>openActDetail(id));
-  return openEditAct(id);
-}
-
-/* The detail sheet is deliberately LEFT OPEN underneath, exactly as
-   openEditActFrom() leaves it: closing it first meant Save and Cancel
-   both slid this sheet away over a bare page, with the detail sheet
-   sliding back a beat later. #compSheet sits at a higher z-index so it
-   covers it, and the return re-renders it in place. */
+/* The detail sheet is deliberately LEFT OPEN underneath: closing it
+   first meant Save and Cancel both slid this sheet away over a bare
+   page, with the detail sheet sliding back a beat later. #compSheet
+   sits at a higher z-index so it covers it, and the return re-renders
+   it in place. */
 function openCompFrom(id){
   onSheetClose('compSheet',()=>openActDetail(id));
   return openComp(id);
@@ -444,7 +953,7 @@ async function confirmComplete(){
   /* Both ends: a list gained needs recounting and so does one it was
      taken out of. */
   new Set([...wasIn,...nowIn,curListId].filter(Boolean)).forEach(id=>updateCollectionStats(id));
-  if(wasNew){ confetti(); showToast(offline?'Accomplished — will sync later':'Accomplished'); }
+  if(wasNew){ confetti(); hapticSuccess(); showToast(offline?'Accomplished — will sync later':'Accomplished'); }
   else showToast(offline?'Saved — will sync later':'Saved');
   refreshAfterChange(src);
 
@@ -491,6 +1000,7 @@ async function commitCompDraft(fields){
   compDraft=false;compId=null;
   lists.forEach(id=>updateCollectionStats(id));
   confetti();
+  hapticSuccess();
   showToast(offline?'Accomplished — will sync later':'Accomplished');
   const newId=rows&&rows[0]&&rows[0].id;
   if(!revealNewActivity(lists[0],newId)) refreshAfterChange(src);
@@ -513,26 +1023,45 @@ function revealNewActivity(listId,id){
 }
 
 /* ==============================================================
-   FULL ACTIVITY SHEET (create / edit)
+   THE NEW ACTIVITY SHEET
 
-   Every field is on screen at once. There used to be a "More options"
-   disclosure holding notes and links; it went the way of the one that
-   used to hold Location, and for the same reason — a field nobody
-   opens is a field nobody fills in. Target date and list share a line
-   (.fg-pair), which is what buys the room for that.
+   ⚠️ IT ONLY CREATES. There was an Edit mode on this same sheet, and a
+   pencil on every pending activity that opened it. Both are gone: the
+   name, the list, the target, the priority, the difficulty, the
+   location and the reminder are all changed by tapping them on the
+   activity's own detail sheet, so a second form holding the same seven
+   values was a second place for them to disagree — and it covered the
+   thing being edited while you edited it. openEditAct() and
+   openEditActFrom() went with it, and with them every `editingActId`
+   branch in this file.
 
-   The notes field itself is gone too, and not because of the
-   disclosure. "Why is this on your list?" is the wrong question at the
-   moment of capture: the answer is the activity's name, so the field
-   sat empty on nearly every row while still costing the sheet a block
-   of height. What you thought about the thing afterwards has a place
-   already — "How it went" on the completion sheet. The `description`
-   column is still on the table and nothing writes it any more; see the
-   note in CLAUDE.md before putting anything back.
+   ⚠️ AND IT IS THE DETAIL SHEET'S SHAPE, DELIBERATELY. The same plate
+   (list eyebrow, serif name, target block), the same chip row, the
+   same tinted Where card, built from the same .ad-* classes in
+   detail.css. What you are filling in is what you will be looking at a
+   moment later — revealNewActivity() opens exactly that sheet on the
+   far side of Add — so the two must not read as different screens, and
+   the controls are learned once.
+
+   The one difference that matters is invisible: every control here
+   STAGES into a hidden input, because there is no row yet and Cancel
+   has to mean "never mind". The detail sheet's editors write
+   immediately, which is right there and wrong here — see EDITING A
+   PENDING ACTIVITY IN PLACE in CLAUDE.md for where that line falls.
+
+   Two fields it deliberately does NOT have:
+
+     - Notes. "Why is this on your list?" is the wrong question at the
+       moment of capture: the answer is the activity's name. What you
+       thought about it afterwards has a place already — the log on the
+       activity, and "How it went" on the completion sheet.
+     - Links. A reference is something you find after the fact, which is
+       exactly when a field at the moment of capture is empty. They are
+       a page on the activity itself — see THE LINKS PAGE below.
    ============================================================== */
-/* Which list the activity being edited will be filed in. Inside a
-   collection that is that collection; opened from Home it is whatever
-   the user picks in the sheet's List row.
+/* Which list the new activity will be filed in. Inside a collection
+   that is that collection; opened from Home it is whatever the user
+   picks in the plate's list eyebrow.
 
    Still an array holding at most one id, and deliberately so: an
    activity used to be able to sit in several lists at once, and the
@@ -545,32 +1074,44 @@ let targetListIds=[],targetListId=null;
 function setTargetLists(ids){
   targetListIds=(ids||[]).filter(Boolean).slice(0,1);
   targetListId=targetListIds[0]||null;
+  /* The only writer of the list, so the only place the Add button can
+     learn that one has been picked. */
+  updateNewSaveButton();
 }
 
 async function openNewActivity(prefillName){
-  editingActId=null;aLinks=[];
+  aLinks=[];
   setTargetLists(curListId?[curListId]:[]);
   await renderActListPicker();
   $('aName').value=prefillName||'';
+  growNameField();
   $('aLoc').value='';$('aLocLat').value='';$('aLocLng').value='';
   delete $('aLoc').dataset.geoFor;   /* nothing here belongs to the last activity */
   locSetHome('aLoc',false);
   resetLocationGuess(true);
-  resetDateOptions();
-  $('aDate').value=DEFAULT_TARGET_DATE;
-  setPriorityChoice('medium');
+  /* Both blank, and both asked for — see NEW_REQUIRED. */
+  setTargetChoice('','');
+  setPriorityChoice('');
   /* Nothing has judged this name yet; maybeGuessLocation() fills it in
      behind the sheet if the backend answers. */
-  $('aDiff').value='';
-  $('aDateCustom').value='';onTargetDateChange();
-  renderTagChips('aLinks');
+  setDifficultyChoice('',false);
   /* The notes log belongs to the activity, so the field here is only
      ever "write the first entry" — it never shows what is already
      there. See notes.js. */
   resetActivityNoteField();
+  renderNewNoteCard();
+  renderNewLinks();
+  newSheetPane('main');
+  /* A reminder sheet dismissed by the scrim never reaches Done, so a
+     stale _remindFor could still be pointing at whatever activity was
+     last open on the detail sheet — and this sheet's Remind chip opens
+     the same #remindSheet. Without this, Done there would write a
+     reminder onto that other activity. */
+  if(typeof resetRemindFor==='function') resetRemindFor();
   setRemindField(null,'');
-  $('actSheetTitle').textContent='New Activity';
-  $('actSaveBtn').textContent='Add';
+  /* The dock has to be honest before the sheet has finished sliding
+     in — it opens on "Pick a list" or "Name it", never on "Add". */
+  updateNewSaveButton();
   openModal('actSheet');
   /* A name that arrived from a composer was never typed into this
      field, so `change` will not fire for it — and that is the most
@@ -578,131 +1119,279 @@ async function openNewActivity(prefillName){
      not awaited: the sheet is usable while the answer is in flight,
      and the fill lands in an empty field if it lands at all. */
   if(prefillName) maybeGuessLocation();
-  setTimeout(()=>$('aName').focus(),320);
+  setTimeout(()=>{$('aName').focus();growNameField();},320);
 }
-async function openEditAct(id){
-  const a=await fetchActivity(id);if(!a)return;
-  editingActId=id;
-  setTargetLists([a.listId]);
-  await renderActListPicker();
-  $('aName').value=a.name;
-  $('aLoc').value=a.location||'';$('aLocLat').value=a.locationLat||'';$('aLocLng').value=a.locationLng||'';
-  if(a.location&&a.locationLat!=null) locGeoMark($('aLoc')); else delete $('aLoc').dataset.geoFor;
-  /* Preserve the Home link across an edit that never touches the
-     location — without this, saving would quietly sever it. */
-  locSetHome('aLoc',a.locationIsHome);
-  resetLocationGuess(false);
-  /* An activity saved before "Someday"/"No date" were retired still
-     carries that value. Put it back as an option for this one row, so
-     opening the sheet and hitting Save cannot silently change the
-     user's data — but keep it off the menu for everything else. */
-  resetDateOptions();
-  /* A stored date that is exactly what a band resolves to today reopens
-     as that band, so picking "Next year" and coming back does not land
-     the user in the specific-date field. bandForStored() matches
-     exactly, so re-saving writes back the identical value. */
-  const band=bandForStored(a.targetDate);
-  if(band){
-    $('aDate').value=band;
-    $('aDateCustom').value='';
-  } else if(isCustomDate(a.targetDate)){
-    $('aDate').value=CUSTOM_DATE;
-    $('aDateCustom').value=a.targetDate;
-  } else {
-    if(a.targetDate&&!dateOptionExists(a.targetDate)) addLegacyDateOption(a.targetDate);
-    $('aDate').value=a.targetDate||DEFAULT_TARGET_DATE;
-    $('aDateCustom').value='';
-  }
-  onTargetDateChange();
-  setPriorityChoice(a.priority||'medium');
-  /* Carried through an edit untouched. The rating was inferred at
-     capture from the name, and re-judging it here would silently
-     rewrite it every time somebody fixed a typo. */
-  $('aDiff').value=a.difficulty||'';
-  aLinks=[...(a.links||[])];
-  renderTagChips('aLinks');
-  /* Empty on an edit too: the log is append-only and is read on the
-     activity detail sheet. Filling this with the existing entries
-     would invite them to be rewritten, which is the one thing a log
-     must not allow. */
-  resetActivityNoteField();
-  setRemindField(a.remindAt,a.remindNote);
-  $('actSheetTitle').textContent='Edit Activity';
-  $('actSaveBtn').textContent='Save';
-  openModal('actSheet');
-}
-/* The List row only appears when there is a choice to make: editing an
-   existing activity, or creating one from outside a collection.
 
-   Always single-select. An activity belongs to exactly one list. */
+/* ---- the name -----------------------------------------------------
+   The same <textarea> the detail sheet renames into, for the same
+   reason: .ad-title wraps, and an <input> would put a three-line name
+   on one scrolling line. Height comes from scrollHeight, exactly as
+   growTitleEdit() does — the two are not shared because that one also
+   drives the commit-on-blur state machine, which has nothing to do
+   with a field that only stages. */
+function growNameField(){
+  const el=$('aName');
+  if(!el)return;
+  el.style.height='auto';
+  el.style.height=el.scrollHeight+'px';
+  /* This is the name field's `input` handler, so it is also where the
+     Add button learns the name has been typed. */
+  updateNewSaveButton();
+}
+/* Enter dismisses rather than adding a newline: a name is one line
+   semantically however many it is drawn on. */
+function onNameFieldKey(e){
+  if(e.key==='Enter'){ e.preventDefault(); e.target.blur(); }
+}
+
+/* ==============================================================
+   THE NEW SHEET'S THREE PAGES
+
+   Main, Links and Notes, swapped in place — the same thing the detail
+   sheet does with .ad-pane, and for the same reason: neither a link nor
+   a note is something most people have at the moment of capture, so
+   neither may cost the sheet height it would spend empty. A card that
+   reads "None" says there is nothing there; a field that vanishes when
+   empty says nothing at all.
+
+   ⚠️ EACH PAGE CARRIES ITS OWN .ad-navbar, exactly as the detail
+   sheet's do — this sheet has no sheet bar either now that Cancel and
+   Add ride the dock. So a page's Back is in the markup beside the page
+   it backs out of, and there is no one button being Cancel and Back at
+   the same time. Anything that adds a page here writes its own Back
+   bar with it. Back rather than Cancel on a page is not a lost escape
+   hatch: the dock's Cancel, the scrim, Escape and a swipe down all
+   still dismiss the whole sheet from anywhere.
+   ============================================================== */
+const NEW_PANES={main:'aPaneMain',links:'aPaneLinks',notes:'aPaneNotes'};
+
+function newSheetPane(which){
+  Object.keys(NEW_PANES).forEach(k=>{
+    const el=$(NEW_PANES[k]);
+    if(el) el.classList.toggle('active',k===which);
+  });
+  /* One header at a time: the title row names the sheet on the main
+     page, and a sub-page's own .ad-navbar replaces it rather than
+     stacking under it. `barless` gives the body back the top room the
+     bar was holding, so the grabber does not sit on the Back button. */
+  const head=$('actSheetHead'),modal=document.querySelector('#actSheet .modal');
+  if(head) head.hidden=which!=='main';
+  if(modal) modal.classList.toggle('barless',which!=='main');
+  const body=$('actSheetBody');
+  if(body) body.scrollTop=0;
+  if(which==='notes') setTimeout(()=>{const n=$('aNotes');if(n)n.focus();},60);
+  if(which==='links') setTimeout(()=>{const n=$('aLinkNew');if(n)n.focus();},60);
+}
+
+/* ---- links, staged ------------------------------------------------
+   `aLinks` is the array saveActivity() sends, so there is nothing to
+   commit: these edit the value that is about to be written. The page
+   is otherwise the activity sheet's own — same rows, same composer,
+   same normalisation — with saveActLinks() left out of it. */
+function openNewLinks(){ renderNewLinks(); newSheetPane('links'); }
+
+function newLinkSummary(){
+  if(!aLinks.length) return 'None';
+  const first=aLinks[0].replace(/^https?:\/\//,'');
+  return aLinks.length>1?`${first} +${aLinks.length-1} more`:first;
+}
+
+function renderNewLinks(){
+  const sum=$('aLinkSummary');
+  if(sum){ sum.textContent=newLinkSummary(); sum.classList.toggle('has',!!aLinks.length); }
+  const box=$('aLinksList');
+  if(!box)return;
+  box.innerHTML=aLinks.length
+    ? aLinks.map((l,i)=>`<div class="link-row">
+        <a href="${esc(l)}" target="_blank" rel="noopener">
+          ${icon('link','ic-sm')}<span>${esc(l.replace(/^https?:\/\//,''))}</span></a>
+        <button class="link-del" onclick="removeNewLink(${i})"
+          aria-label="Remove link">${icon('x','ic-xs')}</button>
+      </div>`).join('')
+    : `<div class="note-empty"><p>No links yet</p></div>`;
+}
+
+function onNewLinkKey(e){ if(e.key==='Enter'){e.preventDefault();addNewLink();} }
+
+function addNewLink(){
+  const f=$('aLinkNew');if(!f)return;
+  let v=f.value.trim();
+  if(!v)return;
+  /* Same normalisation as addActLink(), so a link typed here and one
+     typed on the activity are stored identically. */
+  if(!/^https?:\/\//i.test(v)) v='https://'+v;
+  if(!aLinks.includes(v)) aLinks.push(v);
+  f.value='';
+  renderNewLinks();
+}
+
+function removeNewLink(i){ aLinks.splice(i,1); renderNewLinks(); }
+
+/* ---- the first note, staged ----------------------------------------
+   One field, not a log: what is written here becomes the log's FIRST
+   ENTRY, and the log itself is append-only and lives on an activity
+   that does not exist yet. flushActivityNoteField() files it once it
+   does — after the insert, never as part of it. */
+function openNewNotes(){ newSheetPane('notes'); }
+
+/* ⚠️ THE SAME BLOCK paintActivityNotes() DRAWS ON THE ACTIVITY SHEET,
+   over one staged entry instead of a fetched log — same .ad-nsec, same
+   head, same .note-card, same .note-empty. It was briefly a tinted
+   .ad-place row with a disc, invented here rather than taken from
+   there, which made the one thing on this sheet that also exists on
+   that one look like a different feature.
+
+   The attribution is honest rather than decorative: this note will be
+   filed by the signed-in user, today, the moment the activity saves. */
+function renderNewNoteCard(){
+  const box=$('aNotesRow');
+  if(!box)return;
+  const t=(($('aNotes')||{}).value||'').trim();
+  /* ⚠️ author_id MUST BE TRUTHY. noteWho() and noteAvatarHTML() read a
+     falsy one as "the account that wrote this has been deleted" and
+     render the entry greyed, over the name "Deleted account" — which on
+     a note the user is in the middle of typing is exactly the quiet
+     kind of wrong this app tries not to ship. The sheet cannot be open
+     without a signed-in user, so the fallback is belt to that brace. */
+  const n={author_id:(currentUser&&currentUser.id)||'self',
+           author_name:(userProfile&&(userProfile.display_name||userProfile.username))||'You',
+           body:t,created_at:new Date().toISOString()};
+  box.innerHTML=`
+    <div class="ad-nsec-h">
+      <p class="h">Notes</p>
+      <span class="ad-nsec-more">${t?'1 note':'Add'} ${icon('chevron-right','ic-xs')}</span>
+    </div>
+    ${t
+      ? `<div class="note-card">
+           <p class="m">${noteAvatarHTML(n,targetListId)}<span>${esc(noteWho(n))} &middot; ${esc(msgDayLabel(n.created_at))}</span></p>
+           <p class="t">${esc(t)}</p></div>`
+      : '<div class="note-empty"><p>No notes yet</p></div>'}`;
+}
+
+/* ==============================================================
+   THE STAGED EDITORS
+
+   One per control on the plate and the chip row, and each is the
+   detail sheet's menu with the write taken out of it: the same action
+   sheet, the same labels, the same tones — landing in a hidden input
+   instead of in the database, because there is no row yet and Cancel
+   has to mean "never mind".
+
+   ⚠️ EACH VALUE HAS EXACTLY ONE WRITER, and every one of them repaints
+   its own control. That is the same rule setPriorityChoice() has
+   always carried: a caller that sets the input directly leaves the
+   chip saying something else, and the two only disagree on screen.
+   ============================================================== */
+
+/* The list, as the plate's eyebrow. */
 async function renderActListPicker(){
-  const row=$('actListRow');
-  if(!row)return;
+  const btn=$('actListBtn');
+  if(!btn)return;
   const lists=await fetchCollections();
-  if(!lists.length){row.style.display='none';return;}
-  row.style.display='';
+  /* Nowhere to file it. Save says so; a control offering no choices
+     would not. */
+  if(!lists.length){btn.style.display='none';return;}
+  btn.style.display='';
 
   /* Anything the activity was in that this user can no longer see — a
      shared list they left — is dropped rather than shown as a blank
      row, and would otherwise be written straight back on Save. */
   const known=new Set(lists.map(l=>l.id));
   setTargetLists(targetListIds.filter(id=>known.has(id)));
-  /* An activity that already exists must always be in at least one
-     list, so an edit falls back to the first. A NEW one created from
-     outside a collection deliberately does not: filing it into
-     whichever list happens to sort first is a silent, wrong answer the
-     user never gave, and the one they wanted is one tap away. The row
-     reads "Choose" and saveActivity() refuses until it is answered. */
-  if(!targetListIds.length&&editingActId) setTargetLists([lists[0].id]);
+  /* A new activity created from outside a collection deliberately does
+     NOT fall back to the first list: filing it into whichever one sorts
+     first is a silent, wrong answer the user never gave, and the one
+     they wanted is one tap away. The eyebrow reads "Choose" and
+     saveActivity() refuses until it is answered. */
 
-  $('actListLabel').textContent='List';
-  renderActListValue(lists);
-
-  /* The handler goes on the button, not on the .fg around it: the group
-     also holds the label, and tapping a label should do nothing. */
-  $('actListBtn').onclick=()=>openListPicker({
+  renderActListValue(lists,null,'Choose List');
+  btn.onclick=()=>openListPicker({
     title:'Add to List',
     currentId:targetListId,
     onPick:picked=>{
       setTargetLists([picked]);
-      renderActListValue(lists);
+      renderActListValue(lists,null,'Choose List');
     },
   });
 }
 
-/* The chosen list's name, or "Choose" when there isn't one yet.
+/* The chosen list's name, or the prompt when there isn't one yet.
+
+   ⚠️ THE PROMPT DIFFERS BETWEEN THE TWO CALLERS, and that is why it is
+   an argument. The new-activity sheet's eyebrow has no label beside it
+   — it IS the value — so on its own "Choose" names nothing and reads
+   as a stray verb above the title. The completion sheet's row has a
+   "List" label to its left, where "Choose List" would say list twice.
 
    Shared with the completion sheet's draft mode, which passes its own
-   element id — the wording is the same on both, and two copies would be
-   two things to keep in step. */
-function renderActListValue(lists,elId){
+   element id: the two must not drift into two different words for the
+   same state. */
+function renderActListValue(lists,elId,empty){
   const el=$(elId||'actListName');
   if(!el)return;
   const home=lists.find(l=>l.id===targetListId);
-  el.textContent=home?home.name:'Choose';
+  el.textContent=home?home.name:(empty||'Choose');
 }
 
-/* Target dates offered to new activities. Retired values live only in
-   existing rows — see addLegacyDateOption. */
+/* Target dates offered to new activities. Retired values ("Someday",
+   "No date") live only in existing rows, and there is nothing here that
+   can reach one now that this sheet cannot open an activity that
+   already exists. */
 const DEFAULT_TARGET_DATE='This Year';
 const CUSTOM_DATE='__custom__';   /* sentinel; never stored */
-const LEGACY_DATE_LABELS={'Before I Die':'Someday','':'No date'};
 
-/* Show the date field only when "on a specific date" is chosen. */
-function onTargetDateChange(){
-  const custom=$('aDate').value===CUSTOM_DATE;
-  $('aDateCustomRow').style.display=custom?'':'none';
-  if(custom&&!$('aDateCustom').value){
-    /* Seed with a month out rather than today: a target you have already
-       reached is not a target. */
-    const d=new Date();d.setMonth(d.getMonth()+1);
-    $('aDateCustom').value=d.toISOString().split('T')[0];
-  }
+/* ⚠️ THE ONLY WRITER OF #aDate / #aDateCustom. `band` is a band string
+   or CUSTOM_DATE; `iso` is the date behind the sentinel. The chip is
+   painted from dateInfo() over the value that will actually be STORED,
+   so it reads exactly as the activity will read a moment after Add —
+   which is the whole argument for this sheet looking like that one. */
+function setTargetChoice(band,iso){
+  /* ⚠️ '' IS A REAL VALUE and must not fall back to DEFAULT_TARGET_DATE.
+     The sheet used to open on "This Year", which is a deadline nobody
+     set sitting in a control that looked answered — and a target date
+     is not a decoration: it is what Up Next ranks on and what every
+     deadline badge in the app reads. Same argument as the priority
+     default, same fix. The chip renders "—" for an unset one, which is
+     what dateInfo()/countdownParts() already produce for no date. */
+  $('aDate').value=band===''?'':(band||DEFAULT_TARGET_DATE);
+  $('aDateCustom').value=iso||'';
+  const el=$('aTargetValue'),btn=$('aTargetBtn');
+  if(!el||!btn)return;
+  const di=dateInfo({targetDate:readTargetDate(),completed:false});
+  const cd=countdownParts(di);
+  el.textContent=cd.open?cd.big:`${cd.big} ${cd.unit}`;
+  /* Overdue and urgent only — the same two states the detail sheet
+     tints, and no others, because any third would be a fourth colour
+     scale on a row already carrying three. */
+  btn.classList.toggle('is-due',di.cls==='overdue'||di.cls==='urgent');
+  updateNewSaveButton();
 }
 
-/* The select holds either a preset band or the CUSTOM_DATE sentinel;
-   this turns that plus the date field into the value actually stored.
-   A band is resolved to the date it means *now* on the way out — see
+/* The detail sheet's target menu with patchActivity() swapped for
+   setTargetChoice(). TARGET_BANDS is shared, so the two pickers cannot
+   offer different bands. */
+function openNewTargetMenu(){
+  const band=$('aDate').value,stored=$('aDateCustom').value;
+  const specific=band===CUSTOM_DATE&&!!stored;
+  const items=TARGET_BANDS.map(b=>({
+    label:b.label,
+    checked:band===b.value,
+    onSelect:()=>setTargetChoice(b.value,''),
+  }));
+  items.push({
+    label:specific?fmtDate(stored,true):'Specific date…',
+    checked:specific,
+    onSelect:()=>showCalendar({
+      title:'Target Date',
+      value:stored||'',
+      onPick:iso=>setTargetChoice(CUSTOM_DATE,iso),
+    }),
+  });
+  showActionSheet({title:'Target Date',items});
+}
+
+/* ⚠️ Resolved on the way IN, never on the way out — a band is a
+   relative label and target_date is an absolute field. See
    MAKING A BAND HOLD STILL in utils.js — so nothing downstream has to
    know it was ever a band. */
 function readTargetDate(){
@@ -711,48 +1400,103 @@ function readTargetDate(){
   return $('aDateCustom').value||null;
 }
 
-function dateOptionExists(v){
-  return [...$('aDate').options].some(o=>o.value===v);
-}
-function resetDateOptions(){
-  [...$('aDate').options].forEach(o=>{ if(o.dataset.legacy) o.remove(); });
-}
-function addLegacyDateOption(v){
-  const o=document.createElement('option');
-  o.value=v;
-  o.textContent=LEGACY_DATE_LABELS[v]||v;
-  o.dataset.legacy='1';
-  $('aDate').appendChild(o);
-}
-
 /* ==============================================================
-   PRIORITY
+   PRIORITY AND DIFFICULTY, STAGED
 
-   A native <select> cannot show what each level looks like, and the
-   colour is the thing you actually read back in the lists — so the
-   control is three swatched options instead. The chosen value is kept
-   in a hidden #aPri input so saveActivity() still just reads
-   $('aPri').value; anything that sets the priority must come through
-   here, or the buttons and the value drift apart.
+   Both were a different shape here from the one they take on the
+   detail sheet — priority a row of three swatched buttons, difficulty
+   a hidden input with no control at all — and that was the whole of
+   why the two sheets read as different screens. They are the same
+   chips now, opening the same action sheets.
+
+   The swatched .seg-pri control went with it. Its argument was that a
+   native <select> cannot show what each level looks like and the
+   colour is what you read priority by — which is true, and is answered
+   better by the chip itself, which IS tinted by the value it holds.
+   The menu shows all three in their own hues (`tone`), so nothing is
+   lost at the moment of choosing either.
    ============================================================== */
+
+/* ⚠️ THE ONLY WRITER OF #aPri. */
 function setPriorityChoice(p){
-  const v=PRIORITY_RANK[p]!==undefined?p:'medium';
+  /* ⚠️ '' IS A REAL VALUE HERE and must not fall back to 'medium'.
+     Priority is required now, so an unanswered one has to read as
+     unanswered — defaulting it is exactly what made every hurried
+     capture claim a priority nobody had chosen. */
+  const v=PRIORITY_RANK[p]!==undefined?p:'';
   $('aPri').value=v;
-  const seg=$('aPriSeg');
-  if(!seg)return;
-  seg.querySelectorAll('.pri-opt').forEach(b=>{
-    const on=b.dataset.pri===v;
-    b.classList.toggle('active',on);
-    b.setAttribute('aria-checked',on?'true':'false');
+  const chip=$('aPriChip'),val=$('aPriValue');
+  if(!chip||!val)return;
+  /* ⚠️ classList, NOT className. This used to rebuild the whole
+     attribute, which now silently drops `ad-req` — the class carrying
+     the red rail that says this field is outstanding. Touch only the
+     three hue classes this function actually owns. */
+  chip.classList.remove('c-high','c-medium','c-low','c-none');
+  chip.classList.add(v?'c-'+v:'c-none');
+  val.textContent=v?cap(v):'None';
+  updateNewSaveButton();
+}
+
+function openNewPriorityMenu(){
+  /* No `||'medium'`: with nothing chosen, nothing is ticked. */
+  const cur=$('aPri').value;
+  showActionSheet({
+    title:'Priority',
+    items:['high','medium','low'].map(p=>({
+      label:cap(p),
+      checked:cur===p,
+      /* The scale the rails, capsules and map pins already draw. */
+      tone:p,
+      onSelect:()=>setPriorityChoice(p),
+    })),
   });
 }
 
-/* The reminder row only exists once the remind_at column does. */
+/* ⚠️ THE ONLY WRITER OF #aDiff, and maybeGuessLocation() goes through
+   it too — writing the input directly left the chip showing "Not
+   rated" over a rating the model had already returned.
+
+   `manual` records who decided, exactly as difficulty_manual does on an
+   existing row: the guess passes false, the menu passes true. */
+function setDifficultyChoice(tier,manual){
+  const v=DIFF_ORDER[tier]!==undefined?tier:'';
+  $('aDiff').value=v;
+  $('aDiffManual').value=v&&manual?'1':'';
+  const chip=$('aDiffChip'),val=$('aDiffValue');
+  if(!chip||!val)return;
+  chip.className=`ad-chip ad-chip-btn c-d-${v||'none'}`;
+  val.textContent=DIFF_LABELS[v]||'None';
+}
+
+/* The rating is inferred and has to be arguable — see DISAGREEING WITH
+   THE RATING above, which is the same argument one sheet earlier.
+   Hidden entirely without the column: a control writing a field the
+   table does not have would fail the whole insert. */
+function openNewDifficultyMenu(){
+  if(!difficultyReady()){
+    showToast('Ratings aren’t set up on this project yet.');
+    return;
+  }
+  const cur=$('aDiff').value||'';
+  const tiers=Object.keys(DIFF_ORDER).sort((x,y)=>DIFF_ORDER[x]-DIFF_ORDER[y]);
+  showActionSheet({
+    title:'Difficulty',
+    items:tiers.map(tier=>({
+      label:DIFF_LABELS[tier],
+      checked:cur===tier,
+      /* Namespaced -- see openDifficultyMenu(). */
+      tone:'d-'+tier,
+      onSelect:()=>setDifficultyChoice(tier,true),
+    })),
+  });
+}
+
+/* The reminder chip only exists once the remind_at column does. */
 function setRemindField(value,note){
-  const row=$('aRemindRow');
-  if(!row)return;
-  if(!remindersReady()){row.style.display='none';return;}
-  row.style.display='';
+  const chip=$('aRemindChip');
+  if(!chip)return;
+  if(!remindersReady()){chip.style.display='none';return;}
+  chip.style.display='';
   $('aRemind').value=value||'';
   $('aRemindNote').value=note||'';
   updateRemindRow();
@@ -766,25 +1510,115 @@ function homeFieldsFor(inputId){
   return homeFlagReady()?{location_is_home:locIsHome(inputId)}:{};
 }
 
+/* ⚠️ IT ONLY EVER INSERTS. There is no edit mode on this sheet any
+   more — see the note on #actSheet in index.html — so there is no
+   `editingActId` to branch on, no old row to read back before the
+   write, and no "did the list change" comparison to make. */
+/* ==============================================================
+   WHAT THE NEW-ACTIVITY SHEET STILL NEEDS
+
+   Four things block the save, and until this the sheet said so
+   nowhere: you pressed Add and were shaken at. Three pieces answer it
+   now and all three read this ONE table, in this order, so they cannot
+   disagree about what is missing or which one to mention first:
+
+     - the red rail beside each of them (.ad-req, in detail.css),
+       which is static markup and says "these four";
+     - the Add button, which NAMES the first one outstanding;
+     - the nudge, which points at it when the button is pressed.
+
+   ⚠️ THE ORDER IS READING ORDER, not the order the old code happened
+   to check in — list, name, priority, place, top to bottom down the
+   sheet. The button names the FIRST unanswered one, so an order that
+   did not match the layout would send somebody down the sheet past
+   two blank fields to a third.
+
+   `el` is a getter rather than an element because the sheet's markup
+   outlives any one opening but this table is built once, at parse
+   time, when none of it exists yet. */
+const NEW_REQUIRED=[
+  {key:'list',  label:'Pick a list',
+   el:()=>$('actListBtn'),
+   filled:()=>targetListIds.length>0},
+  {key:'name',  label:'Name it',
+   el:()=>$('aName'),   focus:true,
+   filled:()=>!!($('aName')||{}).value?.trim()},
+  /* The target sits in the plate beside the name, so it is asked for
+     between the two. Required and no longer defaulted — see
+     setTargetChoice(). readTargetDate() collapses the band and the
+     custom-date pair into the single value that gets stored, so it is
+     also the right thing to test: a "Specific date" with no date behind
+     it reads as unanswered here, which it is. */
+  {key:'target',label:'Set a target date',
+   el:()=>$('aTargetBtn'),
+   filled:()=>!!readTargetDate()},
+  /* Priority is required and no longer defaulted — see the note on
+     #aPriChip in index.html. */
+  {key:'pri',   label:'Set a priority',
+   el:()=>$('aPriChip'),
+   filled:()=>!!($('aPri')||{}).value},
+  {key:'where', label:'Add a place',
+   el:()=>$('aPlaceRow'), focusId:'aLoc',
+   filled:()=>!!($('aLoc')||{}).value?.trim()},
+];
+
+function firstMissingRequired(){
+  return NEW_REQUIRED.find(f=>!f.filled())||null;
+}
+
+/* The Add button carries the answer, because it is the control the
+   user is already reaching for. Called from every writer of the four
+   values — the list picker, the name field, the priority menu and the
+   location field — rather than on a timer. */
+function updateNewSaveButton(){
+  const btn=$('actSaveBtn');
+  if(!btn)return;
+  const miss=firstMissingRequired();
+  btn.textContent=miss?miss.label:'Add';
+  btn.classList.toggle('is-blocked',!!miss);
+}
+
+/* ⚠️ NUDGE, NOT SHAKE. shakeEl() is +/-6px and means "refused"; this
+   is +/-2px and means "that one, there". Nothing has gone wrong — the
+   user pressed a button that already told them what was missing, and
+   this only says where it is. See nudgeEl() in utils.js.
+
+   It scrolls first and nudges after a beat, or the movement happens
+   off-screen on a short phone and the button appears to do nothing. */
+function nudgeMissingField(miss){
+  const el=miss.el();
+  if(!el)return;
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+  setTimeout(()=>{
+    nudgeEl(el);
+    /* Only the two typed fields take focus. Opening the keyboard for a
+       control whose answer is a menu would cover the menu. */
+    if(miss.focus) el.focus();
+    else if(miss.focusId) ($(miss.focusId)||{focus(){}}).focus();
+  },160);
+}
+
 async function saveActivity(){
+  /* ⚠️ ONE TABLE ANSWERS THIS, not four hand-rolled guards. The Add
+     button's label, the nudge and the save all have to agree about
+     what is outstanding and in what order, and they used to be three
+     separate lists of ifs — which is how the button could read "Add"
+     on a sheet that was about to refuse. See NEW_REQUIRED. */
+  const miss=firstMissingRequired();
+  if(miss){ nudgeMissingField(miss); return; }
   const name=$('aName').value.trim();
-  if(!name){shakeEl($('aName'));$('aName').focus();return;}
-  /* "Specific date" with no date is not a choice. */
+  /* "Specific date" with no date is not a choice. openNewTargetMenu()
+     cannot produce one — the calendar answers before it writes — but a
+     value the sheet cannot save must still not reach the insert. It is
+     not in NEW_REQUIRED because it is not a field anybody left blank:
+     it is an impossible state, not an unanswered one. */
   if($('aDate').value===CUSTOM_DATE&&!$('aDateCustom').value){
-    shakeEl($('aDateCustom'));$('aDateCustom').focus();return;
+    shakeEl($('aTargetBtn'));return;
   }
-  /* A location is required, and this is also what turns typed text into
-     coordinates — so the fields below are read AFTER it, not before.
-     See A LOCATION IS REQUIRED in js/location.js. */
-  /* A new activity created from outside a collection has no list until
-     the user picks one — see renderActListPicker(). Nothing is filed
-     into a list nobody chose. */
-  if(!editingActId&&!targetListIds.length){
-    const btn=$('actListBtn');
-    if(btn){shakeEl(btn);btn.scrollIntoView({block:'center',behavior:'smooth'});}
-    showToast('Pick a list first');
-    return;
-  }
+  /* The place is non-empty by now — NEW_REQUIRED checked it — but this
+     is also what turns the typed text into coordinates, so it still
+     runs and the fields below are read AFTER it. See A LOCATION IS
+     REQUIRED in js/location.js. */
   if(!await requireLocation('aLoc','aLocError',$('actSaveBtn'))) return;
   const fields={
     name,
@@ -803,6 +1637,12 @@ async function saveActivity(){
      the model declined to judge is stored as "not rated" and not as a
      fourth tier. */
   if(difficultyReady()) fields.difficulty=$('aDiff').value||null;
+  /* Who chose the tier, when the column exists to remember it. The
+     guess leaves this empty; the chip's menu sets it, and that is what
+     puts the row at the head of its tier in difficultyExamples() —
+     see THE CORRECTION HAS TO OUTRANK THE GUESS in js/location.js. */
+  if(difficultyReady()&&difficultyManualReady())
+    fields.difficulty_manual=!!($('aDiff').value&&$('aDiffManual').value);
   /* Only send the column if the database actually has it, or every
      insert fails for people who have not run the migration. */
   if(remindersReady()){
@@ -814,71 +1654,34 @@ async function saveActivity(){
   /* The fields are read off the sheet before the duplicate check, not
      after: the check can open a sheet on top of this one, and a value
      captured on the far side of that would be read from a form the
-     user may have moved on from.
-
-     An edit is checked too, but only against a name that actually
-     changed — otherwise saving an untouched activity would report it
-     as a duplicate of every near-miss in the library. `excludeId`
-     keeps it from matching itself. */
-  const before=editingActId?await fetchActivity(editingActId):null;
-  const renamed=!before||fuzzyNorm(before.name)!==fuzzyNorm(name);
-  if(!renamed) return commitSaveActivity(fields,before);
-  dupeGuard({name,location:fields.location||'',excludeId:editingActId||null},
-    ()=>commitSaveActivity(fields,before));
+     user may have moved on from. */
+  dupeGuard({name,location:fields.location||''},()=>commitSaveActivity(fields));
 }
 
-async function commitSaveActivity(fields,before){
+async function commitSaveActivity(fields){
   const btn=$('actSaveBtn');btn.disabled=true;
   try{
-    /* An edit can move an activity between collections, so every end
-       needs its stats rebuilt — the ones it left and the ones it landed
-       in. Reading the old row before the write is the only way to know
-       where it was. */
-    let offline=false,noteFor=null;
-    if(editingActId){
-      const wasIn=(before&&before.listIds)||[];
-      const nowIn=targetListIds.length?targetListIds:wasIn;
-      const cols=listFieldsFor(nowIn);
-      /* Only written when it actually changed, so an untouched edit
-         does not rewrite collection_id at all. */
-      const moved=cols&&(wasIn.length!==nowIn.length||wasIn.some((id,i)=>id!==nowIn[i]));
-      if(moved) Object.assign(fields,cols);
-
-      const r=await dbUpdate('Activities',fields,{id:editingActId});
-      if(r.error)throw r.error;
-      offline=!!r.offline;
-      noteFor=editingActId;
-      /* The union of both sets: a list gained needs recounting, and so
-         does one it was taken out of. */
-      new Set([...wasIn,...nowIn]).forEach(id=>updateCollectionStats(id));
-    } else {
-      const cols=listFieldsFor(targetListIds);
-      if(!cols){showToast('Create a list first');return;}
-      Object.assign(fields,cols);
-      const r=await dbInsert('Activities',fields);
-      if(r.error)throw r.error;
-      offline=!!r.offline;
-      /* The id was minted client-side by stampRow(), so the note can be
-         filed against it immediately — even offline, where the activity
-         itself is still sitting in the write queue. */
-      noteFor=r.rows&&r.rows[0]&&r.rows[0].id;
-      targetListIds.forEach(id=>updateCollectionStats(id));
-    }
+    const cols=listFieldsFor(targetListIds);
+    if(!cols){showToast('Create a list first');return;}
+    Object.assign(fields,cols);
+    const r=await dbInsert('Activities',fields);
+    if(r.error)throw r.error;
+    /* The id was minted client-side by stampRow(), so the note can be
+       filed against it immediately — even offline, where the activity
+       itself is still sitting in the write queue. */
+    const noteFor=r.rows&&r.rows[0]&&r.rows[0].id;
+    targetListIds.forEach(id=>updateCollectionStats(id));
     /* After the activity, never as part of it: they are separate rows
        in separate tables, and a note that fails must not take the
        activity down with it. Not awaited — nothing on screen is
        waiting for it. */
     if(noteFor) flushActivityNoteField(noteFor);
     closeModal('actSheet');
-    if(offline) showToast('Saved — will sync when you’re back online');
-    /* A new activity lands on its list with its sheet open — see
-       revealNewActivity(). An edit stays where it was: the user is
-       already looking at the row they changed. */
-    if(!editingActId&&revealNewActivity(targetListIds[0],noteFor)) return;
-    /* Whatever screen is actually showing owns the row that changed.
-       This used to fall back to Home for everything that was not the
-       detail screen, so editing from Up Next redrew a page the user was
-       not on and left the edited row stale in front of them. */
+    if(r.offline) showToast('Saved — will sync when you’re back online');
+    /* An add lands on its list with the activity's own sheet open —
+       see revealNewActivity(). */
+    if(revealNewActivity(targetListIds[0],noteFor)) return;
+    /* Whatever screen is actually showing owns the row that changed. */
     refreshAfterChange();
   }catch(err){
     console.error('saveActivity:',err);
@@ -934,22 +1737,119 @@ function startAdStage(){
    a specific date, "Someday", an open band — falls through as one
    `.open` label at the same size, because a smaller mono fallback made
    the two read as different kinds of thing. */
+/* dateInfo()'s label, split into something short enough for the plate.
+   "18 days left" -> {big:'18', unit:'days'}; anything that is not a
+   count ("Dec 31", "Overdue", "Someday") comes back whole with
+   open:true and is rendered as-is. */
 function countdownParts(di){
   const m=/^(\d+\+?)\s+(\w+)/.exec(di.label||'');
   if(m) return{big:m[1],unit:m[2],open:false};
-  return{big:di.label||'—',unit:'target',open:true};
+  return{big:di.label||'\u2014',unit:'target',open:true};
+}
+
+/* ==============================================================
+   THE HEAD OF A PENDING ACTIVITY'S SHEET
+
+   The plate, the chips and the Where row -- which is exactly the set of
+   things the in-place editors change, and nothing else.
+
+   ⚠️ IT IS SPLIT OUT SO AN EDIT DOES NOT REBUILD THE WHOLE SHEET.
+   patchActivity() used to re-run openActDetail(), which awaits a notes
+   fetch (a real round trip) before it paints and then replaces every
+   node in the body -- so changing a priority blanked the media grid and
+   the notes log for a moment and snapped them back. Repainting only
+   this block leaves the photos and the log untouched in the DOM, and
+   costs no network at all. */
+function actDetailHeadHTML(a,lists,di,canMove){
+  let h='';
+  /* Everything this block draws is derived here rather than passed in,
+     so the repaint path and the first paint cannot drift apart. */
+  const cd=countdownParts(di);
+  const pri=a.priority||'medium';
+  const diff=diffLabel(a);
+  /* ⚠️ THE TARGET SITS BESIDE THE TITLE. The placement is right; the
+       FORMATTING is what kept looking wrong, and three attempts failed
+       for three separate reasons:
+
+         - a 34px numeral made "Dec 31" nearly as wide as the title and
+           drove it onto four lines;
+         - sizing the value to its length (32/21/15px) meant the block
+           changed size between activities, which reads as sloppy;
+         - a box around it wrapped the WIDER of its two lines, and
+           "TARGET" is wider than "Dec 31" once mono tracking counts, so
+           the value sat off-centre in a lopsided pill.
+
+       All three go away with one decision: the value is ONE SHORT LINE
+       AT ONE FIXED SIZE, label above it, the block right-aligned to the
+       card's own padding. See .ad-target in detail.css. */
+    const tgVal=cd.open?cd.big:`${cd.big} ${cd.unit}`;
+    /* Only the two actionable states are tinted; any other band would be
+       a fourth colour scale on a sheet already carrying three. */
+    const tgDue=(di.cls==='overdue'||di.cls==='urgent')?' is-due':'';
+    
+    h+=`<div class="ad-plate">
+      <div class="ad-plate-main">
+        ${lists.length?(canMove
+          ? `<button class="t-eyebrow ad-eyebrow-btn" onclick="openActivityListPicker('${esc(a.id)}')" aria-label="In ${esc(lists[0].name)}. Move to another list."><span>${esc(lists[0].name)}</span>${icon('chevron-right','ic-eyebrow')}</button>`
+          : `<p class="t-eyebrow">${esc(lists[0].name)}</p>`):''}
+        <button class="ad-title ad-title-btn" id="adTitleBtn" onclick="startTitleEdit('${esc(a.id)}')" aria-label="Rename ${esc(a.name)}">${esc(a.name)}</button>
+        <textarea class="ad-title ad-title-edit" id="adTitleEdit" hidden rows="1" maxlength="100"
+          aria-label="Name" autocapitalize="sentences" enterkeyhint="done" spellcheck="false"
+          oninput="growTitleEdit()" onkeydown="onTitleEditKey(event)" onblur="commitTitleEdit()"></textarea>
+      </div>
+      <button class="ad-target${tgDue}" onclick="openTargetMenu('${esc(a.id)}')"
+        aria-label="Target: ${esc(di.label||'none set')}. Change it.">
+        <span class="ad-target-k">Target${icon('chevron-right')}</span>
+        <b>${esc(tgVal)}</b>
+      </button></div>`;
+    h+=`<div class="ad-chips">
+      <button class="ad-chip ad-chip-btn c-${pri}" onclick="openPriorityMenu('${esc(a.id)}')" aria-label="Priority: ${esc(cap(pri))}. Change it."><small>Priority</small><span class="ad-chip-v"><span class="ad-chip-t">${esc(cap(pri))}</span>${icon('chevron-right')}</span></button>
+      <button class="ad-chip ad-chip-btn c-d-${esc(a.difficulty||'none')}" onclick="openDifficultyMenu('${esc(a.id)}')" aria-label="Difficulty: ${esc(diff||'none set')}. Change it."><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">${esc(diff||'None')}</span>${icon('chevron-right')}</span></button>
+      ${remindersReady()
+        ? `<button class="ad-chip ad-chip-btn c-remind" onclick="openRemindFor('${esc(a.id)}')" aria-label="Reminder: ${a.remindAt?esc(fmtDate(a.remindAt,true)):'none set'}. Change it."><small>Remind</small><span class="ad-chip-v"><span class="ad-chip-t">${a.remindAt?esc(fmtDateNumeric(a.remindAt)):'None'}</span>${icon('chevron-right')}</span></button>`
+        : `<span class="ad-chip c-remind"><small>Remind</small>${a.remindAt?esc(fmtDateNumeric(a.remindAt)):'None'}</span>`}
+    </div>`;
+    /* Drawn even with nothing in it, and that is the same argument the
+       difficulty chip makes: an activity with no location never appears
+       on the map, so the rows that need this control most are exactly
+       the ones that used to hide it. It also had a chevron and no
+       handler before now -- it has been advertising a tap it did not
+       accept. */
+    h+=`<div class="ad-place c-where${a.location?'':' is-empty'}" id="adPlaceRow" role="button" tabindex="0"
+        onclick="startPlaceEdit('${esc(a.id)}')" onkeydown="onRowKey(event)"
+        aria-label="${a.location?`Location: ${esc(a.location)}. Change it.`:'Add a location'}">
+        <span class="ad-place-disc">${icon('pin')}</span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Where</span>
+          <span class="ad-place-v" id="adPlaceStatic">${a.location?esc(a.location):'Add a place'}</span>
+          <!-- ⚠️ .loc-wrap is required, not decorative: locFieldsFor()
+               finds the coordinates by querying inside it, and
+               .loc-results positions against it. -->
+          <span class="loc-wrap ad-place-edit" id="adPlaceEdit" hidden>
+            <input id="adLoc" type="text" maxlength="200" autocomplete="off"
+              placeholder="Search for a place" enterkeyhint="done" aria-label="Location"
+              value="${esc(a.location||'')}"
+              oninput="locInvalidateIfChanged(this);locSearch(this,'adLocResults')"
+              onkeydown="onPlaceEditKey(event)" onblur="commitPlaceEdit()" />
+            <input type="hidden" id="adLocLat" value="${a.locationLat==null?'':esc(a.locationLat)}" />
+            <input type="hidden" id="adLocLng" value="${a.locationLng==null?'':esc(a.locationLng)}" />
+            <div class="loc-results" id="adLocResults"></div>
+          </span>
+        </span>
+        <span class="ad-place-chev">${icon('chevron-right')}</span></div>`;
+  return h;
 }
 
 async function openActDetail(id){
   const a=await fetchActivity(id);if(!a)return;
-  editingActId=null;
   /* Pending activities carry the notes log inline. It used to be
      fetched behind the open sheet, which meant the section appeared a
      beat after everything else and shoved the sheet's contents around
      as it landed. The fetch starts here instead, in parallel with the
      collections read, and is awaited before anything is painted — so
      the sheet opens once, complete. */
-  const inlineNotes=!a.completed&&notesReady();
+  /* Awaited, not read synchronously — see notesReadyAsync(). */
+  const inlineNotes=!a.completed&&await notesReadyAsync();
   const notesP=inlineNotes?fetchNotes(a.id):null;
   const di=dateInfo(a);
   /* Only the lists this user can see. An activity shared into one of
@@ -1006,35 +1906,11 @@ async function openActDetail(id){
   } else {
     /* Pending: the plate, then the plan as chips, then a card per
        reference field. See "PENDING ACTIVITY SHEET" in detail.css. */
-    const cd=countdownParts(di);
-    const pri=a.priority||'medium';
     const target=a.targetDate
       ? (isCustomDate(a.targetDate)?fmtDate(a.targetDate,true):a.targetDate)
       : '';
-    h+=`<div class="ad-plate">
-      <div class="ad-plate-main">
-        ${lists.length?`<p class="t-eyebrow">${esc(lists[0].name)}</p>`:''}
-        <div class="ad-title">${esc(a.name)}</div>
-      </div>
-      <div class="ad-cdown${cd.open?' open':''}">
-        <b>${esc(cd.big)}</b><span>${esc(cd.unit)}</span>
-      </div></div>`;
-    const diff=diffLabel(a);
-    h+=`<div class="ad-chips">
-      <span class="ad-chip c-${pri}"><small>Priority</small>${cap(pri)}</span>
-      ${diff?`<span class="ad-chip c-d-${esc(a.difficulty)}"><small>Difficulty</small>${esc(diff)}</span>`:''}
-      ${target?`<span class="ad-chip c-target"><small>Target</small><b>${esc(target)}</b></span>`:''}
-      <span class="ad-chip c-remind"><small>Remind</small>${a.remindAt?esc(fmtDate(a.remindAt)):'None'}</span>
-    </div>`;
-    if(a.location){
-      h+=`<div class="ad-place c-where">
-        <span class="ad-place-disc">${icon('pin')}</span>
-        <div class="ad-place-body">
-          <span class="ad-place-k">Where</span>
-          <div class="ad-place-v">${esc(a.location)}</div>
-        </div>
-        <span class="ad-place-chev">${icon('chevron-right')}</span></div>`;
-    }
+    const canMove=lists.length>0&&(await fetchCollections()).length>1;
+    h+=`<div id="adHead">`+actDetailHeadHTML(a,lists,di,canMove)+`</div>`;
     /* ONE Links card, whatever the count. A card per link turned an
        activity with four references into four near-identical blocks
        pushing everything else down the sheet — and none of them was
@@ -1162,10 +2038,34 @@ async function openActDetail(id){
 
   $('actDetailBody').innerHTML=h;
 
+  /* The location field is rendered with its coordinates already in it,
+     so the pair is in step before anybody types. Without the mark,
+     dataset.geoFor is empty and a commit would re-geocode a value that
+     was never touched -- a wasted round trip on every edit. The Home
+     flag rides along for the same reason: an edit that never touches
+     the location must not sever the link. */
+  const adLoc=$('adLoc');
+  if(adLoc){ locGeoMark(adLoc); locSetHome('adLoc',!!a.locationIsHome); }
+  _titleEditFor=null; _placeEditFor=null;
+  /* A reminder sheet dismissed by the scrim never reaches Done, and a
+     stale id would send the next reminder to the previous activity. */
+  if(typeof resetRemindFor==='function') resetRemindFor();
+
   /* The dock is a sibling of the scroller, not part of it, so it is
      pinned to the foot of the sheet and inset by the same gutters as
      everything above it. Both states get one: edit / not-done /
-     delete when it is completed, and the pending trio otherwise. */
+     delete when it is completed, and delete / mark-accomplished
+     otherwise.
+
+     ⚠️ THERE IS NO PENCIL ON A PENDING ACTIVITY, and there is no edit
+     sheet behind it any more. Every field it used to hold — the name,
+     the list, the target, the priority, the location, the reminder —
+     is edited by tapping it on the plate and the chips above. A form
+     restating the same six values was a second place for them to
+     disagree, and it covered the thing being edited while you edited
+     it. A COMPLETED activity keeps its pencil: that one opens the
+     completion sheet, which is a different sheet holding the record
+     (photos, "how it went") rather than the plan. */
   const dock=$('actDetailDock');
   dock.hidden=false;
   dock.innerHTML=a.completed?`
@@ -1183,8 +2083,6 @@ async function openActDetail(id){
       <button class="ad-dock-disc red" aria-label="Delete"
         onclick="confirmDeleteActivity('${a.id}','${esc(a.name).replace(/'/g,'&#39;')}')">
         ${icon('trash')}</button>
-      <button class="ad-dock-disc" aria-label="Edit details"
-        onclick="openEditActFrom('${a.id}')">${icon('pencil')}</button>
       <button class="btn btn-green btn-block"
               onclick="closeModal('actDetailSheet');toggleComplete('${a.id}',false)">
         ${icon('check')}Mark accomplished
@@ -1320,9 +2218,6 @@ async function saveActLinks(){
     if(a&&adLinksFor===id){adLinks=[...(a.links||[])];renderActLinks();}
     return;
   }
-  /* The edit sheet carries the links through untouched on Save, so the
-     copy it is holding has to keep up. */
-  if(editingActId===id) aLinks=[...next];
   refreshAfterChange();
 }
 

@@ -589,10 +589,39 @@ function renderMeNotifications(){
   if(!row)return;
   if(!remindersReady()){row.style.display='none';return;}
   row.style.display='';
+
   const state=notificationState();
-  row.onclick=state==='default'?requestNotifications:()=>{
-    if(state==='denied') showToast('Allow notifications in your browser settings');
-    else if(state==='granted') showToast('Reminders are on');
+
+  /* The native permission is read asynchronously, so the first paint
+     of this tab can show a stale 'default'. Ask, and redraw if the
+     answer moved — cheap, and it happens once per visit. Declared
+     after `state` on purpose: reading it above its own const is a
+     TDZ throw, not a hoisted undefined. */
+  if(nativePushAvailable()){
+    refreshNativePushState().then(next=>{
+      if(next!==state&&curPage==='me') renderMeNotifications();
+    });
+  }
+
+  /* ⚠️ EVERY STATE MUST DO SOMETHING WHEN TAPPED, 'unsupported'
+     INCLUDED. This row previously built its handler as
+     `state==='default' ? request : () => { if denied … else if granted … }`,
+     which left exactly one state — 'unsupported' — falling off the end
+     of the chain into a function that ran and did nothing. That is the
+     state the native app is in without js/nativepush.js, and it read as
+     a dead control in the shipping build: the row is drawn, it is
+     tappable, and pressing it produces no response of any kind. */
+  row.onclick=()=>{
+    if(state==='default') return requestNotifications();
+    if(state==='granted') return showToast('Reminders are on');
+    if(state==='denied'){
+      /* Where the switch actually is differs by platform, and sending
+         somebody to the wrong Settings app is worse than not saying. */
+      return showToast(nativePushAvailable()||isNativeApp()
+        ? 'Turn on notifications for this app in Settings'
+        : 'Notifications are blocked in your browser settings');
+    }
+    showToast('This device can\u2019t show reminder alerts');
   };
 }
 

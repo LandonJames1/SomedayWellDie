@@ -123,6 +123,77 @@ Reminder alerts**, and turn them on.
 
 ---
 
+## 2b. Push on iOS — APNs (required for the native app)
+
+**Everything in section 2 is dead inside the native app**, and it fails
+silently. The page is served from the `capacitor://` scheme and WKWebView
+gives a custom scheme neither a service worker nor a Notification API, so
+`PushManager` does not exist, no subscription is ever made, and reminders
+quietly fall back to the Home banner. The app registers with APNs instead
+and stores its device token in the same `push_subscriptions` table.
+
+### Run the migration
+
+```sql
+-- supabase/native-push.sql
+```
+
+Adds `platform` (`'web'` | `'ios'`) and makes the two Web Push key columns
+nullable, since an APNs row has no keys. Existing rows default to `'web'`.
+
+### Make an APNs key
+
+developer.apple.com → **Certificates, Identifiers & Profiles** → **Keys** →
+**+**, tick **Apple Push Notifications service (APNs)**, and download the
+`.p8`. **Apple lets you download it once** — losing it means making a new
+key. Note the 10-character Key ID beside it, and your Team ID from
+**Membership**.
+
+The App ID (`com.landonjames.somedaywelldie`) also needs the Push
+Notifications capability enabled, and `ios/App/App/App.entitlements`
+carries the matching `aps-environment` key.
+
+### Set the secrets
+
+```bash
+supabase secrets set APNS_KEY_ID=ABCD123456
+supabase secrets set APNS_TEAM_ID=EFGH789012
+supabase secrets set APNS_BUNDLE_ID=com.landonjames.somedaywelldie
+supabase secrets set APNS_PRIVATE_KEY="$(cat AuthKey_ABCD123456.p8)"
+supabase secrets set APNS_ENV=sandbox     # while testing from Xcode
+```
+
+Then redeploy both functions — they share
+`functions/_shared/apns.ts`, which is bundled into each:
+
+```bash
+supabase functions deploy send-reminders
+supabase functions deploy send-message-push
+```
+
+### ⚠️ APNS_ENV is the one that will waste an afternoon
+
+A build run onto a device **from Xcode** gets a **sandbox** device token.
+TestFlight and the App Store get **production** ones. Sending a sandbox
+token to the production host answers `400 BadDeviceToken` — which is
+exactly what a genuinely uninstalled app answers, so the row is pruned as
+stale and that device silently stops receiving anything at all.
+
+Set `APNS_ENV=sandbox` while developing and unset it (or set
+`production`) before you ship. There is no way to serve both from one
+setting, because the token itself does not say which it is.
+
+### Checking it worked
+
+Both functions now report `apnsSkipped` in their JSON. A non-zero value
+means an iOS device is registered but the `APNS_*` secrets are not set —
+the Web Push half still delivered, which is why this is a count rather
+than an error.
+
+`sent: 0` with a registered device usually means `APNS_ENV`. Read the
+function logs: `apns failed 400 BadDeviceToken` is the environment
+mismatch above; `403 InvalidProviderToken` is a wrong Key ID or Team ID.
+
 ## 3. Reading shared links (optional)
 
 `functions/unfurl` is what makes a shared TikTok arrive as a filled-in

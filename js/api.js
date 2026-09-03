@@ -64,8 +64,12 @@ function mapActivity(row){
          activity the model declined to judge looks like too. Nothing
          reads it as a default; the UI simply draws nothing. */
       difficulty:row.difficulty||null,
+      /* Who decided that rating. False for everything the model
+         wrote and for every row predating supabase/difficulty-override.sql,
+         which is the honest reading of both. */
+      difficultyManual:!!row.difficulty_manual,
       remindAt:row.remind_at||null,remindNote:row.reminder_note||'',createdAt:row.created_at};
-  }catch(e){console.error('mapActivity error:',e,row);return{id:row.id,listId:row.collection_id,listIds:[row.collection_id].filter(Boolean),name:row.name||'',targetDate:null,priority:'medium',links:[],completed:!!row.date_completed,completedDate:row.date_completed||null,completionNotes:'',media:[],photos:[],location:'',locationLat:null,locationLng:null,locationIsHome:false,difficulty:null,remindAt:null,remindNote:'',createdAt:row.created_at};}
+  }catch(e){console.error('mapActivity error:',e,row);return{id:row.id,listId:row.collection_id,listIds:[row.collection_id].filter(Boolean),name:row.name||'',targetDate:null,priority:'medium',links:[],completed:!!row.date_completed,completedDate:row.date_completed||null,completionNotes:'',media:[],photos:[],location:'',locationLat:null,locationLng:null,locationIsHome:false,difficulty:null,difficultyManual:false,remindAt:null,remindNote:'',createdAt:row.created_at};}
 }
 
 /* ==============================================================
@@ -172,6 +176,25 @@ async function probeDifficulty(){
   return _difficultyReady;
 }
 function difficultyReady(){ return _difficultyReady===true; }
+
+/* Same shape again, for the flag that says the user set the rating
+   themselves rather than accepting the model's. Separate from the
+   probe above because the two migrations are separate: a project can
+   have `difficulty` and not `difficulty_manual`, and that combination
+   has to degrade to the old behaviour rather than 400 every write. */
+let _difficultyManualReady=null;
+
+async function probeDifficultyManual(){
+  try{
+    const{error}=await sb.from('Activities').select('difficulty_manual').limit(1);
+    _difficultyManualReady=!error;
+    if(error) console.info('[difficulty] no difficulty_manual column — a rating you set by hand '+
+      'will not survive a reload, and the model will not be told which ratings were yours. '+
+      'Run supabase/difficulty-override.sql.');
+  }catch(e){ _difficultyManualReady=false; }
+  return _difficultyManualReady;
+}
+function difficultyManualReady(){ return _difficultyManualReady===true; }
 
 /* ==============================================================
    THE CACHE
@@ -400,7 +423,7 @@ const SELECT_FULL={
   collections:'id,created_at,name,description,cover_image,user_id',
   activities:'id,created_at,collection_id,name,target_date,priority,date_completed,'+
              'experience_notes,photos,links,location,location_lat,location_lng,'+
-             'remind_at,reminder_note,location_is_home,difficulty'
+             'remind_at,reminder_note,location_is_home,difficulty,difficulty_manual'
 };
 const SELECT_CORE={
   collections:SELECT_FULL.collections,

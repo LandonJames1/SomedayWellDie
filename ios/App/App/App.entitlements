@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- ============================================================
+	     PUSH NOTIFICATIONS
+
+	     Without this key the app cannot register with APNs at all, and
+	     PushNotifications.register() fails with "no valid aps-environment
+	     entitlement". That is the whole reason reminders and message
+	     notifications exist on this platform — see js/nativepush.js.
+
+	     'development' is correct in the source file. Xcode signs debug
+	     and TestFlight/App Store builds against different APNs
+	     environments and the distribution profile promotes this value on
+	     export; you do not maintain two copies of it.
+
+	     ⚠️ BUT THE SERVER HAS TO BE TOLD WHICH ONE IT IS TALKING TO.
+	     A build run from Xcode gets a SANDBOX device token; TestFlight
+	     and the App Store get PRODUCTION ones, and sending one to the
+	     other's host answers 400 BadDeviceToken — which is
+	     indistinguishable from an uninstalled app, so the row is pruned
+	     and the device silently stops receiving. Set the APNS_ENV
+	     function secret to 'sandbox' while testing from Xcode and
+	     'production' (or unset) for everything else. See
+	     supabase/functions/_shared/apns.ts.
+	     ============================================================ -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- ============================================================
+	     UNIVERSAL LINKS
+
+	     ⚠️ REPLACE THE HOST BELOW WITH THE DOMAIN THE WEB APP IS
+	     DEPLOYED AT, and make it the same one as APP_WEB_ORIGIN in
+	     js/config.js. Three things have to name the same host — this,
+	     that constant, and the apple-app-site-association file served by
+	     it. If any of them disagrees, iOS declines to open the app and
+	     the link goes to Safari, with no error anywhere.
+
+	     Leave the entry as-is and links simply never match; the app
+	     builds and runs exactly as it does today.
+
+	     `applinks:` and nothing else. `webcredentials:` would opt into
+	     shared password autofill, which is a different feature with its
+	     own AASA section, and this app has no reason to claim it.
+	     ============================================================
+
+	     DISABLED ON PURPOSE, 2 Sep 2026. The web app is served from
+	     https://landonjames1.github.io/SomedayWellDie/ — a GitHub Pages
+	     PROJECT site, so the domain root that would have to serve
+	     /.well-known/apple-app-site-association belongs to a different
+	     repo (landonjames1.github.io), which does not exist. Universal
+	     Links therefore cannot match, and an entitlement claiming a
+	     domain is not merely inert: an App ID without the Associated
+	     Domains capability provisioned fails to SIGN, which would block
+	     building to a device for no benefit at all.
+
+	     To turn it back on: serve the AASA file from a domain root, set
+	     APP_WEB_ORIGIN in js/config.js to that domain, uncomment the two
+	     lines below, and enable Associated Domains on the App ID.
+
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:REPLACE-WITH-YOUR-DOMAIN.example</string>
+	</array>
+	-->
+</dict>
+</plist>

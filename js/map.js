@@ -37,7 +37,9 @@ const CARTO_TILE_URL='https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/
    outdoor-v2, topo-v2, toner-v2, satellite (.jpg, not .png) -- so this
    is one word to change. streets-v2 is warm cream land against soft
    blue water, which sits with the app's parchment, and it keeps its
-   labels legible zoomed in where the quieter styles thin out. */
+   labels legible zoomed in where the quieter styles thin out.
+   ⚠️ Do not swap this without being asked. It is the entire look of the
+   Map tab. */
 const MAPTILER_TILE_URL='https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={k}';
 
 const CARTO_ATTRIB='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
@@ -256,7 +258,55 @@ function ensureDotIcon(map,done,pri){
 /* A photo pin: the activity's first photo, circular-cropped in a ring.
    Loading is async, so the feature renders as a dot until the image is
    ready and then repaints. */
+/* ⚠️ THE MEDIA HOST IS PROBED ONCE, BEFORE ANY PHOTO PIN IS ATTEMPTED.
+
+   A photo pin is drawn into a canvas and read back, which needs
+   crossOrigin='anonymous', which needs CORS headers from the host. When
+   the host does not send them EVERY photo fails identically — and the
+   browser logs a CORS block plus an ERR_FAILED for each one. Script
+   cannot suppress those; the only lever is not making the request.
+
+   ⚠️ AND A "GIVE UP AFTER THE FIRST FAILURE" FLAG DOES NOT WORK HERE,
+   which is worth writing down because it looks like it should.
+   stampPointIcons() walks every feature in one synchronous pass and
+   sets .src on all of them before a single onerror has fired, so the
+   flag is still false for all of them and every request goes out.
+
+   So one photo is tried, alone, and the rest wait on the answer:
+     unknown -> everything draws as a dot and the first photo seen
+                starts the probe
+     ok      -> re-stamp, and photo pins load normally from then on
+     off     -> stay dots, one warning, no further requests
+   Exactly one console error in the failing case instead of one per
+   activity. Cleared on reload, so fixing the bucket needs no code
+   change here. */
+let _photoHost='unknown';   /* unknown | probing | ok | off */
+
+function photoHostOK(){ return _photoHost==='ok'; }
+
+function probePhotoHost(src,onDone){
+  if(_photoHost!=='unknown')return;
+  _photoHost='probing';
+  const img=new Image();
+  img.crossOrigin='anonymous';
+  img.onload=()=>{ _photoHost='ok'; onDone&&onDone(); };
+  img.onerror=()=>{
+    _photoHost='off';
+    let origin=src;
+    try{ origin=new URL(src,location.href).origin; }catch(e){}
+    console.warn('[map] photo pins off for this session — '+origin+
+      ' refused a cross-origin image request, so a pin cannot read the '+
+      'photo back off a canvas. If that is the media bucket it needs a '+
+      'CORS policy allowing this origin (Cloudflare \u2192 R2 \u2192 the '+
+      'bucket \u2192 Settings \u2192 CORS policy). Pins fall back to '+
+      'coloured dots; nothing else is affected.');
+    onDone&&onDone();
+  };
+  img.src=src;
+}
+
 function ensurePhotoIcon(map,id,src,done,pri,onReady){
+  if(!photoHostOK())return;
   if(iconSet(map).has(id))return;
   iconSet(map).add(id);                        /* claim it, so we load once */
   const img=new Image();
@@ -291,13 +341,25 @@ function ensurePhotoIcon(map,id,src,done,pri,onReady){
       map.triggerRepaint();
     }catch(e){
       /* Reading the canvas back taints it if the photo came from a
-         cross-origin host that does not send CORS headers. The app's own
-         photos are base64 data URLs, so this only bites on remote covers;
-         drop the claim and let the feature keep its dot. */
+         cross-origin host that does not send CORS headers. Drop the
+         claim and let the feature keep its dot. */
       console.warn('[map] could not build photo pin:',e.message);
       iconSet(map).delete(id);
     }
   };
+  /* ⚠️ THIS NEEDS CORS HEADERS ON THE MEDIA HOST, and the note that used
+     to live above was written when it did not matter: it said the app's
+     own photos are base64 data URLs so only remote covers were affected.
+     That stopped being true when media moved to R2 — see MEDIA in
+     CLAUDE.md — and every photo pin now depends on the bucket sending
+     `Access-Control-Allow-Origin`.
+
+     crossOrigin='anonymous' is not optional: without it the image loads
+     but taints the canvas, and addCanvasImage() cannot read it back. So
+     with no CORS headers the request simply fails, onerror fires, and
+     the pin falls back to a dot — correct, but every photo costs a
+     console error. The fix is a CORS policy on the bucket, not a change
+     here. */
   img.onerror=()=>{ iconSet(map).delete(id); };
   img.src=src;
 }
@@ -411,12 +473,17 @@ function stampPointIcons(map,state,push){
     const p=f.properties;
     let id;
     const pri=p.pri||'medium';
-    if(p.photo){
+    if(p.photo&&photoHostOK()){
       /* The id carries the priority, so changing it builds a new image
          rather than reusing the old colour and size. */
       const pid='photo-'+p.id+'-'+(p.done===1?'done':pri);
       ensurePhotoIcon(map,pid,p.photo,p.done===1,pri,()=>stampPointIcons(map,state,true));
       id=map.hasImage(pid)?pid:ensureDotIcon(map,p.done===1,pri);
+    } else if(p.photo){
+      /* Host not answered for yet (or refused). One probe decides it for
+         every pin — see probePhotoHost(). */
+      probePhotoHost(p.photo,()=>stampPointIcons(map,state,true));
+      id=ensureDotIcon(map,p.done===1,pri);
     } else {
       id=ensureDotIcon(map,p.done===1,pri);
     }
@@ -691,6 +758,68 @@ function mapLoaded(map){
   });
 }
 
+/* ==============================================================
+   ONE LINE PER CAUSE, NOT ONE PER TILE
+
+   MapLibre fires `error` for every tile that fails and, with no
+   listener attached, console.errors each one with a full stack. A
+   basemap that is refusing every request therefore produces a wall of
+   identical traces — and not one of them says WHY. The 403 body is
+   MapTiler's answer ("Key usage restricted"), and it never reaches the
+   console at all.
+
+   So: attach a listener (which is also what stops MapLibre's own
+   logging), collapse repeats by cause, and say the thing that is
+   actually actionable. This hides nothing — an unrecognised error is
+   passed through in full.
+
+   ⚠️ Do NOT turn this into a silent catch. The wall of errors was
+   annoying and correct; the fix is to make it legible, not absent. */
+const _mapSaid=new Set();
+function mapSayOnce(key,...msg){
+  if(_mapSaid.has(key))return;
+  _mapSaid.add(key);
+  console.error(...msg);
+}
+/* ⚠️ MAKE A MISSING ICON ON DEMAND, which is exactly what MapLibre's
+   warning tells you to do. Cluster images are built per COUNT, and a
+   count only exists once supercluster has run — so the render pass asks
+   for `cluster-114-p` a frame before ensureClusterIcons() has made it,
+   and MapLibre warns once per id. The counts change with every zoom, so
+   pre-registering them is not possible; answering the event is.
+
+   The id is the one ensureClusterIcon() builds:
+   `cluster-<count>-<d|p>[-s]`. Parsing it back is safe because that
+   function is its only writer. */
+function attachStyleImageMissing(map){
+  map.on('styleimagemissing',e=>{
+    const m=/^cluster-(\d+)-(d|p)(-s)?$/.exec(e.id||'');
+    if(!m)return;
+    ensureClusterIcon(map,parseInt(m[1],10),m[2]==='d',!!m[3]);
+  });
+}
+
+function attachMapErrorLog(map){
+  map.on('error',e=>{
+    const err=e&&e.error,url=err&&err.url||'';
+    const status=err&&err.status;
+    if(status===403&&/api\.maptiler\.com/.test(url)){
+      mapSayOnce('maptiler-403',
+        '[map] MapTiler is refusing every basemap tile (403 "Key usage '+
+        'restricted"). The key in config.js is disabled or out of quota — '+
+        'check it at https://cloud.maptiler.com/account/keys/ . The map '+
+        'still works; it just has no basemap under it.');
+      return;
+    }
+    if(status===403||status===401){
+      mapSayOnce('tiles-'+status,'[map] basemap tiles rejected ('+status+'):',url);
+      return;
+    }
+    /* Anything unrecognised keeps its full detail. */
+    console.error('[map]',err||e);
+  });
+}
+
 const hasGeo=a=>a.locationLat&&a.locationLng;
 
 function boundsOf(acts){
@@ -772,6 +901,8 @@ async function renderGlobalMap(){
     dragRotate:false, pitchWithRotate:false, touchPitch:false,
     maxZoom:17, fadeDuration:120,
   });
+  attachMapErrorLog(globalMapObj);
+  attachStyleImageMissing(globalMapObj);
   globalMapObj.touchZoomRotate.disableRotation();
   /* Floor the zoom so you can never pull back past a full-screen globe. */
   globalMapObj.setMinZoom(globeFillZoom());
@@ -845,7 +976,7 @@ function globeFillZoom(){
    enlargement and "25% of the zoom number" would be several levels
    in. A globe a quarter larger means multiplying its size by 1.25,
    which is log2(1.25) -- about a third of a level. */
-const HOME_VIEW_SCALE=1.5;
+const HOME_VIEW_SCALE=1.25;
 
 function homeMapView(){
   const h=typeof homePlace==='function'?homePlace():null;
@@ -953,6 +1084,8 @@ async function renderMap(acts){
     dragRotate:false, pitchWithRotate:false, touchPitch:false,
     maxZoom:17, fadeDuration:120,
   });
+  attachMapErrorLog(actMap);
+  attachStyleImageMissing(actMap);
   actMap.touchZoomRotate.disableRotation();
   actMap.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 

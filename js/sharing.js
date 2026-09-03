@@ -162,8 +162,21 @@ function makeInviteCode(){
 }
 
 function inviteUrl(code){
-  return location.origin+location.pathname.replace(/index\.html$/,'')+
-         'index.html?join='+encodeURIComponent(code);
+  const q='index.html?join='+encodeURIComponent(code);
+  /* ⚠️ NOT location.origin. Inside the native shell that is
+     `capacitor://localhost`, which is not an address anybody else can
+     open — so an invite shared from the iOS app was a dead link, and
+     silently so: copying worked, sending worked, and the recipient got
+     a URL their phone did not recognise. publicOrigin() answers with
+     the configured public host there, and with location.origin in a
+     browser, which is the behaviour this always had. See
+     APP_WEB_ORIGIN in js/config.js.
+
+     When it is set the path is fixed rather than derived: the bundle's
+     own pathname says nothing about where the site lives. */
+  const base=typeof publicOrigin==='function'?publicOrigin():location.origin;
+  if(base&&base!==location.origin) return base+'/'+q;
+  return location.origin+location.pathname.replace(/index\.html$/,'')+q;
 }
 
 /* ==============================================================

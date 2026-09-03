@@ -42,6 +42,7 @@
 
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { apnsConfigured, sendApns } from '../_shared/apns.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -50,6 +51,9 @@ const json = (body: unknown, status = 200) =>
   });
 
 type Item = { id: string; name: string; note: string };
+
+/* One notification, before it is rendered for either transport. */
+type Note = { title: string; body: string; activityId?: string };
 
 Deno.serve(async (req) => {
   /* The function is reachable from the internet, so require a shared
@@ -157,13 +161,17 @@ Deno.serve(async (req) => {
 
   const remindAt = new Map<string, string>(rows.map((r) => [r.id, r.remind_at]));
   let sent = 0;
+  /* Native rows that had nowhere to go because APNS_* is unset. Reported
+     rather than swallowed — otherwise "reminders don't arrive on the
+     phone" looks identical to "nothing was due". */
+  let apnsSkipped = 0;
   const staleEndpoints: string[] = [];
   const deliveries: { activity_id: string; user_id: string; remind_at: string }[] = [];
 
   for (const [userId, items] of byUser) {
     const { data: subs } = await supabase
       .from('push_subscriptions')
-      .select('endpoint, p256dh, auth')
+      .select('endpoint, p256dh, auth, platform')
       .eq('user_id', userId);
 
     /* No device registered. Deliberately NOT recorded as delivered, so
@@ -171,20 +179,49 @@ Deno.serve(async (req) => {
        notifications on. */
     if (!subs?.length) continue;
 
-    const payload = JSON.stringify(
-      items.length === 1
-        /* The activity is the headline; the note is what you have to do
-           about it, which is the part worth reading on a lock screen. */
-        ? { title: items[0].name, body: items[0].note || 'Reminder', activityId: items[0].id }
-        : {
-            title: `${items.length} reminders`,
-            body: items.slice(0, 3).map((i) => i.name).join(', ') +
-              (items.length > 3 ? '…' : ''),
-          },
-    );
+    /* Built once and rendered twice. Web Push takes a JSON string that
+       sw.js parses; APNs wants the title and body as fields of its own
+       and carries everything else alongside them. Composing the
+       notification in one place is what stops the two platforms
+       drifting into saying different things about one reminder. */
+    const note: Note = items.length === 1
+      /* The activity is the headline; the note is what you have to do
+         about it, which is the part worth reading on a lock screen. */
+      ? { title: items[0].name, body: items[0].note || 'Reminder', activityId: items[0].id }
+      : {
+          title: `${items.length} reminders`,
+          body: items.slice(0, 3).map((i) => i.name).join(', ') +
+            (items.length > 3 ? '…' : ''),
+        };
+    const payload = JSON.stringify(note);
 
     let reached = false;
     for (const sub of subs) {
+      /* ---- The native app ----
+         An iOS row carries an APNs device token in `endpoint` and has
+         no keys, so it cannot go through webpush at all. Missing APNs
+         secrets are counted rather than thrown: a project that has not
+         configured them still has working Web Push, and taking the
+         whole sweep down over it would lose the browsers too. */
+      if (sub.platform === 'ios') {
+        if (!apnsConfigured()) { apnsSkipped++; continue; }
+        const res = await sendApns(sub.endpoint, {
+          title: note.title,
+          body: note.body,
+          /* Every reminder banner collapses into one Notification Center
+             group, the same way the payload above collapses five due
+             reminders into one banner. */
+          threadId: 'reminders',
+          data: {
+            kind: 'reminder',
+            ...(note.activityId ? { activityId: note.activityId } : {}),
+          },
+        });
+        if (res.ok) { sent++; reached = true; }
+        else if (res.prune) staleEndpoints.push(sub.endpoint);
+        else console.error('apns failed', sub.endpoint, res.status, res.reason);
+        continue;
+      }
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -241,5 +278,6 @@ Deno.serve(async (req) => {
     sent,
     delivered: deliveries.length,
     pruned: staleEndpoints.length,
+    apnsSkipped,
   });
 });

@@ -1,3 +1,11 @@
+-- ⚠️ HISTORICAL. This ran once and is kept as the record of what was
+-- done. It names 'In 2-3 Years' because that is the band that existed
+-- at the time; the picker offers 'In 2-4 Years' now (resolving to the
+-- end of year+4 rather than year+3). Do NOT update the literals below
+-- to match -- they describe rows that were already converted, and the
+-- dates they wrote still fall inside the new band's window. There is no
+-- schema change to make: target_date is free text with no constraint.
+--
 -- ============================================================
 -- target-rollover.sql — resolve stored target bands to real dates
 --

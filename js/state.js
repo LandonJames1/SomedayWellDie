@@ -14,7 +14,7 @@ let currentUser=null;
    Pushed screens remember where they came from so Back can return. */
 let curTab='home',curPage='home',backTab='lists';
 
-let curListId=null,editingListId=null,editingActId=null;
+let curListId=null,editingListId=null;
 /* Which conversation the conversation screen is showing. Kept beside
    curListId because it IS a collection id — a conversation belongs to
    a shared list rather than existing in its own right. See

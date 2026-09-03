@@ -494,7 +494,11 @@
    read. Priority keeps its own scale (see "Showing priority" in
    CLAUDE.md) — it is not one of these four.
    ============================================================== */
-    #actDetailBody {
+    /* ⚠️ BOTH SHEETS. The new-activity sheet is built out of the same
+       plate, chips and Where card — see the note on #actSheet in
+       index.html — so it needs the same four hues. Defining them twice
+       is how they would come to disagree. */
+    #actDetailBody, #actSheetBody {
       --c-target: #5f7d3a;   /* moss   */
       --c-remind: #a07a1f;   /* gold   */
       --c-where:  #8c3f68;   /* plum   */
@@ -503,31 +507,338 @@
 
     /* ── the plate: list, name, countdown ── */
     .ad-plate {
-      display: flex; align-items: center; gap: 14px;
+      /* 16px, matching .ad-target's padding-left, so the divider has the
+         same air on both sides. */
+      display: flex; align-items: center; gap: 16px;
       margin: 0 var(--gx-r) 0 var(--gx-l);
       padding: 16px; border-radius: 18px; background: var(--bg-elevated);
     }
     .ad-plate-main { flex: 1; min-width: 0; }
     .ad-plate .ad-title { margin-top: 6px; }
 
+    /* ── the plate's three controls ──
+       The list, the name and the target date are each tappable. They
+       keep the exact type they had as static text -- the whole idea is
+       that the value IS the control, so anything that made them look
+       like form fields would defeat it.
+
+       ⚠️ A <button> resets more than it looks like it does. Three
+       things have to be handed back deliberately, and each fails
+       differently:
+         - font-family, or children inherit the UA's Arial. Only
+           .ad-place needs it below (its children set no family of their
+           own); the others carry a class that sets one.
+         - text-align, which buttons centre.
+         - white-space, so a long name still wraps instead of running.
+       And NEVER `font: inherit` -- the shorthand also resets size and
+       weight, which is what broke the difficulty chip once already. */
+    .ad-eyebrow-btn, .ad-title-btn {
+      -webkit-appearance: none; appearance: none;
+      background: none; padding: 0; cursor: pointer;
+      text-align: left;
+    }
+    /* One press state for every editable thing on this sheet. Opacity
+       rather than a transform: .ad-place is full width and a scale on
+       it reads as the whole sheet flinching. */
+    .ad-eyebrow-btn:active, .ad-title-btn:active,
+    .ad-place:active, .ad-chip-btn:active { opacity: .5; }
+
+    /* The list name. The only plate control with a chevron: it is a
+       mono label, so it belongs to the same family as the chips below,
+       where a chevron is already the affordance. The name and the
+       countdown are the sheet's two display elements and hanging glyphs
+       on them turns a title block into a form. */
+    /* The list is a control, and at 11px in --label-2 it read as a
+       caption. Bigger, and in --tint so it says the same thing the
+       target's label says: this is pressable. Tracking comes in a
+       little as the size goes up, or the extra width eats the title. */
+    .ad-eyebrow-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      max-width: 100%; border: 0;
+      font-size: 12.5px; font-weight: 600; letter-spacing: .12em; color: var(--tint);
+    }
+    .ad-eyebrow-btn > span {
+      min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ad-eyebrow-btn .ic { opacity: .8; flex: none; }
+    /* 13px against 12.5px caps. .ic-xs is 15px and towers over the label. */
+    .ic-eyebrow { width: 13px; height: 13px; }
+
+    /* ⚠️ THE RESTING TITLE AND THE FIELD CARRY THE SAME BOX.
+       The editing state needs to look like a field -- a caret alone was
+       not enough to tell the two apart -- and the obvious way to do that
+       is to give the field padding. That would move the text the moment
+       you tapped it. So BOTH states take the same padding, and both pull
+       it back out with a matching negative margin: the resting title
+       still lines up under the eyebrow, and nothing shifts on the swap.
+       Change one of these paddings and you must change the other. */
+    .ad-title-btn, .ad-title-edit {
+      display: block;
+      padding: 4px 8px; margin-left: -8px; margin-right: -8px;
+    }
+    /* A block button with negative margins fills its parent plus the
+       16px it gave back, which is what we want. */
+    .ad-title-btn { width: auto; }
+    /* ⚠️ A TEXTAREA MUST BE GIVEN A WIDTH. `width: auto` on one is not
+       "fill the parent" -- it is the UA's 20-column default, which at
+       29px serif is wider than the card and pushed the field clean out
+       of it. calc() restores exactly the two negative margins so the
+       box is symmetrical about the text. */
+    .ad-title-edit { width: calc(100% + 16px); box-sizing: border-box; }
+    .ad-title-btn {
+      border: 0;
+      white-space: normal;   /* a long name wraps, as it did as a div */
+    }
+
+    /* ── the name, edited in place ──
+       A <textarea>, not an <input>, because .ad-title wraps and a name
+       can run to three lines on a 320px screen. It carries .ad-title
+       too, so the face, size and leading are the title's own and the
+       text does not shift by a pixel when the field appears. Height is
+       set from scrollHeight by growTitleEdit(). */
+    /* ⚠️ No padding/margin/width here -- they are set once, for BOTH
+       states, in the shared rule above. Restating them locally is what
+       made the field hug the text while the button kept its 4px, so the
+       title jumped vertically the moment it was tapped. */
+    .ad-title-edit {
+      border: 0; resize: none; overflow: hidden;
+      color: inherit; -webkit-appearance: none; appearance: none;
+    }
+    /* The same raised surface and hairline the Where row takes while it
+       is being edited, so "this is a field now" reads identically
+       wherever it happens on this sheet. Not a coloured border: red or
+       terracotta around the largest thing on the sheet reads as an
+       error, and this is an ordinary edit. */
+    .ad-title-edit {
+      background: var(--bg-elevated);
+      box-shadow: var(--ring);
+      border-radius: 10px;
+      caret-color: var(--tint);
+    }
+    .ad-title-edit:focus { outline: none; }
+
+    /* ⚠️ EVERY ONE OF THESE SETS display, WHICH OUTRANKS THE BROWSER'S
+       OWN [hidden] RULE -- so without this the static value and the
+       field it swaps with are BOTH drawn, and the title appears twice.
+       Exactly the trap the .fg note in CLAUDE.md describes for a hidden
+       file input, in a new place. An attribute selector is one point
+       more specific than the class, so no !important is needed.
+       Anything else here that toggles with `hidden` needs adding. */
+    .ad-title-btn[hidden],
+    .ad-title-edit[hidden],
+    .ad-place-v[hidden],
+    .ad-place-edit[hidden] { display: none; }
+
     /* The countdown. Both halves are the same face and the same size
        whatever the target is — an open band ("5+ years") sat in a
        smaller mono face than a real countdown ("18 days") and the two
        read as different kinds of thing. */
-    .ad-cdown {
-      flex: none; text-align: center;
-      padding-left: 14px; border-left: 1px solid var(--separator);
+    /* ── the target date ──
+       A tinted box rather than a hairline-separated column. It is the
+       control for the target date now, and a bare numeral beside a
+       title does not read as something you can press; a box with a
+       chevron under it does, and it matches the chips below.
+
+       ⚠️ THE VALUE IS SIZED TO ITS LENGTH, which is a deliberate
+       departure from the note that used to live here -- that both
+       halves are the same size whatever the target is, so an open band
+       and a real countdown read as the same kind of thing. They still
+       share one face, one colour rule and one box; only the point size
+       is fitted, because dateInfo() puts whole strings through this slot
+       ("Dec 31", "5+ years") and at one fixed 34px they either wrapped
+       or squeezed the title into four lines. Fitting beats wrapping.
+       The classes are set in openActDetail() from cd.big.length. */
+    /* ── the plate's three controls ──
+       The list, the name and the target date are each tappable. They
+       keep the exact type they had as static text -- the whole idea is
+       that the value IS the control, so anything that made them look
+       like form fields would defeat it.
+
+       ⚠️ A <button> resets more than it looks like it does. Three
+       things have to be handed back deliberately, and each fails
+       differently:
+         - font-family, or children inherit the UA's Arial. Only
+           .ad-place needs it below (its children set no family of their
+           own); the others carry a class that sets one.
+         - text-align, which buttons centre.
+         - white-space, so a long name still wraps instead of running.
+       And NEVER `font: inherit` -- the shorthand also resets size and
+       weight, which is what broke the difficulty chip once already. */
+    .ad-eyebrow-btn, .ad-title-btn {
+      -webkit-appearance: none; appearance: none;
+      background: none; padding: 0; cursor: pointer;
+      text-align: left;
     }
-    .ad-cdown b {
-      display: block; font-family: var(--serif);
-      font-size: 34px; font-weight: 600; line-height: 1; color: var(--orange);
+    /* One press state for every editable thing on this sheet. Opacity
+       rather than a transform: .ad-place is full width and a scale on
+       it reads as the whole sheet flinching. */
+    .ad-eyebrow-btn:active, .ad-title-btn:active,
+    .ad-place:active, .ad-chip-btn:active { opacity: .5; }
+
+    /* The list name. The only plate control with a chevron: it is a
+       mono label, so it belongs to the same family as the chips below,
+       where a chevron is already the affordance. The name and the
+       countdown are the sheet's two display elements and hanging glyphs
+       on them turns a title block into a form. */
+    /* The list is a control, and at 11px in --label-2 it read as a
+       caption. Bigger, and in --tint so it says the same thing the
+       target's label says: this is pressable. Tracking comes in a
+       little as the size goes up, or the extra width eats the title. */
+    .ad-eyebrow-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      max-width: 100%; border: 0;
+      font-size: 12.5px; font-weight: 600; letter-spacing: .12em; color: var(--tint);
     }
-    .ad-cdown.open b { color: var(--label-2); }
-    .ad-cdown span {
-      display: block; margin-top: 5px;
-      font-family: var(--mono); font-size: 9px; letter-spacing: .16em;
-      text-transform: uppercase; color: var(--label-3);
+    .ad-eyebrow-btn > span {
+      min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
     }
+    .ad-eyebrow-btn .ic { opacity: .8; flex: none; }
+    /* 13px against 12.5px caps. .ic-xs is 15px and towers over the label. */
+    .ic-eyebrow { width: 13px; height: 13px; }
+
+    /* ⚠️ THE RESTING TITLE AND THE FIELD CARRY THE SAME BOX.
+       The editing state needs to look like a field -- a caret alone was
+       not enough to tell the two apart -- and the obvious way to do that
+       is to give the field padding. That would move the text the moment
+       you tapped it. So BOTH states take the same padding, and both pull
+       it back out with a matching negative margin: the resting title
+       still lines up under the eyebrow, and nothing shifts on the swap.
+       Change one of these paddings and you must change the other. */
+    .ad-title-btn, .ad-title-edit {
+      display: block;
+      padding: 4px 8px; margin-left: -8px; margin-right: -8px;
+    }
+    /* A block button with negative margins fills its parent plus the
+       16px it gave back, which is what we want. */
+    .ad-title-btn { width: auto; }
+    /* ⚠️ A TEXTAREA MUST BE GIVEN A WIDTH. `width: auto` on one is not
+       "fill the parent" -- it is the UA's 20-column default, which at
+       29px serif is wider than the card and pushed the field clean out
+       of it. calc() restores exactly the two negative margins so the
+       box is symmetrical about the text. */
+    .ad-title-edit { width: calc(100% + 16px); box-sizing: border-box; }
+    .ad-title-btn {
+      border: 0;
+      white-space: normal;   /* a long name wraps, as it did as a div */
+    }
+
+    /* ── the name, edited in place ──
+       A <textarea>, not an <input>, because .ad-title wraps and a name
+       can run to three lines on a 320px screen. It carries .ad-title
+       too, so the face, size and leading are the title's own and the
+       text does not shift by a pixel when the field appears. Height is
+       set from scrollHeight by growTitleEdit(). */
+    /* ⚠️ No padding/margin/width here -- they are set once, for BOTH
+       states, in the shared rule above. Restating them locally is what
+       made the field hug the text while the button kept its 4px, so the
+       title jumped vertically the moment it was tapped. */
+    .ad-title-edit {
+      border: 0; resize: none; overflow: hidden;
+      color: inherit; -webkit-appearance: none; appearance: none;
+    }
+    /* The same raised surface and hairline the Where row takes while it
+       is being edited, so "this is a field now" reads identically
+       wherever it happens on this sheet. Not a coloured border: red or
+       terracotta around the largest thing on the sheet reads as an
+       error, and this is an ordinary edit. */
+    .ad-title-edit {
+      background: var(--bg-elevated);
+      box-shadow: var(--ring);
+      border-radius: 10px;
+      caret-color: var(--tint);
+    }
+    .ad-title-edit:focus { outline: none; }
+
+    /* ⚠️ EVERY ONE OF THESE SETS display, WHICH OUTRANKS THE BROWSER'S
+       OWN [hidden] RULE -- so without this the static value and the
+       field it swaps with are BOTH drawn, and the title appears twice.
+       Exactly the trap the .fg note in CLAUDE.md describes for a hidden
+       file input, in a new place. An attribute selector is one point
+       more specific than the class, so no !important is needed.
+       Anything else here that toggles with `hidden` needs adding. */
+    .ad-title-btn[hidden],
+    .ad-title-edit[hidden],
+    .ad-place-v[hidden],
+    .ad-place-edit[hidden] { display: none; }
+
+    /* The countdown. Both halves are the same face and the same size
+       whatever the target is — an open band ("5+ years") sat in a
+       smaller mono face than a real countdown ("18 days") and the two
+       read as different kinds of thing. */
+    /* ── the target date ──
+       A tinted box rather than a hairline-separated column. It is the
+       control for the target date now, and a bare numeral beside a
+       title does not read as something you can press; a box with a
+       chevron under it does, and it matches the chips below.
+
+       ⚠️ THE VALUE IS SIZED TO ITS LENGTH, which is a deliberate
+       departure from the note that used to live here -- that both
+       halves are the same size whatever the target is, so an open band
+       and a real countdown read as the same kind of thing. They still
+       share one face, one colour rule and one box; only the point size
+       is fitted, because dateInfo() puts whole strings through this slot
+       ("Dec 31", "5+ years") and at one fixed 34px they either wrapped
+       or squeezed the title into four lines. Fitting beats wrapping.
+       The classes are set in openActDetail() from cd.big.length. */
+    /* ── the target date, beside the title ──
+       ⚠️ ONE FIXED SIZE FOR EVERY VALUE. dateInfo() sends whole strings
+       through here -- "18 days", "Dec 31", "Overdue", "5+ years", "—"
+       -- and the three earlier attempts all failed on that variety: a
+       34px numeral squeezed the title to four lines, sizing the value
+       to its length made the block change size between activities, and
+       a box wrapped the wider of the two lines and came out lopsided
+       (the label is wider than the value once mono tracking counts).
+
+       Label above, value below, right-aligned to the card's padding,
+       and no container at all. What says "press me" is the label in
+       --tint -- the token that MEANS tappable here -- and its chevron,
+       which is the same treatment the list eyebrow above it uses. */
+    .ad-target {
+      flex: none; max-width: 44%; min-width: 0;
+      /* ⚠️ 12px, not the 6px the title side uses as a margin. The two
+         are not comparable numbers: the title's gap is a 6px margin PLUS
+         4px of its own padding plus half-leading on both sides, which
+         renders as ~15px of visible space between the glyphs. Measured
+         glyph-to-glyph, 12px here matches it; 6px here would look half
+         as tall as the pair beside it. Re-measure if either type size
+         changes. */
+      display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+      background: none; cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+      text-align: right;
+      /* The rule sits on this element's leading edge, so the air on the
+         TITLE side is .ad-plate's own gap and the air on the DATE side
+         is this padding. They are set to the same value deliberately --
+         a divider with more room on one side than the other reads as a
+         mistake. Change one and change the other. */
+      border: 0; border-left: 1px solid var(--separator);
+      padding: 2px 0 2px 16px;
+    }
+    .ad-target:active { opacity: .5; }
+    /* ⚠️ MATCHED TO .ad-eyebrow-btn, THE LIST NAME ABOVE THE TITLE.
+       They are the plate's two labels, one over each column, and they
+       have to be the same thing: same mono face, same 12.5px at 600,
+       same .12em tracking, same --tint, same 13px chevron at the same
+       opacity. At 9px this one read as a caption on the date while the
+       list read as a control, so the two halves of one block looked
+       unrelated. Change one and change the other. */
+    .ad-target-k {
+      display: flex; align-items: center; gap: 5px;
+      font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase; color: var(--tint); white-space: nowrap;
+    }
+    .ad-target-k .ic { width: 13px; height: 13px; opacity: .8; flex: none; }
+    .ad-target b {
+      display: block; max-width: 100%;
+      font-family: var(--serif); font-size: 23px; font-weight: 600;
+      line-height: 1.15; color: var(--label);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Overdue and urgent only -- the two states you can act on. */
+    .ad-target.is-due b { color: var(--red); }
 
     /* ── the plan, as one row of full-width chips ── */
     .ad-chips {
@@ -542,12 +853,13 @@
       text-transform: uppercase; text-align: center;
       white-space: nowrap; overflow: hidden;
     }
-    .ad-chip small { font-size: 8.5px; letter-spacing: .13em; opacity: .7; }
+    .ad-chip small { font-size: 8.5px; font-weight: 600; letter-spacing: .13em; opacity: .7; }
     .ad-chip b { font-weight: 500; }
-    .ad-chip.c-target {
-      background: color-mix(in srgb, var(--c-target) 18%, transparent);
-      color: var(--c-target);
-    }
+    /* .ad-chip.c-target was here. The countdown beside the title is the
+       target-date control now, so a chip repeating the same date was
+       saying it twice -- and dropping it takes the row from four chips
+       to three, which is what stops the values being clipped at 320px.
+       --c-target itself is still used by the target sheet's field. */
     /* Distance takes the same neutral treatment as an un-rated
        difficulty rather than a hue of its own: the chip row already
        carries priority's three-colour scale and the target's moss, and
@@ -561,6 +873,14 @@
     .ad-chip.c-high   { background: var(--pri-soft);  color: var(--pri-high); }
     .ad-chip.c-medium { background: var(--violet-soft); color: var(--violet); }
     .ad-chip.c-low    { background: var(--slate-soft);  color: var(--slate); }
+    /* ⚠️ UNANSWERED IS A STATE NOW, and it needs a fill of its own.
+       Priority is no longer defaulted to medium on the new-activity
+       sheet, so the chip can carry none of the three hue classes — and
+       without this it rendered as bare text with no chip behind it,
+       sitting between two chips that had one. Deliberately the same
+       treatment .ad-chip.c-d-none gives an un-rated difficulty, since
+       both say the same thing: nobody has answered this yet. */
+    .ad-chip.c-none   { background: var(--fill-3); color: var(--label-3); }
     /* Difficulty is deliberately NOT hue-coded. Priority already owns a
        three-colour scale and the deadline badge owns the warm end; a
        third scale on the same row would be three rankings arguing over
@@ -568,28 +888,138 @@
        word itself is the whole signal. */
     .ad-chip.c-d-easy,
     .ad-chip.c-d-medium,
-    .ad-chip.c-d-hard { background: var(--fill-3); color: var(--label-2); }
+    .ad-chip.c-d-hard,
+    .ad-chip.c-d-none { background: var(--fill-3); color: var(--label-2); }
+    /* Un-rated reads quieter than the three tiers without going grey
+       enough to look disabled -- it is the one chip here you are most
+       likely to want to press. */
+    .ad-chip.c-d-none { color: var(--label-3); }
+
+    /* ── the difficulty chip is a button ──
+       The rating is inferred and has to be arguable, and this is the
+       only place on the sheet that displays one -- so the chip is the
+       control rather than growing a row beneath it. See DISAGREEING
+       WITH THE RATING in js/activities.js.
+
+       It inherits .ad-chip wholesale and adds only what a <button>
+       needs to stop looking like one. The chevron carries the
+       affordance that a caption otherwise would.
+
+       ⚠️ NO `font: inherit` HERE. It reads like the safe way to undo the
+       UA's button font and it is the opposite: `font` is a SHORTHAND, so
+       it resets family, size, weight and line-height together -- to
+       .ad-chips's values, which are the body sans at body size. This
+       rule has the same specificity as .ad-chip and comes after it, so
+       it won, and the chip rendered in the wrong face at the wrong size
+       while the three beside it were right. .ad-chip's own font
+       declarations already beat the UA's; the button needs nothing. */
+    .ad-chip-btn {
+      border: 0; cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+    }
+    /* ⚠️ .ad-chip is flex-direction: column -- label above value -- so
+       the chevron cannot simply follow the value or it lands on a third
+       row of its own and the chip grows past its 34px. It gets a row. */
+    .ad-chip-v {
+      display: flex; align-items: center; justify-content: center;
+      gap: 3px; min-width: 0; max-width: 100%;
+    }
+    /* ⚠️ The value is wrapped so it can ELLIPSISE rather than be cut
+       off mid-letter. Three chips across a 320px screen leaves ~76px of
+       content each, and the longest values ("Medium" + a chevron) sit
+       close enough to that to be worth making structurally safe instead
+       of arithmetically safe. The chevron never shrinks -- half a
+       chevron is worse than none. */
+    .ad-chip-t {
+      min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* 13px, not .ic-xs's 15px: the value beside it is 10px mono, and at
+       15px the chevron outweighed the word it points at. */
+    /* 13px, not .ic-xs's 15px: the value beside it is 10px mono, and at
+       15px the chevron outweighed the word it points at. No negative
+       margin -- it was pulling the glyph 2px past .ad-chip's
+       overflow: hidden and clipping its point off. */
+    .ad-chip-v .ic {
+      width: 13px; height: 13px;
+      opacity: .5; flex: none;
+    }
+    .ad-chip-btn:active { transform: scale(.97); }
 
     /* ── a reference field is a card, tinted by what it holds ── */
+    /* ⚠️ A DIV WITH role="button", NOT A <button>, and that is measured
+       rather than stylistic. As a real <button> this row sizes
+       shrink-to-fit: .ad-place-v is white-space: nowrap, so a long
+       location becomes the row's min-content width and the row grows
+       past its container -- 357px inside a 318px box on a 320px screen,
+       which is a sideways scroll, which on iOS drags every
+       position:fixed element with it. A div is a normal block box and
+       fills the width it is given.
+       Do NOT reach for width: 100% to fix a <button> here either: with
+       the horizontal margins below that is the same overflow by a
+       different route. See the mobile layout rules in CLAUDE.md.
+       The Links card is the same shape for the same reason; both get
+       their keyboard path from onRowKey(). */
     .ad-place {
       display: flex; align-items: center; gap: 12px;
       margin: 8px var(--gx-r) 0 var(--gx-l);
       padding: 13px 14px; border-radius: 14px;
       text-decoration: none; color: inherit;
+      cursor: pointer; text-align: left;
     }
+    /* Nothing there yet: a prompt, not a value. */
+    .ad-place.is-empty .ad-place-v { color: var(--label-3); font-style: italic; }
+
+    .ad-place-edit { display: block; margin-top: 2px; }
+
+    /* ⚠️ THE DROPDOWN SPANS THE ROW, NOT THE TEXT COLUMN.
+       .loc-results is `left: 0; right: 0` against the nearest positioned
+       ancestor, which is normally its own .loc-wrap -- and here that
+       wrap sits in the middle column, past the 34px disc and its 12px
+       gap. The results came out that narrow, which turned every
+       suggestion into "Portland Art Museu" and two lines of address.
+       Making the ROW the positioned ancestor and this wrap static gives
+       the list the full width to render in. */
+    .ad-place { position: relative; }
+    .ad-place .loc-wrap { position: static; }
+    .ad-place .loc-results { top: calc(100% + 6px); left: 0; right: 0; }
+    .ad-place-edit input {
+      /* ⚠️ 16px minimum or iOS zooms the whole page on focus and does
+         not zoom back. The static text beside it is 15.5px; half a
+         pixel is invisible and a zoomed page is not. */
+      font-family: inherit; font-size: max(16px, 15.5px);
+      background: none; border: 0; padding: 0;
+      color: var(--label); -webkit-appearance: none; appearance: none;
+    }
+    .ad-place-edit input { caret-color: var(--tint); }
+    .ad-place-edit input:focus { outline: none; }
     .ad-chips + .ad-place { margin-top: 18px; }
     .ad-place-disc {
       width: 34px; height: 34px; flex: none; border-radius: 50%;
       display: flex; align-items: center; justify-content: center; color: #fff;
     }
     .ad-place-disc .ic { width: 17px; height: 17px; }
-    .ad-place-body { min-width: 0; }
+    /* ⚠️ display: block because these are <span>s inside the Where row.
+       A <button>'s content model is phrasing content, so the <div>s that
+       were here are invalid nested in one -- and an inline element
+       cannot ellipsise, so .ad-place-v needs it too. Harmless for the
+       Links card, which is still a div with role="button" and could
+       usefully be unified with this one day. */
+    /* ⚠️ flex: 1 is what gives the input its width. Without a grow
+       factor this column is sized by its CONTENT, and an <input>'s
+       content width is the UA's ~20-character default -- so the field
+       stopped well short of the row's edge and a location of any length
+       scrolled inside it, showing "tland, OR, United States" with the
+       start cut off. At rest it also lets the static text ellipsise at
+       the row's edge rather than at wherever the text happened to end. */
+    .ad-place-body { flex: 1 1 auto; min-width: 0; display: block; }
     .ad-place-k {
       display: block; font-family: var(--mono); font-size: 9px;
+      font-weight: 600;
       letter-spacing: .14em; text-transform: uppercase; opacity: .85;
     }
     .ad-place-v {
-      font-size: 15.5px; margin-top: 2px;
+      display: block; font-size: 15.5px; margin-top: 2px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .ad-place-chev { margin-left: auto; opacity: .6; }
@@ -610,6 +1040,213 @@
     .ad-place.c-link .ad-place-k,
     .ad-place.c-link .ad-place-v,
     .ad-place.c-link .ad-place-chev { color: var(--c-link); }
+
+    /* ── the location, edited in place ──
+       The plum wash comes off while the field is live. That colour
+       identifies the row at rest; under a caret it reads as a tinted
+       input, and every other field in the app is typed into on a plain
+       raised surface. The disc and the WHERE label keep their plum, so
+       the row is still identifiable while it is being edited.
+
+       ⚠️ THIS MUST STAY BELOW .ad-place.c-where. Both are (0,2,0), so
+       the tint above wins on source order alone -- placed higher, this
+       rule computes to exactly the same plum and does nothing at all,
+       which is what it did on the first attempt. */
+    .ad-place.editing {
+      background: var(--bg-elevated);
+      box-shadow: var(--ring);
+      cursor: text;
+    }
+    /* A chevron means "this opens something". While it IS open, it
+       points at nothing. */
+    .ad-place.editing .ad-place-chev { display: none; }
+
+/* ==============================================================
+   THE SAME PARTS, ON THE NEW-ACTIVITY SHEET
+
+   Everything above is shared verbatim; only the handful of differences
+   an empty sheet actually has live here. See the note on #actSheet in
+   index.html for why the two sheets are one shape.
+   ============================================================== */
+    /* The plate is the first thing in the sheet body, where the detail
+       sheet has the pane wrapper's own margin above it. */
+    #actSheetBody .ad-plate { margin-top: 4px; }
+
+    /* ══ THE REQUIRED RAIL ══
+       saveActivity() blocks on four things — a list, a name, a
+       priority and a place — and until this the sheet said so nowhere.
+       You found out by pressing Add and being shaken at, which is the
+       dead end updateMediaRequirement() already exists to avoid on the
+       completion sheet.
+
+       ⚠️ IT IS THE PRIORITY SCALE'S OWN MARK, deliberately. .pri-high /
+       .pri-medium / .pri-low draw exactly this rail down a row's
+       leading edge on every list in the app, so a reader has met the
+       shape before and only the hue is new.
+
+       ⚠️ AND THE HUE IS THE THING TO ARGUE WITH. --red is destructive
+       everywhere else in this app, and the warm end is spoken for twice
+       besides — the deadline badge owns overdue/urgent, --pri-high owns
+       high priority. A required field is none of those: nothing has
+       gone wrong. It was chosen over --tint anyway because --tint means
+       "tappable" and every control on this sheet is tappable, so the
+       rail would have marked nothing. If it ever reads as an error,
+       --tint at 3px is the fallback and it is a one-line change.
+
+       ⚠️ IT IS BLOCK-LEVEL ON THE PLATE, which is its imprecision: the
+       plate holds the list and the name, and also the Target, which is
+       optional. Marking the two controls instead would need a rail on
+       the name field, and that field is the wrong shape for one — it
+       carries `width: calc(100% + 16px)` so the resting title and the
+       edit box share one geometry, and anything hung on its leading
+       edge lands 8px outside the plate's padding.
+
+       ⚠️ NEW-ACTIVITY SHEET ONLY. The class lives in that sheet's
+       markup and nowhere else — the detail sheet edits a row that
+       already exists, where nothing is outstanding and every field is
+       already answered. Do not add `ad-req` there.
+
+       ⚠️ IT IS A BORDER, NOT A BAR, and that is what lets it run the
+       FULL height of each card. The first version was an absolutely
+       positioned 4px block at left:0, which cannot follow a rounded
+       corner — so it had to be inset far enough to stay in the straight
+       part of the edge (16px on the plate's 18px radius, 12px on the
+       Where card's 14px) or it poked visibly out of the curve. That
+       left three short stubs.
+
+       A full-inset pseudo-element with `border-radius: inherit` and a
+       left border only is drawn by the browser ALONG the card's own
+       curve, tapering to nothing where it meets the zero-width top and
+       bottom borders. It needs no inset, no per-radius tuning and no
+       clipping — which matters because .ad-place must keep
+       `overflow: visible` for the location dropdown that hangs out of
+       its bottom, so it could never have been clipped to shape.
+
+       `pointer-events: none` because it now covers the whole card and
+       every one of the three is a control. */
+    .ad-req { position: relative; }
+    .ad-req::before {
+      content: ""; position: absolute; inset: 0;
+      border-left: 4px solid var(--red);
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    /* ⚠️ THE ADD BUTTON WHILE SOMETHING IS OUTSTANDING. Not `disabled`:
+       a disabled button cannot be pressed, and pressing it is how you
+       ask WHICH field — which is what nudges the one that is missing.
+       It has to look unavailable and stay live. */
+    #actSaveBtn.is-blocked {
+      background: var(--fill-3); color: var(--label-3);
+      box-shadow: var(--ring);
+    }
+
+    /* ⚠️ THE NAME FIELD IS LIVE FROM THE START, so it never takes the
+       .ad-title-btn/[hidden] swap the detail sheet's rename does — and
+       it therefore needs its own placeholder colour. It keeps the
+       serif face and the raised box, so the sheet's subject looks the
+       same before it is filled in as it will a moment after. */
+    #aName::placeholder { color: var(--label-3); }
+    /* ⚠️ THE PLACEHOLDER HAS TO FIT ON ONE LINE, and that is why it is
+       four words. A textarea's scrollHeight counts its CONTENT, not its
+       placeholder — so an empty box measures one line however long the
+       prompt is, and growNameField() cannot make room for a prompt that
+       wraps. At 29px serif in a ~270px column that is about twenty
+       characters.
+
+       ⚠️ THE min-height IS EXACTLY ONE LINE, and it must stay that way.
+       A <textarea> lays its text out from the TOP, so any height beyond
+       what the content needs becomes dead space UNDER the text and the
+       title stops looking vertically centred in its own box. At 44px it
+       was 3.22px taller than one line (29px x 1.1 line-height + 4px
+       padding top and bottom = 39.9px), which is small enough to read
+       as sloppy rather than as a bug and shipped exactly that way.
+       calc() states the arithmetic instead of a magic number: 1.1em is
+       the line-height and 8px is the two paddings. Change the type size
+       or either padding and this follows.
+
+       It is kept rather than dropped because the box must never be
+       smaller than one line — growNameField() sets the height from
+       scrollHeight, and this is the floor under it. */
+    #aName { min-height: calc(1.1em + 8px); }
+
+    /* The Where card's field is live from the start too — there is no
+       value to display yet, and this is the field that decides whether
+       the activity ever appears on the map, so an extra tap in front of
+       it is the friction that made it the one people skip. The plum
+       wash therefore STAYS: .ad-place.editing takes it off, and that is
+       right for a row that had a resting state and does not apply to
+       one that never had. */
+    #aPlaceRow .ad-place-edit { margin-top: 0; }
+    /* The same prompt an empty Where row shows on the detail sheet
+       (.ad-place.is-empty .ad-place-v). One is a placeholder and one is
+       static text, so nothing can share them — they are matched by hand
+       instead, and an empty Where card reads identically on both. */
+    #aPlaceRow .ad-place-edit input::placeholder {
+      color: var(--label-3); font-style: italic; opacity: 1;
+    }
+
+    /* ⚠️ .sheet-body HAS NO HORIZONTAL PADDING, so anything written for
+       life inside a .fg insets itself here — and these two sit inside
+       #aPaneMain rather than being direct children of the body, so the
+       shared `.sheet-body > .fg-hint` rule does not reach them either. */
+    #aPaneMain > .fg-hint {
+      margin-left: var(--gx-l); margin-right: var(--gx-r);
+    }
+    #aPaneMain > .loc-guess {
+      margin-left: calc(var(--gx-l) + 14px);
+      margin-right: var(--gx-r);
+    }
+
+    /* ⚠️ THERE IS NO NOTES CARD HERE, and there was one for a while.
+       The notes block on this sheet is the activity sheet's own
+       .ad-nsec — head, count-or-Add, .note-card preview — drawn by
+       renderNewNoteCard(). A tinted .ad-place row with a disc was
+       invented for it instead of taken from there, which made the one
+       thing on this sheet that also exists on that one look like a
+       different feature. If a Notes style is wanted, it goes in the
+       .ad-nsec block and both sheets get it.
+
+       Nothing written yet reads as a prompt, exactly as an empty Where
+       row does. .ad-place.is-empty cannot be used: it is toggled by a
+       value the row HAS, and this is toggled by a field's text. */
+    #aLinkSummary:not(.has) { color: var(--label-3); }
+
+    /* ── "working on it" ──
+       A guess is a round trip, and until this the chip read "None" and
+       the Where row sat empty for all of it — so an answer landing two
+       seconds later looked like the app changing its mind rather than
+       like an answer arriving. This is a STATE ON THE CONTROL, not a
+       message beside it; see guessPending() in location.js.
+       prefers-reduced-motion gets the dimming without the pulse, which
+       is the part that carries the meaning. */
+    @keyframes guess-pulse { 50% { opacity: .38; } }
+    .ad-chip.is-guessing .ad-chip-t,
+    .ad-place.is-guessing .ad-place-v {
+      opacity: .55; animation: guess-pulse 1.15s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ad-chip.is-guessing .ad-chip-t,
+      .ad-place.is-guessing .ad-place-v { animation: none; }
+    }
+    /* The Where row's value IS the input while the sheet is new, so the
+       placeholder is what dims. */
+    .ad-place.is-guessing .ad-place-edit input::placeholder { opacity: .55; }
+
+    /* The links page's composer takes the page's own gutters, since it
+       borrows .note-add — written for life inside a padded log. */
+    #aLinkAdd { display: flex; }
+    #aLinkAdd input {
+      flex: 1; min-width: 0; border: none; background: none;
+      /* Never below 16px computed — Safari zooms the page otherwise. */
+      font-family: var(--sans); font-size: max(16px, 16px);
+      color: var(--label); padding: 5px 0; height: 30px; outline: none;
+    }
+    #aLinkAdd input::placeholder { color: var(--label-4); }
+    /* The note field fills its page rather than sitting as a 46px box at
+       the top of an empty one: it is the only thing on the page. */
+    #aPaneNotes .fg { margin: 14px var(--gx-r) 0 var(--gx-l); }
+    #aPaneNotes textarea.fg-note { min-height: 180px; max-height: none; }
 
 /* ==============================================================
    PENDING ACTIVITY SHEET — the notes section and the dock
@@ -635,6 +1272,7 @@
     }
     .ad-nsec-h .h {
       margin: 0; font-family: var(--mono); font-size: 9.5px;
+      font-weight: 600;
       letter-spacing: .16em; text-transform: uppercase; color: var(--label-3);
     }
     .ad-nsec-more {
@@ -683,6 +1321,12 @@
       display: flex; align-items: center; gap: 3px;
       color: var(--tint); font-size: 15px; font-family: var(--sans);
     }
+    /* The detail sheet's panes are rendered from JS and drop the glyph
+       straight in; the new sheet's are static markup, so the chevron
+       arrives inside the placeholder span paintStaticIcons() fills.
+       Without this it is a flex item with a line-height around it and
+       the label sits a pixel low. */
+    .ad-back > span { display: flex; }
     .ad-navtitle {
       position: absolute; left: 0; right: 0; text-align: center;
       pointer-events: none; font-family: var(--mono); font-size: 11px;

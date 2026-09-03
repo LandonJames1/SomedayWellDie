@@ -84,6 +84,21 @@
       border-bottom: .5px solid var(--separator);
       background: var(--sheet-bg);
     }
+    /* ⚠️ .sheet-bar sets display:flex, which outranks the browser's own
+       [hidden] rule — so a bar toggled with `hidden` paints anyway.
+       Both activity sheets and the completion sheet hide their title
+       row while a sub-page is showing, because that page carries its
+       own .ad-navbar and two stacked headers is the exact confusion
+       this arrangement exists to avoid. */
+    .sheet-bar[hidden] { display: none; }
+
+    /* A TITLE AND NOTHING ELSE. The actions moved to the dock at the
+       foot of the sheet, so this row only ever names the sheet — which
+       means the title may have the whole width rather than the half it
+       leaves for two buttons. Without that, "Mark as Accomplished"
+       ellipsises on a phone. */
+    .sheet-bar-title .sheet-title { max-width: calc(100% - 28px); }
+
     .sheet-bar .navbtn { min-width: 60px; }
     .sheet-bar .navbtn:first-child { justify-content: flex-start; margin-left: -6px; }
     .sheet-bar .navbtn:last-child  { justify-content: flex-end; margin-right: -6px; }
@@ -567,18 +582,51 @@
       -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
     }
     .as-group + .as-group { margin-top: 8px; }
+    /* The header is a header, not the first option. It sits on a
+       recessed ground rather than the row colour, which is what
+       separates it at a glance -- the hairline alone left it reading as
+       a tappable row with a bigger font. */
     .as-heading {
-      padding: 16px 16px 14px; text-align: center;
+      padding: 14px 16px; text-align: center;
       font-size: 13px; color: var(--label-2); line-height: 1.4;
+      background: var(--fill-4);
       border-bottom: .5px solid var(--separator);
     }
     .as-heading strong {
-      display: block; color: var(--label); margin-bottom: 5px;
+      display: block; color: var(--label);
       font-family: var(--serif); font-size: 19px; font-weight: 600; letter-spacing: -.008em;
     }
+    /* Only when there is a message under it. There usually is not --
+       see the no-help-text rule in CLAUDE.md. */
+    .as-heading strong:not(:only-child) { margin-bottom: 5px; }
+
+    /* ── the value being chosen carries its own colour ──
+       Priority and difficulty are both scales the app draws in colour
+       everywhere else: priority on every row's rail, its capsule and its
+       map pin; difficulty on its chips and on the three list buttons on
+       the Lists tab. The menu was the one place the scale went missing.
+
+       ⚠️ THE TWO SCALES ARE SEPARATE CLASSES, and they must stay that
+       way. They shared `as-t-medium` on the grounds that medium is the
+       same step of the same idea -- true when difficulty borrowed the
+       priority hues, and false since it was retuned to green/amber/red.
+       One class meant the Difficulty menu drew Medium in priority's
+       violet, disagreeing with the chip that opened it. Difficulty is
+       `as-t-d-*`; keep it prefixed. */
+    .as-item.as-t-high    { color: var(--pri-high); }
+    .as-item.as-t-medium  { color: var(--violet); }
+    .as-item.as-t-low     { color: var(--slate); }
+    .as-item.as-t-d-easy   { color: var(--green); }
+    .as-item.as-t-d-medium { color: var(--violet); }
+    .as-item.as-t-d-hard   { color: var(--pri-high); }
+    /* The checkmark follows the label rather than staying terracotta,
+       or the selected row reads as two colours arguing. */
+    .as-item[class*="as-t-"] .as-check { color: currentColor; }
     .as-item {
       display: flex; align-items: center; justify-content: center; gap: 9px;
       width: 100%; min-height: 57px; padding: 0 16px;
+      /* The checkmark slot is pinned rather than laid out -- see .as-check. */
+      position: relative;
       font-size: 18px; letter-spacing: -.011em; color: var(--tint);
       background: var(--sheet-bg);
     }
@@ -588,8 +636,149 @@
     .as-item.cancel { font-weight: 600; }
     .as-item[aria-checked="true"] { font-weight: 600; }
     .as-item .ic { width: 20px; height: 20px; }
-    .as-check { width: 20px; opacity: 0; color: var(--tint); }
+    /* ⚠️ ABSOLUTE, NOT A FLEX ITEM. As a flex item the 20px slot and its
+       9px gap were laid out INSIDE a justify-content:center row, so the
+       label of every checkable menu sat ~15px right of centre -- and
+       every item had the slot, so nothing lined up with the plain sheets
+       beside it. Pinning it leaves the label centred in the full width
+       and still reserves the slot visually. */
+    .as-check {
+      position: absolute; left: 16px; width: 20px;
+      opacity: 0; color: var(--tint);
+    }
     .as-item[aria-checked="true"] .as-check { opacity: 1; }
+
+/*  ============================================================
+    THE ONE-FIELD PROMPT
+
+    The iOS alert with a text box. Centred, because an alert is a
+    question you answer where you stand -- a sheet is a place you go.
+    The card, hairlines and footer are the action sheet's own styling
+    reused so the two read as one family.
+    ============================================================ */
+    #promptSheet {
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 var(--gx-r) 0 var(--gx-l);
+    }
+    #promptSheet .pr-card {
+      width: 100%; max-width: 300px;
+      border-radius: 20px; overflow: hidden;
+      background: var(--sheet-bg); box-shadow: var(--ring), var(--shadow-lg);
+      transform: scale(.94); opacity: 0;
+      transition: transform .22s cubic-bezier(.32,.72,0,1), opacity .18s ease;
+    }
+    #promptSheet.open .pr-card { transform: none; opacity: 1; }
+    .pr-head { padding: 18px 18px 0; text-align: center; }
+    .pr-title {
+      font-family: var(--serif); font-size: 19px; font-weight: 600;
+      letter-spacing: -.008em; color: var(--label);
+    }
+    .pr-body { padding: 14px 18px 18px; }
+    /* ⚠️ 16px minimum, like every other field in the app: below that iOS
+       zooms the page on focus and does not zoom back. */
+    /* A textarea that grows with the text. Height is set from
+       scrollHeight by growPromptInput(); everything here just has to
+       make that measurable -- no fixed height, no resize handle, and
+       line-height stated so one line is a predictable size. */
+    .pr-body textarea {
+      display: block; width: 100%; padding: 10px 12px;
+      border: 0; border-radius: 10px; resize: none; overflow: hidden;
+      background: var(--bg-elevated); box-shadow: var(--ring);
+      font-family: var(--sans); font-size: max(16px, 16px);
+      line-height: 1.35; color: var(--label);
+      -webkit-appearance: none; appearance: none;
+    }
+    .pr-body textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--tint-soft), var(--ring); }
+    .pr-actions {
+      display: flex; border-top: .5px solid var(--separator);
+    }
+    .pr-actions button {
+      flex: 1; min-height: 50px;
+      font-size: 17px; color: var(--tint); background: none;
+    }
+    .pr-actions button.strong { font-weight: 600; }
+    .pr-actions button:first-child { border-right: .5px solid var(--separator); }
+    .pr-actions button:active { background: var(--fill-4); }
+
+/*  ============================================================
+    THE CALENDAR
+
+    The app's own month grid. <input type="date">'s picker is a
+    different widget on every platform, anchors to its field rather than
+    the screen, and cannot be styled -- on desktop it opened a dense
+    grey grid that ran off the bottom of the window.
+
+    Centred like the prompt, and built from the same parts: serif title,
+    mono weekday letters, terracotta for the chosen day.
+    ============================================================ */
+    #calSheet {
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 var(--gx-r) 0 var(--gx-l);
+    }
+    #calSheet .cal-card {
+      width: 100%; max-width: 340px;
+      border-radius: 20px; overflow: hidden;
+      background: var(--sheet-bg); box-shadow: var(--ring), var(--shadow-lg);
+      transform: scale(.94); opacity: 0;
+      transition: transform .22s cubic-bezier(.32,.72,0,1), opacity .18s ease;
+    }
+    #calSheet.open .cal-card { transform: none; opacity: 1; }
+
+    .cal-head { padding: 16px 14px 10px; }
+    .cal-title {
+      text-align: center;
+      font-family: var(--serif); font-size: 19px; font-weight: 600;
+      letter-spacing: -.008em; color: var(--label);
+    }
+    .cal-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 10px;
+    }
+    .cal-nav span {
+      font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--label-2);
+    }
+    .cal-nav button {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--tint); background: var(--fill-4);
+    }
+    .cal-nav button:active { background: var(--fill-3); }
+    .cal-nav .ic { width: 17px; height: 17px; }
+
+    /* Seven columns, six rows, always -- the card must not change height
+       as you page through the year. */
+    .cal-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      gap: 2px; padding: 0 12px 12px;
+    }
+    .cal-dow {
+      display: flex; align-items: center; justify-content: center;
+      height: 24px;
+      font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+      color: var(--label-3);
+    }
+    .cal-day {
+      aspect-ratio: 1; min-height: 38px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--sans); font-size: 15px; color: var(--label);
+      background: none;
+    }
+    .cal-day:active { background: var(--fill-4); }
+    .cal-day.is-muted { color: var(--label-3); }
+    /* Today is stated, not selected: a ring rather than a fill, so it
+       cannot be mistaken for the value in force. */
+    .cal-day.is-today { box-shadow: inset 0 0 0 1px var(--separator); font-weight: 600; }
+    .cal-day.is-sel {
+      background: var(--tint); color: #fff; font-weight: 600;
+    }
+
+    .cal-actions { display: flex; border-top: .5px solid var(--separator); }
+    .cal-actions button {
+      flex: 1; min-height: 50px;
+      font-size: 17px; color: var(--tint); background: none;
+    }
+    .cal-actions button:active { background: var(--fill-4); }
 
 /*  ============================================================
     PHOTOS — upload zone and thumbnails inside a sheet.
@@ -944,6 +1133,24 @@
        without this it renders behind the sheet that opened it and
        cannot be tapped. */
     #listPickerSheet { z-index: 215; }
+    /* ⚠️ The target sheet opens from the activity DETAIL sheet and is
+       EARLIER in index.html than it, so at the shared z-index 200
+       document order put it behind the sheet that opened it: the scrim
+       darkened and nothing appeared. Exactly the failure the reminder
+       sheet's note above describes, arrived at from the other direction
+       (that one is later in the document and still needed lifting).
+       Anything else opened from the detail sheet needs a line here. */
+    #targetSheet { z-index: 210; }
+    /* ⚠️ The note prompt opens over the ACTION SHEET, which opens over
+       the activity detail sheet -- so it has to clear both, and it is
+       earlier in index.html than either. Same equal-z-index trap as the
+       rest of this block; at 200 it rendered behind the sheet and the
+       Save button could not be reached at all. 270 rather than 260,
+       because .action-sheet is 260 and sits LATER in index.html -- a
+       tie there would put this behind it again. */
+    #promptSheet { z-index: 270; }
+    /* Opens from the same menus the prompt does. */
+    #calSheet { z-index: 265; }
     /* It used to force its own full height so the sheet underneath did
        not show above it. Every .modal is now one locked height, so it
        covers the sheet below by construction. */

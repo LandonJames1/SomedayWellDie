@@ -71,7 +71,7 @@ function resetAccountState(){
   destroyGlobalMap();
   destroyDetailMap();
   curTab='home';curPage='home';backTab='lists';
-  curListId=null;editingListId=null;editingActId=null;
+  curListId=null;editingListId=null;
   curFilter='all';curSort=DEFAULT_ACT_SORT;curView='list';
   upMedia=[];coverPhoto='';
 }
@@ -335,6 +335,22 @@ async function showApp(){
      installing a login screen is pointless. */
   pwaMaybeShowIosHint();
   sb.auth.startAutoRefresh();
+  /* ---- APNs ----
+     Registers the listeners and, only if permission has ALREADY been
+     granted, asks iOS for a device token. It never prompts — the same
+     rule primeBias() follows, and the reason the prompt lives behind
+     the You tab's row instead.
+
+     Not folded into the probeRemindColumn() block below, which asks
+     notificationState() first: the native permission is read
+     asynchronously, so on the first launch of a session that answer is
+     still a stale 'default' and the re-registration would be skipped
+     for somebody who had granted it months ago. registerNativePush()
+     checks for itself. A token can be reissued after a restore from
+     backup, so this has to run every launch, not only at the moment
+     permission is given. In a browser it is a no-op. */
+  initNativePush();
+  registerNativePush();
   /* Keep asking whether this account still exists while the app is on
      screen. Without it, a device left open runs as a deleted account
      until somebody closes it. See IS THIS SESSION STILL A REAL
@@ -353,6 +369,7 @@ async function showApp(){
      ACTIVITY IS AT HOME" in api.js. */
   probeHomeFlag();
   probeDifficulty();
+  probeDifficultyManual();
   /* Whether reporting and blocking are available, and — if they are —
      the block list, which paintConversation() reads synchronously on
      every message it draws. Not awaited: a cold block list filters
@@ -364,6 +381,10 @@ async function showApp(){
   /* Spin the geo function's isolate up and open the connection, so the
      first place search of the session pays for neither. */
   warmGeo();
+  /* The counterpart for the location/difficulty guess. `unfurl` imports
+     the Anthropic SDK, so its cold start is the slowest part of the
+     first capture of a session — see MAKING THE GUESS ARRIVE SOONER. */
+  if(typeof warmGuess==='function') warmGuess();
   /* Find out whether reminders are available, then re-render Home so the
      banner can appear, and ping anything already due. */
   /* Anything written while offline on an earlier visit is still in the
@@ -647,8 +668,24 @@ let recoveryLanding=false;
    location-derived rather than a constant: the app is served from
    several places over its life (localhost, a LAN address, the real
    host) and a hardcoded URL would send every developer's test sign-up
-   to production. */
-function confirmRedirectUrl(){ return location.origin+location.pathname; }
+   to production.
+
+   The native shell is the one exception, and it has to be. There
+   location.origin is `capacitor://localhost` — not a URL Supabase will
+   accept, not one any mail client can open, and not one that exists
+   off the device. Supabase silently falls back to the project's Site
+   URL for an unlisted redirect, so confirmation still worked; it
+   worked by landing in Safari, on the web copy, leaving the person who
+   just signed up inside the app staring at an unconfirmed account.
+
+   publicOrigin() sends them to the real host instead — which, once
+   Universal Links are live, is what hands them back to the app rather
+   than to a browser tab. See js/deeplink.js and APP_WEB_ORIGIN. */
+function confirmRedirectUrl(){
+  const base=typeof publicOrigin==='function'?publicOrigin():'';
+  if(base&&base!==location.origin) return base+'/index.html';
+  return location.origin+location.pathname;
+}
 
 /* Read at boot, before anything can navigate away from the URL.
    Supabase has three ways of handing back the result and one of handing

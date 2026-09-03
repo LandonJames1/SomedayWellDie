@@ -22,6 +22,13 @@ function openModal(id){
   setBodyScrollLock(true);
 }
 function closeModal(id){
+  /* ⚠️ #promptSheet is a .modal-overlay, so the scrim click and the
+     Escape handler both land here rather than in closePrompt() -- and
+     its cancel path has to run whichever way it was dismissed, or a
+     date chosen a moment ago is silently thrown away. Same argument as
+     the sheet-return registry below: register the behaviour once, not
+     on the Cancel button. */
+  if(id==='promptSheet'){ closePrompt(); return; }
   $(id).classList.remove('open');
   releasePickerRoom(null);
   setBodyScrollLock(false);
@@ -180,17 +187,31 @@ function showActionSheet(opts){
   if(opts.title||opts.message){
     head=`<div class="as-heading">${opts.title?`<strong>${esc(opts.title)}</strong>`:''}${opts.message?esc(opts.message):''}</div>`;
   }
+  /* An item marked `separated` is lifted out of the main card into one
+     of its own, above Cancel. That is how iOS sets a destructive action
+     apart, and it is the difference between "one more choice, in red"
+     and "this one is not like the others". */
+  const inMain=[],apart=[];
   const body=items.map((i,idx)=>{
     const cls=['as-item'];
     if(i.role==='destructive') cls.push('destructive');
     /* A checkable item reserves a leading checkmark slot so the labels
        stay aligned whether or not they are selected. */
     const check=i.checked!==undefined?`<span class="as-check">${icon('check','ic-sm')}</span>`:'';
-    return `<button class="${cls.join(' ')}"${i.checked!==undefined?` aria-checked="${!!i.checked}"`:''} onclick="_asPick(${idx})">${check}${i.icon?icon(i.icon,'ic-sm'):''}<span>${esc(i.label)}</span></button>`;
-  }).join('');
+    /* An optional hue for the label. Used where the value being chosen
+       is part of a colour scale the rest of the app already draws --
+       priority's rails and capsules, the three difficulty lists -- so
+       the menu is not the one place that scale goes missing. Tones are
+       defined in modals.css; an unknown one simply does nothing. */
+    if(i.tone) cls.push('as-t-'+i.tone);
+    const html=`<button class="${cls.join(' ')}"${i.checked!==undefined?` aria-checked="${!!i.checked}"`:''} onclick="_asPick(${idx})">${check}${i.icon?icon(i.icon,'ic-sm'):''}<span>${esc(i.label)}</span></button>`;
+    (i.separated?apart:inMain).push(html);
+    return html;
+  });
 
   el.querySelector('.as-panel').innerHTML=
-    `<div class="as-group">${head}${body}</div>`+
+    `<div class="as-group">${head}${inMain.join('')}</div>`+
+    (apart.length?`<div class="as-group">${apart.join('')}</div>`:'')+
     `<div class="as-group"><button class="as-item cancel" onclick="closeActionSheet()">${esc(opts.cancelLabel||'Cancel')}</button></div>`;
 
   el.classList.add('open');
@@ -200,9 +221,186 @@ function _asPick(idx){
   const fn=_asHandlers[idx];
   closeActionSheet();
   /* Let the dismissal animation start before the handler runs, so a
-     handler that opens another sheet does not fight this one. */
+     handler that opens another sheet does not fight this one.
+
+     (An `immediate` escape hatch lived here while the date rows opened
+     input.showPicker(), which is gated on transient user activation and
+     therefore cannot survive this timeout. showCalendar() is our own
+     markup and has no such rule, so the hatch went with it. Anything
+     that reaches for a user-activation-gated API from a menu row will
+     need it back.) */
   if(fn) setTimeout(fn,180);
 }
+/* ==============================================================
+   A ONE-FIELD PROMPT
+
+   The iOS alert with a text field in it, which is the shape the system
+   uses for exactly this: one short answer, asked in place, without
+   sending anybody to a form. An action sheet cannot hold a field --
+   that is the whole reason this exists beside it.
+
+   CENTRED, not bottom-anchored, and that is the platform convention
+   rather than a preference: a sheet is a place you go, an alert is a
+   question you answer. Everything else -- the grouped card, the
+   hairlines, the two-button footer -- is the action sheet's own styling
+   reused, so the two read as one family.
+
+   Deliberately one field and no more. Anything needing two is a sheet.
+   ============================================================== */
+let _promptOnSave=null;
+let _promptOnCancel=null;
+
+function showPrompt(opts){
+  opts=opts||{};
+  const el=$('promptSheet');
+  _promptOnSave=opts.onSave||null;
+  _promptOnCancel=opts.onCancel||null;
+  el.querySelector('.pr-title').textContent=opts.title||'';
+  const inp=$('promptInput');
+  inp.value=opts.value||'';
+  inp.placeholder=opts.placeholder||'';
+  /* A hard stop rather than a warning: the field simply refuses the
+     201st character, which is the honest version of a limit and costs
+     no counter to explain. */
+  inp.maxLength=opts.maxLength||200;
+  growPromptInput();
+  $('promptSave').textContent=opts.confirmLabel||'Save';
+  /* "Skip" rather than "Cancel" wherever the answer is optional: it is
+     the one word that says you may go on without filling this in, and
+     it costs no help text to say it. */
+  $('promptCancel').textContent=opts.cancelLabel||'Cancel';
+  el.classList.add('open');
+  setBodyScrollLock(true);
+  /* After the entry animation, or iOS focuses a box that is still
+     sliding in and scrolls the page to chase it. */
+  setTimeout(()=>{ inp.focus(); const n=inp.value.length;
+    try{ inp.setSelectionRange(n,n); }catch(e){} },220);
+}
+
+/* Grows to fit, up to a ceiling -- past that it scrolls, or a long note
+   would push the buttons off a short screen. Reset to auto first, or it
+   can only ever get taller. */
+const PROMPT_MAX_H=132;
+function growPromptInput(){
+  const el=$('promptInput');
+  if(!el) return;
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,PROMPT_MAX_H)+'px';
+  el.style.overflowY=el.scrollHeight>PROMPT_MAX_H?'auto':'hidden';
+}
+
+function onPromptKey(e){
+  if(e.key==='Enter'){ e.preventDefault(); savePrompt(); }
+  else if(e.key==='Escape'){ e.preventDefault(); closePrompt(); }
+}
+
+function savePrompt(){
+  const fn=_promptOnSave,v=$('promptInput').value.trim();
+  _promptOnCancel=null;          /* saving is not cancelling */
+  closePrompt();
+  /* Same 180ms the action sheet uses: let this dismiss before a handler
+     opens anything on top of it. */
+  if(fn) setTimeout(()=>fn(v),180);
+}
+
+function closePrompt(){
+  const cancel=_promptOnCancel;
+  _promptOnSave=null;_promptOnCancel=null;
+  $('promptSheet').classList.remove('open');
+  setBodyScrollLock(false);
+  /* Dismissing the note is "no note", not "undo whatever I just chose",
+     so the caller gets a chance to keep the rest of the answer. */
+  if(cancel) setTimeout(cancel,180);
+}
+
+/* ==============================================================
+   THE CALENDAR
+
+   The app's own, not the browser's. <input type="date"> hands you a
+   different widget on every platform -- on desktop a dense grey grid
+   that anchors to the field and runs off the bottom of the window, and
+   it cannot be styled at all. This is one month, in the app's faces and
+   colours, centred like the prompt beside it.
+
+   A tap picks and closes. There is no Done: one tap per choice, nothing
+   to confirm -- the same argument the list picker makes.
+
+   ⚠️ LOCAL DATES ONLY. new Date(iso) parses a bare "2026-12-31" as UTC,
+   so anywhere west of Greenwich it comes back as the 30th. Every date
+   here is built from y/m/d parts and formatted with isoLocal().
+   ============================================================== */
+const CAL_DOW=['S','M','T','W','T','F','S'];
+const CAL_MONTHS=['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+let _calOnPick=null,_calY=0,_calM=0,_calSel='';
+
+function showCalendar(opts){
+  opts=opts||{};
+  _calOnPick=opts.onPick||null;
+  _calSel=opts.value||'';
+  const base=_calSel?calParse(_calSel):new Date();
+  _calY=base.getFullYear();_calM=base.getMonth();
+  $('calTitle').textContent=opts.title||'Pick a Date';
+  renderCalendar();
+  $('calSheet').classList.add('open');
+  setBodyScrollLock(true);
+}
+
+function calParse(iso){
+  const p=String(iso).split('-').map(Number);
+  return new Date(p[0],(p[1]||1)-1,p[2]||1);
+}
+
+function calStep(n){
+  _calM+=n;
+  if(_calM<0){ _calM=11;_calY--; }
+  else if(_calM>11){ _calM=0;_calY++; }
+  renderCalendar();
+}
+
+function renderCalendar(){
+  const first=new Date(_calY,_calM,1);
+  const lead=first.getDay();
+  const days=new Date(_calY,_calM+1,0).getDate();
+  const today=isoLocal(new Date());
+
+  let cells='';
+  /* Trailing days of the previous month, then this month, then enough
+     of the next to finish the last week. Six rows always, so the card
+     does not change height as you page through the year. */
+  const prevDays=new Date(_calY,_calM,0).getDate();
+  for(let i=lead-1;i>=0;i--) cells+=calCell(_calY,_calM-1,prevDays-i,true,today);
+  for(let d=1;d<=days;d++)   cells+=calCell(_calY,_calM,d,false,today);
+  let n=1;
+  while((lead+days+n-1)%7!==0||((lead+days+n-1)/7)<6) { cells+=calCell(_calY,_calM+1,n,true,today); n++; }
+
+  $('calMonth').textContent=`${CAL_MONTHS[_calM]} ${_calY}`;
+  $('calGrid').innerHTML=
+    CAL_DOW.map(d=>`<span class="cal-dow">${d}</span>`).join('')+cells;
+}
+
+function calCell(y,m,d,muted,today){
+  const dt=new Date(y,m,d);
+  const iso=isoLocal(dt);
+  const cls=['cal-day'];
+  if(muted) cls.push('is-muted');
+  if(iso===_calSel) cls.push('is-sel');
+  else if(iso===today) cls.push('is-today');
+  return `<button class="${cls.join(' ')}" onclick="calPick('${iso}')">${d}</button>`;
+}
+
+function calPick(iso){
+  const fn=_calOnPick;
+  closeCalendar();
+  if(fn) setTimeout(()=>fn(iso),180);
+}
+
+function closeCalendar(){
+  _calOnPick=null;
+  $('calSheet').classList.remove('open');
+  setBodyScrollLock(false);
+}
+
 function closeActionSheet(){
   $('actionSheet').classList.remove('open');
   _asHandlers=[];

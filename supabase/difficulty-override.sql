@@ -1,0 +1,46 @@
+-- CORRECTING THE RATING
+--
+-- One boolean beside Activities.difficulty saying WHO decided it.
+--
+-- The rating is inferred at capture by the `unfurl` call that also
+-- guesses a location (see GUESSING HOW HARD IT IS in CLAUDE.md), and
+-- until this there was no way to disagree with it. That mattered more
+-- than a missing control usually does, because the ratings the user
+-- already carries are sent back to the model as examples of where this
+-- person's lines fall -- so a systematic lean was teaching itself to
+-- keep leaning, with nothing anywhere able to correct it.
+--
+-- WHY A FLAG AND NOT JUST THE VALUE. `difficulty` alone cannot answer
+-- the two questions that make the correction stick:
+--
+--   1. May the guess overwrite this? A rating the user chose must
+--      survive a later re-guess; one the model wrote is free to be
+--      replaced. Without the flag the sheet cannot tell them apart and
+--      a correction is silently undone by the next keystroke in the
+--      name field.
+--
+--   2. Which examples are worth sending? difficultyExamples() puts
+--      corrected rows at the head of each tier, so the sample the model
+--      is judged against leads with answers a person actually gave
+--      rather than with its own past output. That is the whole of what
+--      breaks the loop.
+--
+-- Deliberately NOT a `difficulty_source` enum. The only distinction the
+-- app ever draws is user-or-not: 'ai' and 'legacy' and 'null' all mean
+-- the same thing here -- nobody said otherwise -- and a three-state
+-- column would invite code to care about a difference it does not have.
+-- Same shape and same reasoning as Activities.location_is_home, which
+-- also records intent rather than a value.
+--
+-- Optional, like every other migration here. Without it
+-- probeDifficultyManual() in js/api.js answers false, the column is
+-- never sent, and the picker still works for the length of a session --
+-- it simply cannot remember across a reload that the rating was yours.
+
+alter table "Activities"
+  add column if not exists difficulty_manual boolean not null default false;
+
+-- Not backfilled, and that is the point: every existing rating came
+-- from the model, so writing true here would record a decision nobody
+-- made -- the same argument that leaves Users.terms_accepted_at null on
+-- accounts predating it.

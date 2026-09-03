@@ -24,6 +24,8 @@ function paintStaticIcons(){
   set('compListChevron',icon('chevron-right'));
 
   set('lbCloseBtn',icon('x'));
+  set('calPrev',icon('chevron-left'));
+  set('calNext',icon('chevron-right'));
   set('lbPrev',icon('chevron-left'));
   set('lbNext',icon('chevron-right'));
 
@@ -35,8 +37,25 @@ function paintStaticIcons(){
      decorative plus — see the note in index.html. */
   set('homeComposerGo',icon('chevron-right'));
   set('convComposerGo',icon('chevron-right'));
-  set('actListChevron',icon('chevron-right'));
+  /* The new-activity sheet is the detail sheet's shape, so its glyphs
+     are the detail sheet's sizes: .ic-eyebrow on the list eyebrow, and
+     the 13px chip chevron that .ad-chip-v styles. */
+  set('actListChevron',icon('chevron-right','ic-eyebrow'));
+  set('aTargetChevron',icon('chevron-right'));
+  set('aPriChevron',icon('chevron-right'));
+  set('aDiffChevron',icon('chevron-right'));
   set('aRemindChevron',icon('chevron-right'));
+  set('aWhereIcon',icon('pin'));
+  set('aLinkIcon',icon('link'));
+  set('aLinkChevron',icon('chevron-right'));
+  set('aLinkGo',icon('plus','ic-sm'));
+  /* The dock's Cancel disc, and the Back bar on each of the sheet's
+     two sub-pages — the same glyphs the detail sheet's panes use. */
+  set('actCancelBtn',icon('x'));
+  set('compCancelBtn',icon('x'));
+  set('compMediaBackIcon',icon('chevron-left','ic-sm'));
+  set('aLinksBackIcon',icon('chevron-left','ic-sm'));
+  set('aNotesBackIcon',icon('chevron-left','ic-sm'));
   set('meNotifyIcon',icon('clock'));
   set('meHomeIcon',icon('home'));
   set('meDiffIcon',icon('target'));
@@ -134,6 +153,19 @@ function hasStoredSession(){ return !!readStoredSession(); }
      opened on a link that also carries ?join= must not destroy either. */
   readPushLanding();
   readPendingJoin();
+
+  /* ---- The same three captures, arriving as a Universal Link ----
+     A native app is handed its link by the OS rather than finding it
+     in location.search, so the readers above see nothing. This
+     registers the listener and asks for the launch URL, and feeds
+     whatever it finds to those same globals — see js/deeplink.js.
+
+     After them, deliberately. getLaunchUrl() is a promise and cannot
+     resolve before this tick, so it always lands second; running it
+     first would have readPendingJoin() overwrite the captured code
+     with the nothing it finds in the URL. In a browser this is a
+     no-op. */
+  initDeepLinks();
   /* The offline banner reflects the queue, which may be non-empty from
      a previous session, so it is painted before anything can render. */
   updateSyncUI();

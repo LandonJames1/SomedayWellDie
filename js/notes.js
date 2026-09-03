@@ -48,6 +48,22 @@
 /* Same migration, same answer. */
 function notesReady(){ return messagesReady(); }
 
+/* ⚠️ THE SYNCHRONOUS ANSWER IS WRONG ON A COLD START, and it fails in
+   the most confusing possible way: probeMessages() is fired un-awaited
+   at sign-in, so for the first moments of a session notesReady() says
+   false, the activity sheet is built without its Notes tab, and it stays
+   that way until the sheet is reopened. From the outside the log "only
+   shows up sometimes".
+
+   probeMessages() is a shared promise that short-circuits to a resolved
+   one the instant it has an answer, so awaiting it costs a microtask on
+   every open after the first. openConversation() already does this; the
+   activity sheet did not. */
+function notesReadyAsync(){
+  if(typeof probeMessages!=='function') return Promise.resolve(false);
+  return probeMessages();
+}
+
 /* Notes are fetched per activity rather than cached with everything
    else, for the same reason messages are: you only ever have one
    activity open, and putting an unbounded per-row list into the two

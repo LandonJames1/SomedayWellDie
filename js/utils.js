@@ -238,7 +238,7 @@ function targetBand(a){
   if(t<=endOf(now.getFullYear(),now.getMonth()+1,0)) return{id:'month',label:'This month', order:1};
   if(t<=endOf(now.getFullYear(),11,31))              return{id:'year', label:'This year',  order:2};
   if(t<=endOf(now.getFullYear()+1,11,31))            return{id:'next', label:'Next year',  order:3};
-  if(t<=endOf(now.getFullYear()+3,11,31))            return{id:'y23',  label:'2–3 years',  order:4};
+  if(t<=endOf(now.getFullYear()+4,11,31))            return{id:'y24',  label:'2–4 years',  order:4};
   return{id:'y5',label:'5+ years',order:5};
 }
 
@@ -251,7 +251,12 @@ function targetBand(a){
    'In 2-3 Years' is kept here for rows written before bands were
    resolved at save time; nothing stores it any more. 'In 5+ Years'
    still does and always will — see MAKING A BAND HOLD STILL below. */
-const OPEN_BANDS={'In 2-3 Years':'2-3yrs','In 5+ Years':'5yrs'};
+/* ⚠️ 'In 2-3 Years' is RETIRED but still listed. The picker offers
+   2-4 years now; this entry stays so a row written under the old
+   band -- or one whose resolved date still matches it -- reads as
+   something rather than as a blank. Same reason 'Before I Die'
+   survives in dateInfo(). */
+const OPEN_BANDS={'In 2-4 Years':'2-4yrs','In 2-3 Years':'2-3yrs','In 5+ Years':'5yrs'};
 
 /* The end of the window each preset band describes. */
 function presetTargetDate(v){
@@ -260,6 +265,9 @@ function presetTargetDate(v){
     case 'This Month':   return new Date(now.getFullYear(),now.getMonth()+1,0);
     case 'This Year':    return new Date(now.getFullYear(),11,31);
     case 'Next Year':    return new Date(now.getFullYear()+1,11,31);
+    case 'In 2-4 Years': return new Date(now.getFullYear()+4,11,31);
+    /* Retired, kept so a legacy literal still resolves to what it always
+       meant rather than falling through to null. */
     case 'In 2-3 Years': return new Date(now.getFullYear()+3,11,31);
     case 'In 5+ Years':  return new Date(now.getFullYear()+5,11,31);
     default: return null;
@@ -290,7 +298,10 @@ function presetTargetDate(v){
    band you picked stops being the band you see. Choose "Next year" in
    December 2026, reopen it in January 2027, and it reads "This year".
    That is the feature. */
-const RESOLVING_BANDS=['This Month','This Year','Next Year','In 2-3 Years'];
+/* The write path only. 'In 2-3 Years' is deliberately absent: it is
+   no longer offered, so nothing should ever resolve it again --
+   presetTargetDate() still knows it for reading old rows. */
+const RESOLVING_BANDS=['This Month','This Year','Next Year','In 2-4 Years'];
 
 /* Local-calendar ISO. Never toISOString(): that converts to UTC first,
    so local midnight on 31 December comes back as the 30th anywhere east
@@ -353,11 +364,11 @@ function dateInfo(a){
        Bands are resolved to a real date on the way in so they roll
        forward correctly (see MAKING A BAND HOLD STILL) — but that date
        is backend truth, not something to read back at the user. "Dec
-       31, 2029" states a precision nobody chose; "2-3yrs" is what they
+       31, 2029" states a precision nobody chose; "2-4yrs" is what they
        actually said. The two labels are OPEN_BANDS', so a resolved row
        and a legacy unresolved one read identically. */
     const far=targetBand(a).id;
-    if(far==='y23') return{label:OPEN_BANDS['In 2-3 Years'],cls:'relaxed'};
+    if(far==='y24') return{label:OPEN_BANDS['In 2-4 Years'],cls:'relaxed'};
     if(far==='y5')  return{label:OPEN_BANDS['In 5+ Years'], cls:'relaxed'};
     const months=Math.round(d/30.44);
     return{label:fmtDate(a.targetDate),
@@ -599,7 +610,13 @@ function diffRank(a){
   return d in DIFF_ORDER?DIFF_ORDER[d]:99;
 }
 /* Nothing is drawn for an un-rated activity — an empty slot says "not
-   judged", where a fourth label would state something nobody decided. */
+   judged", where a fourth label would state something nobody decided.
+
+   The one deliberate exception is the activity detail sheet's chip,
+   which is also the control for CHANGING the rating: hiding it on an
+   un-rated row would hide it on exactly the rows that need it, so it
+   renders "Not rated" — a statement that no tier was chosen, not a
+   fourth tier. See DISAGREEING WITH THE RATING in js/activities.js. */
 function diffLabel(a){
   const d=a&&a.difficulty;
   return DIFF_LABELS[d]||'';
@@ -653,9 +670,38 @@ function priTagHTML(a){
 
 /* Nudge an invalid field. Uses a transform animation rather than a
    colour change so it reads the same in light and dark. */
+/* MM/DD/YY. Used where a date has to fit a chip and be scanned rather
+   than read -- the Remind chip is 92px wide on a 320px screen, which
+   "Dec 24" fits and "December 24, 2026" does not. Everywhere the date is
+   read as prose, fmtDate() is still the one to use.
+   ⚠️ Split on the parts, not new Date(iso): that parses as UTC and comes
+   back a day early west of Greenwich. */
+function fmtDateNumeric(iso){
+  const p=String(iso||'').split('-');
+  if(p.length<3) return '';
+  return `${p[1]}/${p[2]}/${p[0].slice(2)}`;
+}
+
 function shakeEl(el){
   el.style.animation='shake .38s ease';
   setTimeout(()=>{el.style.animation='';},420);
+}
+/* ⚠️ THE QUIET ONE, AND THE DIFFERENCE IS THE POINT.
+   shakeEl() is a refusal — the save was attempted and rejected, and
+   +/-6px says so. nudgeEl() is a direction: the new-activity sheet's
+   Add button already NAMES what is missing, and this only answers
+   "where is it?" for a field the user has not reached yet. Nothing has
+   gone wrong, so it must not look as though it has.
+
+   It also honours prefers-reduced-motion, which shakeEl() predates and
+   does not — a rejection has to register somehow, but a pointer has a
+   free alternative: the button's own label already carries the whole
+   message, so on that setting this simply does nothing. */
+function nudgeEl(el){
+  if(!el)return;
+  if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  el.style.animation='nudge .30s ease';
+  setTimeout(()=>{el.style.animation='';},340);
 }
 
 /* Downscale an image data-URL to at most maxD px, then re-encode as JPEG. */

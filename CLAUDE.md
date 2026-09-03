@@ -165,9 +165,15 @@ legal/                privacy.html + terms.html, the two documents App Store Con
                       at a public URL. Deliberately standalone pages with their own _style.css:
                       a privacy policy must load without an account, and linking them into the
                       app shell would mean booting Supabase to read a document.
-supabase/             Backend — schema.sql (reminders + reminder_deliveries), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), storage.sql (the media bucket), cron.sql, and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
+.well-known/          apple-app-site-association — what iOS fetches to decide whether a link
+                      to the site should open the app. Served by the WEB HOST, deliberately not
+                      bundled into www/. See **Universal Links** and .well-known/README.md.
+supabase/             Backend — schema.sql (reminders + reminder_deliveries), native-push.sql (an APNs
+                      device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), storage.sql (the media bucket), cron.sql, functions/_shared/apns.ts (APNs delivery, shared by the two push functions — no imports, the JWT is signed with Web Crypto), and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
 css/                  One stylesheet per concern (see CSS file map)
-tools/                difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog);
+tools/                difficulty-rate.py — asks Claude to rate every un-rated activity and writes the
+                      CSV the next one consumes (see **Rating the library you already have**);
+                      difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog);
                       media-backfill.py — the one-off that moved every photo to R2 (see **Media**)
 cloudflare/           media-worker/worker.js — the Worker that authorizes uploads to R2 and serves
                       downloads. Pasted into the Cloudflare dashboard by hand; there is no deploy step
@@ -179,6 +185,25 @@ Supabase Setup/       CSV exports of the Collections / Activities / Users tables
 .github/workflows/    reminders.yml — the daily sweep that fires send-reminders. Replaces
                       supabase/cron.sql; run one or the other, never both.
 _backup/              The original single-file version, kept as a safety net
+optional-lab.html     The bench for ONE decision: how the new-activity sheet says which
+                      of its fields block the save. Six frames — the current sheet plus
+                      five options — across three fill states, driven by a single
+                      control so they are compared on behaviour rather than on one
+                      frozen picture. Option J is what shipped; see **Saying what is
+                      still required**. It KEEPS the four rejected alternatives and the
+                      reason each died, which is most of its value now. Like
+                      theme-lab.html it LINKS the app's own stylesheets (theme.css
+                      included) rather than copying tokens, so it cannot drift; every
+                      class it invents is `lab-`-prefixed, and the audit for that is one
+                      grep against css/*.css — `.ok` collided on the first pass.
+                      ⚠️ `?audit=1` MEASURES rather than eyeballs: it walks every frame
+                      for horizontal overflow and content outside the frame, then DIFFS
+                      each against the baseline, because the app's own plate
+                      deliberately bleeds 8px and an absolute report flags six frames
+                      for something none of them did. It caught three real defects that
+                      looked fine at a glance. Dev tool only: not linked from
+                      index.html, not in sw.js, outside build-www.js's allowlist.
+                      ?state=empty|partial|full picks a step; #j scrolls to a variant.
 color-lab.html        A bench for the four activity colours (done / high / medium / low),
                       rendering the real rails, capsules, cards and pins on both grounds at
                       once. Dev tool only: not linked from index.html, not in sw.js. Open it
@@ -188,6 +213,119 @@ modal-lab.html        The same kind of bench for the completion sheet's layout, 
                       linking base.css, so it drifts — read it as a sketch of a decision
                       already made, never as the current sheet. Dev tool only: not linked
                       from index.html, not in sw.js.
+theme-lab.html        The palette bench, and the one to reach for when dark mode looks wrong.
+                      THIRTY-ONE frames — every screen in the Screens table (Home, Up Next,
+                      Accomplished, Lists, a collection, Messages, a conversation, Map, You,
+                      Settings), the signed-out screen, EVERY overlay in index.html (both states
+                      of the activity sheet and its notes sub-page, the new-activity and
+                      completion sheets, the action sheet, lightbox, alert, calendar, toast, new
+                      list, list picker, duplicate, place, share, join, report, blocked, and the
+                      plain-field sheets), and a swatch board of every variant none of them
+                      happens to show — all rendered from the app's OWN css/*.css, with a control
+                      for every colour they draw. A Screens/Sheets/All button filters the stage;
+                      it hides frames only, never controls, which stay live and exported.
+                      ⚠️ IT SEEDS FROM css/theme.css, NOT from base.css's defaults, so a session
+                      opens on the palette already on disk and RESET means "back to that file"
+                      rather than "throw away everything you have ever tuned". It PARSES the file
+                      rather than reading computed styles, and that is the point of the code:
+                      getComputedStyle() and the CSSOM both answer in resolved values, so
+                      `color-mix(in srgb, var(--fc) 10%, …)` comes back flattened and a hex comes
+                      back as rgb() — the authored form, which is what has to be written back out,
+                      is gone. The parse is the exact inverse of cssFor() because both read one
+                      table of (selector, property) pairs; reconstructing keys from the file
+                      instead would break on a :root raw like --ring, which is written inside the
+                      :root block but keyed ':root | --ring'. A value in the file for a control
+                      that no longer exists is ignored, and a control the file does not mention
+                      keeps its base.css seed — which is how a file written before new controls
+                      were added still seeds cleanly. No file, a 404, a file:// origin, or a file
+                      holding only its header all fall through to the built-in seeds, and the line
+                      under the buttons says which happened. Two invariants
+                      are worth re-checking after any edit, and both are one loop in the console:
+                      every control's `targets` must match something on the stage, and every rule
+                      override must too — a rule matching nothing is dead CSS being exported.
+                      ⚠️ THE MAP FRAME IS CHROME ONLY. The globe is MapLibre on a WebGL context
+                      and the basemap is CARTO's raster tiles; neither is a colour this file can
+                      set, and loading a ~900KB library per frame would cost the bench its
+                      responsiveness. The floating filter, count and buttons are real.
+                      ⚠️ IT LINKS EVERY STYLESHEET THE APP DOES except pwa.css (install and
+                      offline chrome, which no frame shows) and responsive.css. A file left out
+                      does not announce itself — the frames using it simply render unstyled, and
+                      that is exactly how the invite and duplicate sheets first appeared flush
+                      against the glass, with dupes.css and sharing.css missing from the list.
+                      ⚠️ IT DOES NOT LINK responsive.css, whose media queries key off the
+                      VIEWPORT — on a 1000px-wide bench they would apply tablet layout to 390px
+                      frames. But that file is the only definition of `--content-max`, which
+                      messages.css uses inside a `@media (min-width:700px)` block that DOES fire
+                      here; an unresolvable var() is invalid at computed-value time and falls back
+                      to the property's INITIAL value rather than to the shorthand above it, so
+                      .conv-scroll's gutters computed to 0 and the conversation sat flush against
+                      the glass. `.phone` declares the token to close that. TWO KINDS: a TOKEN (a base.css custom property)
+                      and a RULE (an explicit `selector { property: value }`). Rules exist for
+                      the places the app hardcodes a colour or reads one from a token shared with
+                      something unrelated. ⚠️ A RULE ALWAYS BEATS ITS TOKEN, being a later equally
+                      specific declaration, so a rule is only ever written where the app gives no
+                      independent control — never as a duplicate of a token that already works,
+                      or editing that token would look broken. Every chip and card has its fill
+                      and its text on separate rows. Both difficulty scales are split per tier:
+                      the four sheet CHIPS get a fill and a text row each (the app shares one
+                      declaration across all four) and the three LIST BUTTONS on the Lists tab get
+                      a fill, a name and a count each (the app hue-codes only the name). Both are
+                      seeded at the app's shared values, so nothing moves until you move it.
+                      Any row can be LOCKED, which exempts it from Reset and from an applied
+                      answer — the two things that write in bulk — while leaving your own edits of
+                      it live. Locks are global rather than per mode, though Reset is per mode: a
+                      lock is a statement about the control, not about one of its two values, and
+                      a per-mode set would silently change which rows read as locked every time
+                      you flipped between light and dark. Locking a row unticks it and disables
+                      its tick, because "ask Claude to choose this" and "never overwrite this" are
+                      contradictory and the contradiction is better made impossible than resolved
+                      later. The lock is the one row control that is visible without hovering, and
+                      it takes the row's RIGHT edge — the left already carries three transient
+                      states (hover, click-pin, AI-picked) and a lock has to compose with all of
+                      them. Light and dark hold
+                      fully separate values and Copy CSS emits the dark half inside a
+                      @media (prefers-color-scheme: dark) block — which is how the Orchard hues
+                      and every hardcoded white on a photo can be given a dark variant they do
+                      not have today. Hovering a row outlines what it affects and hovering the
+                      screen highlights its rows, but ⚠️ HOVER NEVER SCROLLS THE LIST — it did,
+                      and that made the panel unusable: you would hover something, see its row,
+                      and then cross half a dozen other demo elements on the way to it, each
+                      scrolling the list somewhere else. CLICKING is what moves it, pinning both
+                      ends in amber, clearing the filter first (or the jump lands on nothing) and
+                      landing on the NARROWEST match — a rule before a token, since clicking
+                      "How it went" also matches --bg-elevated and --label, which sit at the top
+                      of the list and made the jump look like it had done nothing. Instant rather
+                      than smooth: the list is ~13,000px tall. The reverse walk STOPS at the
+                      first match rather than collecting the ancestor chain, or every hover
+                      inside a sheet also reported .modal and .modal-overlay. Each row takes a typed value and a typed alpha as well as
+                      the swatch and slider, and carries copy/paste against one held colour.
+                      "Ask Claude for colours" ticks any set of rows, takes a paragraph about
+                      what you like, and either copies a prompt (needs nothing set up) or calls
+                      the API with a key you supply, loading the Anthropic SDK from a CDN on
+                      first use; the answer is flat JSON keyed by control, an unknown key is
+                      ignored rather than written somewhere wrong, and Undo restores the
+                      snapshot. ⚠️ A TYPED VALUE THE BROWSER CANNOT PARSE IS KEPT BUT MARKED —
+                      the value box goes red and Copy CSS reports the count. It is kept because
+                      you may be mid-type, and marked because a dropped declaration leaves that
+                      one element at its old colour while everything around it changes, which
+                      reads as the paste not having worked. That shipped once: `9e1a60`, typed
+                      without its `#`, silently left the Where card's chevron behind. The check is
+                      `CSS.supports()` rather than a regex, so it knows about var(), color-mix()
+                      and every gradient syntax for free; a token row is tested against `color`
+                      since a custom property accepts anything, and the four `:root` raws
+                      (--ring, --shadow-*) cannot be checked at all. ⚠️ AND COPY CSS SURVIVES A
+                      NON-SECURE CONTEXT: `navigator.clipboard` is undefined on file:// and over
+                      a LAN IP, and READING it throws before `.then()` can catch anything — the
+                      same trap that gates `crypto.randomUUID`. It is wrapped in try/catch with a
+                      select-and-⌘C textarea behind it. ⚠️ IT LINKS THE APP'S REAL STYLESHEETS, so every class it invents
+                      must be one the app does not use — a collision is silent and reads as the
+                      lab's own CSS being ignored. `.chip` (modals.css) and `.empty`
+                      (components.css) both bit; the audit is one grep of class names over
+                      css/*.css against the lab's <style> block. Unlike modal-lab.html it links
+                      rather than copies, so only the seed values can drift: change a value in
+                      base.css and change its seed in the control table here. Dev tool only: not
+                      linked from index.html, not in sw.js, and outside build-www.js's allowlist.
+                      #light opens on the light palette.
 ```
 
 There is no build step. Serve statically: `python3 -m http.server 8000`.
@@ -447,7 +585,7 @@ nothing. Everything the composer did, it still does.
 also has no lists shelf — that duplicated the Lists tab sitting in the tab bar.
 
 Because Home has no collection context, adding from here goes through the
-full activity sheet rather than inserting directly — see **The two-speed
+new activity sheet rather than inserting directly — see **The two-speed
 activity flow**. Its one remaining private copy is `toggleCompleteFrom()`,
 which reads the activity's own `listId` before updating that collection's
 stats rather than assuming `curListId`. Keep it in step with
@@ -913,7 +1051,7 @@ matching, and `resolveLocationField()` re-resolves before a save.
 
 **Everything that writes coordinates must call `locGeoMark(input)`**, or the
 save-time resolve will geocode a value that was already resolved — a wasted
-round trip on every edit. The callers are `locApply()`, `openEditAct()`,
+round trip on every edit. The callers are `locApply()`, `openActDetail()`,
 `openComp()`, `acceptPhotoLocation()` (`media.js`) and
 `maybeGuessLocation()`.
 
@@ -996,7 +1134,7 @@ How the flag is kept honest:
   Anything picked from the results clears it.
 - `locInvalidateIfChanged()` clears it when the text is typed over — naming a
   place is not deferring to wherever you live.
-- `openEditAct()` and `openComp()` call `locSetHome()` from
+- `openActDetail()` and `openComp()` call `locSetHome()` from
   `a.locationIsHome`, so an edit that never touches the location does not
   quietly sever the link.
 - **Bulk rows re-render from `bulkEntries` wholesale**, so `renderBulkEntries()`
@@ -1065,37 +1203,93 @@ the field, because leaving a rejected value in place would be the silent write
 the design exists to avoid.
 
 **Making it arrive sooner.** The round trip is the whole cost, and the field
-it fills is one somebody is looking at. Four levers, none of which changes
-what the feature will *answer*:
+it fills is one somebody is looking at. Seven levers, none of which changes
+what the feature will *answer*, and the first two are the ones that moved
+the needle:
 
-1. **It asks while you are still typing.** A debounced `input`
-   (`queueLocationGuess()`, `GUESS_IDLE_MS` = 650ms) fires at a pause, so the
-   request overlaps the rest of the sheet being filled rather than starting
-   when you leave the field. The original `change` handler stays as the
-   backstop. This is **one call per pause, never one per keystroke** — that
-   distinction is the whole reason the code used to say "not on input", and
-   it still holds.
-2. **`_guessCache`** remembers `name → result` for the session, **including
+1. **⚠️ WARM THE ISOLATE AT SIGN-IN** — `warmGuess()` in `location.js`,
+   called from `showApp()` beside `warmGeo()`, and **the biggest single win
+   here**. `geo` has no imports by design; `unfurl` pulls in the Anthropic
+   SDK, so it is the one function in this app with a real cold start — and
+   without this the *first* capture of every session paid for it.
+
+   **⚠️ It warms with a REAL call that costs nothing — an empty name.**
+   `predictPlace()` returns on `name.trim().length < 3` before it
+   constructs an Anthropic client, so the answer is a 200 with the isolate
+   booted, the SDK loaded and the connection open, and no model call and no
+   geocode spent. Verified against the deployed function:
+   `{"activity":{"name":""}}` → `200`.
+
+   **A warm ping must be a request EVERY deployed copy already answers
+   2xx**, and two earlier versions were not. POSTing `{}` and letting the
+   function's own "expected {activity}" 400 do the work earned a red
+   `400 (Bad Request)` in the console on every launch; a GET `?warm=1`
+   earned `405 (Method Not Allowed)` from every copy deployed before that
+   branch existed. A fake error is a real cost — somebody eventually spends
+   an afternoon chasing it — and a pure optimisation must never be able to
+   log one, least of all one whose quietness depends on remembering to
+   redeploy. There is deliberately **no `?warm=1` branch** in `unfurl`.
+1b. **⚠️ AND WHEN THE MODEL CALL FAILS, THE FUNCTION SAYS SO.** A thrown call
+   used to return `empty` and log to the Supabase console, which nobody reads
+   — and `empty` is byte-identical to "this name names no place", so a broken
+   deploy was indistinguishable from the feature working. `predictPlace()`
+   returns an `error` string with it now; `maybeGuessLocation()` logs it and,
+   the part that matters, **refuses to cache an answer carrying one** — the
+   error says nothing about the name, and a cached empty would outlive the fix.
+2. **⚠️ AND BOUND THE GEOCODE — the other half, and it is on the server.**
+   When the model *does* name a place, `predictPlace()` then waits on public
+   Nominatim before answering, so the difficulty — decided several hundred
+   milliseconds earlier, and with nothing to do with the geocode — is held
+   behind a free endpoint having a slow morning. `GEOCODE_TIMEOUT_MS` (2500)
+   caps it. On a timeout the place is dropped, which is exactly what gate
+   three already means ("the map cannot plot this"), and the difficulty
+   still comes back. Losing the occasional location to a slow geocoder is
+   the better trade: the user is looking at an empty field either way, and
+   the alternative is looking at it for longer.
+3. **It asks while you are still typing.** A debounced `input`
+   (`queueLocationGuess()`, `GUESS_IDLE_MS` = **450ms**) fires at a pause, so
+   the request overlaps the rest of the sheet being filled rather than
+   starting when you leave the field. The original `change` handler stays as
+   the backstop. This is **one call per pause, never one per keystroke** —
+   that distinction is the whole reason the code used to say "not on input",
+   and it still holds. It was 650ms; the pause this sits behind is the one
+   between words, not the one at the end of a sentence, and below ~450 it
+   starts firing mid-name and spends a model call on a prefix.
+4. **It says that it is working.** `guessPending()` marks the difficulty chip
+   and — only while it is still empty — the Where row, which dim and pulse
+   while an answer is in flight (`.is-guessing` in `detail.css`). It makes
+   nothing faster and it is the half the user actually feels: the chip read
+   "None" and the field sat empty for the whole round trip, so an answer
+   landing two seconds later looked like the app changing its mind rather
+   than like an answer arriving. **A state on the control, not a message
+   beside it** — see the two non-negotiable rules at the top of this file.
+   Only the request that is still current may clear the mark, or a
+   superseded call finishing late turns it off under a live one.
+5. **`_guessCache`** remembers `name → result` for the session, **including
    the misses**, which are the majority. A retyped name or the same activity
    added twice returns instantly and free. A *failed request* is deliberately
    not cached — it says nothing about the name. Not persisted: the point is
    to kill repeats inside one sitting, not to build a gazetteer.
-3. **`effort: 'low'` and `max_tokens: 256`** on `predictPlace()`. The prompt
+6. **`effort: 'low'` and `max_tokens: 256`** on `predictPlace()`. The prompt
    decides this answer — the rules and the worked examples do the work, not
    depth of deliberation. If recall drops on names that plainly do name a
    place, raise the effort before touching the prompt.
-4. **`PLACE_MODEL` is its own constant**, separate from the imports' `MODEL`,
-   and it is the lever left to pull: a smaller model is a fraction of the
-   latency for a closed two-field classification behind three more gates. It
-   is deliberately left equal to `MODEL` — swapping it trades some strictness
-   for speed and strictness is the feature — but it is one line, in one
-   place, when the trade is worth making.
+7. **`PLACE_MODEL` is its own constant**, separate from the imports' `MODEL`,
+   and it is **Haiku** — a fraction of the latency and, more to the point, a
+   fraction of the cost. This is the app's only per-capture model call, one
+   per distinct activity name, so it is the single line with a bill attached
+   to it that grows with the user count. It was Opus; that was the one thing
+   in the app that scaled badly. The classification is closed and two-field,
+   sitting behind three further gates, so the prompt does the work rather
+   than depth of deliberation. **If recall drops, raise `effort` before
+   touching the prompt, and change the model last.**
 
 Things to keep:
 
-- **Only on create.** `openNewActivity()` arms it, `openEditAct()` disarms it.
-  Renaming an existing activity is not an invitation to rewrite where it
-  happens.
+- **Only on create.** `openNewActivity()` arms it, and it is the only
+  sheet that can — there is no edit sheet. Renaming an existing activity
+  (in place, on the detail sheet) is not an invitation to rewrite where
+  it happens.
 - **A pause, not a keystroke.** This costs a model call, so the `input`
   handler is debounced and `_guessFor` plus the cache stop it asking twice for
   the same text. `openNewActivity(prefillName)` still asks explicitly, because
@@ -1150,10 +1344,10 @@ together say that distance is only one of the three.
 
 Things to keep:
 
-- **Only on create.** `resetLocationGuess(false)` in `openEditAct()`
-  disarms the whole call, so an edit carries the stored rating through
-  untouched. Re-judging on every rename would silently rewrite a value
-  nobody could see changing.
+- **Only on create.** The new-activity sheet is the only caller, and it
+  only creates — so an edit carries the stored rating through untouched.
+  Re-judging on every rename would silently rewrite a value nobody could
+  see changing.
 - **It is not gated on the location half.** Most names identify no place
   at all and still have a difficulty, so `predictPlace()` returns the
   rating on every path out, and `maybeGuessLocation()` applies it
@@ -1167,10 +1361,13 @@ Things to keep:
   to judge. `diffLabel()` returns `''` and nothing is drawn — an empty
   slot says "not judged", where a fourth label would state something
   nobody decided.
-- **It is not hue-coded.** Priority owns a three-colour scale and the
-  deadline badge owns the warm end; a third scale on the same chip row
-  would be three rankings arguing over one glance. The word is the whole
-  signal. Same argument that keeps red off the priority scale.
+- **It is not hue-coded ON THE CHIP ROW.** Priority owns a three-colour
+  scale there and the deadline badge owns the warm end; a third scale on
+  the same row would be three rankings arguing over one glance. The word
+  is the whole signal *there*. It **is** coloured where it is the only
+  scale on screen — the three list buttons on the Lists tab, and the
+  Difficulty menu, which uses the same `--green`/`--violet`/`--pri-high`
+  via the action sheet's `tone`.
 - **Optional, like every other migration.** `probeDifficulty()` in
   `api.js` looks for the column once at sign-in; without it the field is
   never sent and the sort simply orders everything as un-rated. Run
@@ -1226,6 +1423,394 @@ Things to keep:
 - **The examples are the model's own past answers**, so this is a loop
   that can reinforce a mistake. Nothing in the app corrects a rating
   today — that is the missing piece if the lean ever needs breaking.
+
+##### Rating the library you already have
+
+`tools/difficulty-rate.py`, then `tools/difficulty-backfill.py`.
+
+`difficulty` is only ever written at capture, so **everything created
+before the feature existed is un-rated** — it sorts last under the
+Difficulty sort and appears in none of the three derived lists. That is
+not a small gap: for most libraries it is the majority of the rows, and
+it is why the three lists read as broken rather than as empty.
+
+Things to keep:
+
+- **Two scripts, not one, and the split is the point.** The first
+  produces a CSV of proposed ratings; the second turns a CSV into one
+  `UPDATE`. Nothing in the first touches the database. That is what lets
+  a few hundred model-written ratings be read — and edited — before any
+  of them land on rows the user will then have to correct by hand.
+- **Grouped by the owner of the collection**, and rated with that
+  person's Home, profile and tier-balanced examples. Difficulty is
+  relative to a person; rating a shared project's rows against one
+  average reading would be wrong for everybody in it.
+- **The prompt is a COPY of Part Two of `PLACE_SYSTEM`**
+  (`functions/unfurl/index.ts`), so a backfilled rating is judged by the
+  same three costs as a live one. Being a copy it can drift, and the
+  failure is silent — the library ends up rated by two standards and the
+  sort quietly stops meaning one thing. **Re-copy Part Two whenever it is
+  retuned.** It is not imported because that file is Deno TypeScript
+  running as an Edge Function.
+- **It does not use the model the app uses.** Capture rates with Haiku
+  because somebody is watching an empty field; this is a one-off with
+  nobody waiting and defaults to the stronger model. The consequence is
+  worth stating: these ratings become the **examples** the app sends back
+  on every later capture, so this run sets the calibration everything
+  after it is judged against.
+- **The model answers with an item NUMBER, never the uuid.** Echoing a
+  36-character id back is a transcription task with nothing to gain and a
+  silent failure mode — one wrong character rates the wrong activity.
+- **Completed activities are rated too.** The three lists show finished
+  rows, and a library where only the pending half is rated reads as
+  though ratings are missing at random.
+- **A failed batch costs only that batch.** Every read is
+  `difficulty is null`, so anything skipped is picked up by the next run.
+- Dry-run by default, `--apply` to write the CSV — the same shape
+  `media-backfill.py` already uses.
+
+
+##### Editing a pending activity in place
+
+`patchActivity()` and the small editors around it in `activities.js`.
+The name and the location are edited in place on the sheet itself; the
+target, the priority and the difficulty are action-sheet menus, and
+`#targetSheet` survives only as the fallback for a browser with no
+`showPicker()`.
+
+The name, the list, the target date, the location, the priority and the
+difficulty are all changed by **tapping them on the activity's own detail
+sheet**. **There is no Edit sheet behind them any more, and no pencil on
+a pending activity** — `openEditAct()` and `openEditActFrom()` are gone,
+and with them every `editingActId` branch in `activities.js`. A whole
+form is the wrong weight for *that name has a typo*, and a second form
+holding the same seven values was a second place for them to disagree
+while covering the thing being edited. A **completed** activity keeps
+its pencil: that one opens the completion sheet, which holds the record
+(the photos, "How it went") rather than the plan.
+
+**⚠️ These write immediately, which the completion sheet deliberately does
+not.** That is not a contradiction, and the line is worth stating because
+it reads like one:
+
+- **Staged** when the thing does not exist yet (the new activity sheet —
+  Cancel means "never mind, do not create it"), or when several fields
+  change together as one event (a completion: the date, the photos and
+  the note are one act).
+- **Immediate** for one field on a row that already exists, because the
+  picker carries the Cancel. Choosing *High* from a menu is not somewhere
+  you arrive by accident, and there is no half-filled state to lose.
+
+Things to keep:
+
+- **⚠️ THE `TARGET` LABEL AND THE LIST NAME ARE ONE THING.** They are
+  the plate's two labels, one over each column, so they take the same
+  mono face, the same 12.5px, the same `.12em` tracking, the same
+  `--tint` and the same 13px chevron (`.ad-target-k` and
+  `.ad-eyebrow-btn` in `detail.css`). At 9px the target's read as a
+  caption on the date while the list's read as a control, and the two
+  halves of one block looked unrelated. **Change one and change the
+  other** — and it applies on both sheets, since they share the rules.
+- **The countdown beside the title IS the target-date control**, and the
+  green Target chip is gone. It said the same thing the countdown already
+  said, and dropping it takes the chip row from four across to three —
+  which is what stops the values being clipped at 320px.
+- **The affordance rule: chevrons on row-shaped controls** (the chips,
+  the Where row, the list eyebrow), **press-state only on the plate's two
+  display elements** (the 29px serif name and the 34px numeral). Hanging
+  glyphs on those turns a title block into a form.
+- **The Where row is drawn even when empty**, reading *Add a place* —
+  the same argument the difficulty chip makes, and it had a chevron and
+  no handler at all before this.
+- **`.ad-place` is a div with `role="button"`, NOT a `<button>`, and that
+  is measured rather than stylistic.** As a real button the row sizes
+  shrink-to-fit, and `.ad-place-v` is `white-space: nowrap` — so a long
+  location becomes the row's min-content width and it grew to 357px
+  inside a 318px box, which is a sideways scroll, which on iOS drags
+  every `position: fixed` element with it. `width: 100%` is the same
+  overflow by another route, because the row carries gutters as margins.
+  `onRowKey()` gives it and the Links card the keyboard path that
+  `role="button"` does not come with.
+- **Never `font: inherit` on a control that borrows a class for its
+  type.** The shorthand also resets family, size and weight; it silently
+  reverted the difficulty chip to the body font at body size once
+  already. Hand back only what a `<button>` actually took —
+  `text-align`, `white-space`, and `font-family` where the children set
+  none of their own.
+- **⚠️ AN EDIT REPAINTS `#adHead`, NOT THE WHOLE SHEET.**
+  `patchActivity()` used to re-run `openActDetail()`, which awaits a
+  notes fetch — a real round trip — before it paints, and then replaces
+  every node in the body. So changing a priority left the old value on
+  screen for a round trip and then blanked the media grid and the notes
+  log while they were rebuilt. `actDetailHeadHTML()` is the plate, the
+  chips and the Where row — exactly what the in-place editors change and
+  nothing else — and `repaintActDetailHead()` redraws only that, with no
+  network at all. It re-establishes `locGeoMark()`/`locSetHome()`
+  afterwards, because the location field is rebuilt with it, and falls
+  back to the full render when the sheet is showing something else.
+- **The name and the location are edited IN PLACE, not in a sheet.**
+  Tapping the title swaps it for a `<textarea>` carrying `.ad-title`
+  itself — same face, same size, same leading, so the text does not move
+  when the field appears (measured: 95.7px vs 96.0px tall). A textarea
+  rather than an input because the title wraps; Enter still commits,
+  because a name is one line semantically even when drawn as three.
+  Tapping the Where row swaps its text for a `.loc-wrap` holding the
+  field, the hidden lat/lng and the results box — the same shape every
+  other location field uses, because `locFieldsFor()` finds the
+  coordinates by querying inside `.loc-wrap`.
+- **Both states carry the same box, and that is what makes the swap
+  invisible.** The editing title needs padding to read as a field, and
+  padding would move the text — so the resting title takes the identical
+  padding and both pull it back with a matching negative margin.
+  Measured: the box sits at x=24 and the text at x=32 in both states,
+  aligned with the eyebrow above. Change one padding and you must change
+  the other.
+- **⚠️ A `<textarea>` must be given a width.** `width: auto` on one is
+  not "fill the parent" — it is the UA's 20-column default, which at
+  29px serif is wider than the card and pushed the field out of it.
+- **⚠️ AND IT MUST NEVER BE TALLER THAN ITS CONTENT.** A textarea lays
+  text out from the TOP, so every pixel of height beyond one line
+  becomes dead space *under* the text and the title stops looking
+  vertically centred in its own box. `#aName` carried
+  `min-height: 44px` against a one-line height of 39.9px — 3.2px of
+  slack, small enough to read as sloppy rather than as a bug, and it
+  shipped that way. It is `calc(1.1em + 8px)` now, which states the
+  arithmetic (the line-height, and the two 4px paddings) instead of a
+  magic number and follows the type if either changes. The floor is
+  kept rather than dropped because `growNameField()` sizes from
+  `scrollHeight` and needs one. Of the three places an activity's title
+  can be edited, this was the only one wrong: `#adTitleEdit` never had a
+  `min-height`, and the completion sheet's name is an `<input>`, which
+  the UA centres itself.
+- **The location dropdown positions against the ROW, not its own
+  `.loc-wrap`.** `.loc-results` is `left: 0; right: 0` against the
+  nearest positioned ancestor, and that wrap sits in the middle column
+  past the 34px disc — so the list came out narrow enough to truncate
+  every suggestion. `.ad-place` is the positioned ancestor here and that
+  wrap is `static`.
+- **Commit-on-blur is only safe because `locItemHTML` uses
+  `onmousedown`, not `onclick`.** The pick lands before the blur, so the
+  value committed is the one that was tapped. Change that and inline
+  location editing breaks in a way that looks random.
+- **`_titleBusy` / `_placeBusy` exist because Enter commits by blurring**,
+  which would otherwise fire the commit a second time and write twice.
+- **⚠️ Both swaps toggle `hidden`, and every one of those elements sets
+  `display`** — which outranks the browser's own `[hidden]` rule, so
+  without the `[hidden]` block in `detail.css` the static value and the
+  field are BOTH drawn and the title appears twice. Same trap as the
+  hidden file input inside a `.fg`. Anything else here that toggles with
+  `hidden` needs a line there.
+- **`.ad-place.editing` must stay BELOW `.ad-place.c-where` in the
+  file.** Both are (0,2,0), so the tint wins on source order — placed
+  above, the editing rule computes to exactly the same plum and does
+  nothing, which is what it did on the first attempt.
+- **⚠️ THE TARGET DATE SITS BESIDE THE TITLE, and the formatting — not
+  the placement — is what kept looking wrong.** Three attempts failed
+  for three separate reasons, all rooted in the same thing: `dateInfo()`
+  sends whole strings of wildly different lengths through that slot
+  (`18 days`, `Dec 31`, `Overdue`, `5+ years`, `—`).
+    - A 34px numeral made `Dec 31` nearly as wide as the title and drove
+      it onto four lines.
+    - Sizing the value to its length (32/21/15px) meant the block
+      changed size between activities, which reads as sloppy.
+    - A box around it wrapped the **wider** of its two lines, and
+      `TARGET` is wider than `Dec 31` once mono tracking counts, so the
+      value sat off-centre in a lopsided pill against the card's edge.
+
+  All three go away with one decision: the value is **one short line at
+  one fixed size** (23px serif, measured identical across every case),
+  label above it, the block right-aligned to the card's own padding.
+  A vertical rule divides it from the title, and the air on each side of
+  that rule is set in two different places — `.ad-plate`'s `gap` on the
+  title side, `.ad-target`'s `padding-left` on the date side. **They are
+  both 16px on purpose; change one and change the other**, or the
+  divider sits off-centre and reads as a mistake. It was briefly moved out to a row beside
+  Where and Links; that was a worse answer and is not the fix.
+- **The Remind chip reads `MM/DD/YY`** (`fmtDateNumeric()`), not
+  `fmtDate()`. That chip is ~92px wide on a 320px screen; a spelled
+  month does not fit, and a date on a chip is scanned rather than read.
+  Everywhere the date is prose, `fmtDate()` is still the one to use.
+- **Only overdue and urgent tint the value** (`.is-due`, red). Any other
+  band would be a fourth colour scale on a sheet already carrying three.
+- **The List control is 12.5px in `--tint` with a chevron**, the same
+  treatment the target's label uses. At 11px in `--label-2` it read as a
+  caption rather than the control it is; the tracking comes in to .12em
+  as the size goes up, or the extra width eats the title beneath it.
+- **`.ad-place-body` needs `flex: 1`, or the location input is the
+  browser's ~20-character default wide** and a location of any length
+  scrolls inside it with its start cut off.
+- **The Notes tab is gated on an AWAITED probe** (`notesReadyAsync()`),
+  not on `notesReady()`. `probeMessages()` is fired un-awaited at
+  sign-in, so reading it synchronously answers false for the first
+  moments of a session — the sheet is built with no Notes tab and stays
+  that way until it is reopened. From the outside the log "only shows up
+  sometimes", which is exactly how it was reported.
+- **The target date and the reminder are MENUS, not sheets.**
+  `openTargetMenu()` offers the five bands plus a row that reads the
+  stored date (`Dec 31, 2026`) rather than "Specific date"; picking that
+  row opens the OS calendar directly. `openRemindFor()` does the same
+  for the offsets and a date, then asks for the note in `showPrompt()` —
+  the iOS alert with one field — because a note with no date has nothing
+  to fire it.
+    - **The calendar is the app's own** (`showCalendar()` in
+      `modals.js`), not `<input type="date">`'s. That widget is a
+      different thing on every platform, anchors to its field rather
+      than the screen — on desktop it ran off the bottom of the window —
+      and cannot be styled at all.
+    - **⚠️ Local dates only.** `new Date("2026-12-31")` parses as UTC and
+      comes back as the 30th anywhere west of Greenwich; every date in
+      the calendar is built from y/m/d parts and formatted with
+      `isoLocal()`. Verified against all 84 months of 2024–2030: each
+      renders exactly six rows, so the card never changes height as you
+      page through the year.
+    - **An `immediate` escape hatch used to live in `_asPick()`** so a
+      menu row could call `showPicker()` inside its own click —
+      user activation does not survive the 180ms defer. Our own calendar
+      has no such rule, so it went with it. Anything reaching for a
+      user-activation-gated API from a menu row will need it back.
+    - `openRemindFor()` still seeds `#aRemind`/`#aRemindNote`, because
+      the full `#remindSheet` builds itself from them and is still what
+      the new-activity sheet uses.
+    - **A `separated: true` item gets its own card**, above Cancel —
+      how iOS sets a destructive action apart. *Remove reminder* uses
+      it; red text alone read as one more option in the list.
+    - **Four offsets, not six.** 2 weeks and 3 months were dropped: a
+      menu you have to read is worse than one you take in, and neither
+      was distinct enough from its neighbours to earn a row. **No data
+      changes** — only the resolved date is stored, so an old "2 weeks
+      before" keeps its date and reads back as a specific one.
+    - **The note field is a growing `<textarea>` with a hard
+      `maxlength`**, capped at `PROMPT_MAX_H` (132px) before it scrolls,
+      or a long note pushes the buttons off a short screen.
+    - **The note is marked optional in the two places a label may say
+      so** — the placeholder, and the button you leave by, which reads
+      *Skip* rather than *Cancel*. Not a sentence under the field.
+    - **`#promptSheet` is z-index 270**, above `.action-sheet`'s 260 and
+      later than it in document order. At the shared 200 it rendered
+      behind the sheet and Save could not be reached at all — the same
+      trap, for the fourth time.
+    - **Cancelling the note keeps the date.** `showPrompt`'s `onCancel`
+      commits what was already chosen; dismissing means "no note now",
+      not "forget the reminder". `closeModal()` routes `promptSheet`
+      into `closePrompt()` so the scrim and Escape take that path too —
+      the same argument as the sheet-return registry.
+    - A menu has no Done, so **nothing is written unless something is
+      picked** — which retires the legacy-band problem the target sheet
+      had to defend against.
+- **`#targetSheet` survives as the fallback for a browser with no
+  `showPicker()`**, not as the create path: the new-activity sheet uses
+  the same `openNewTargetMenu()` action sheet, so both sheets offer the
+  same five bands out of `TARGET_BANDS` and open the same
+  `showCalendar()`. **There is no "Remove target date"** — every
+  activity gets one, and clearing it drops the row out of Up Next and
+  off every deadline reading.
+- **⚠️ AND THE CREATE SHEET NO LONGER SEEDS ONE.** `openNewActivity()`
+  used to call `setTargetChoice(DEFAULT_TARGET_DATE)`, so every activity
+  arrived dated *This Year* whether or not anybody had thought about it
+  — a deadline nobody set, in a control that looked answered, driving
+  the one ranking Up Next exists to show. It opens blank now and is one
+  of the five things `NEW_REQUIRED` blocks the save on, which is what
+  keeps the rule above true: an activity still always has a target date,
+  it is just no longer guessed. `''` must survive `setTargetChoice()`
+  rather than falling back to `DEFAULT_TARGET_DATE`, exactly as `''`
+  must survive `setPriorityChoice()`.
+- **The unset value reads `—`**, which is what `dateInfo()` and
+  `countdownParts()` already produce for no date. Not "None": that slot
+  is 23px serif, and the em dash is the app's own empty marker there.
+- **The target sheet re-adds a legacy value for the row it is editing.**
+  Without it, opening the sheet on an old row and pressing Done rewrites
+  a date nobody touched. Nothing equivalent is needed on the create
+  sheet — it has no existing value to preserve.
+- **The inline location field carries the hidden lat/lng and the results
+  box**, because the text and the coordinates travel together through
+  `dataset.geoFor`, and `openActDetail()` calls `locGeoMark()` on it
+  after every render so an untouched value is not re-geocoded. A plain
+  text field there would write a new name against the old pin — the exact
+  bug **The text and the coordinates must agree** exists to close.
+- **`locGeoMark()` takes the element; `locSetHome`/`locIsHome`/
+  `resolveLocationField` take the input's id.** They are neighbours in
+  `location.js` and they do not agree. Passing the wrong one fails
+  silently.
+- **Remind writes through too**, via a second mode on the existing sheet
+  rather than a second copy of it. `openRemindFor(id)` sets `_remindFor`
+  and seeds the same hidden `#aRemind`/`#aRemindNote` inputs the staging
+  path uses, so there is one set of fields and one `inferRemindMode()`
+  to trust; Done and Remove then commit through `patchActivity()` and
+  clear the flag.
+    - **`_remindTargetFor` is not optional.** `currentTargetDate()` reads
+      the *new-activity* sheet's date select, which on the detail sheet
+      holds whatever the last edit left there — so the relative offsets
+      ("1 month before") would count back from the wrong activity.
+    - **`resetRemindFor()` runs on every `openActDetail()` render**: a
+      sheet dismissed by the scrim or a swipe never reaches Done, and a
+      stale id would send the next reminder to the previous activity.
+    - The chip falls back to a plain `<span>` when `remindersReady()` is
+      false, so a project without the `remind_at` column shows the value
+      and offers no control.
+- **The target label sits 12px above its value, not 6px.** The eyebrow →
+  title pair it is matched to uses a 6px *margin*, but adds 4px of the
+  title's own padding and half-leading on both sides — ~15px of visible
+  space between glyphs. Measured glyph-to-glyph, 12px here matches it.
+  Re-measure if either type size changes; the two numbers are not
+  comparable directly.
+
+
+##### Correcting a rating
+
+`openDifficultyMenu()` / `setActivityDifficulty()` in `activities.js`,
+plus `Activities.difficulty_manual` (`supabase/difficulty-override.sql`).
+
+The rating is inferred and was, until this, unarguable. That was worse
+than an ordinary missing control for two reasons: the tier decides
+membership of the three derived lists, so a wrong one files an activity
+where nobody will look for it; and the user's existing ratings are sent
+back to the model as examples, every one of them its own past output —
+so a lean reinforced itself and **nothing in the app could break the
+cycle**. A correction is the only new information in that loop.
+
+**The chip is the control**, the same argument that makes the You tab's
+avatar its own button: it is the one thing on that row displaying a
+rating, so nothing else a tap could mean, and a "Change difficulty" row
+beneath it would be the caption this app does not write. The chevron
+carries the affordance.
+
+Things to keep:
+
+- **It is drawn even when there is no rating**, which departs from the
+  rule that a null difficulty draws nothing. That rule exists so an
+  un-judged row is never labelled with a tier nobody chose, and this
+  keeps it — "Not rated" states no tier. Applied literally the rule
+  would have hidden the control on exactly the rows that need it, since
+  everything captured before the feature is un-rated.
+- **The flag records who decided, not what they decided.** `difficulty`
+  alone cannot say whether a value may be overwritten or whether it is
+  worth sending as an example. It is deliberately a boolean rather than
+  a `difficulty_source` enum: the only distinction the app ever draws is
+  user-or-not, and a three-state column would invite code to care about
+  a difference it does not have. Same shape and reasoning as
+  `location_is_home`.
+- **Corrections lead each tier in `difficultyExamples()`**, newest
+  within each group. That is the half that actually breaks the loop —
+  `DIFF_EX_PER_TIER` spends its slots on answers a person gave before it
+  spends them on echoes. It is a **re-ordering and not a filter**, so
+  somebody who has never corrected anything sends the sample they always
+  sent.
+- **Nothing guards the guess against overwriting a correction, and
+  nothing needs to.** Corrections are made on the detail sheet, against
+  a row that already exists; the only sheet that re-asks is the *new*
+  activity sheet, which only ever creates. So "only on create" is not
+  merely a cost decision — it is what makes a correction stick. **Anything that arms
+  the guess on an existing row has to check `difficulty_manual` first.**
+- **`saveActivity()` deliberately does not write the flag.** An edit
+  updates named columns, so `difficulty_manual` survives untouched.
+  Writing it there would reset a correction to whatever the hidden
+  `#aDiff` input happened to hold.
+- **Clearing hands the row back to the model** rather than pinning
+  un-rated as a correction: `difficulty_manual` is set to `!!tier`.
+- Optional like every other migration — `probeDifficultyManual()`
+  answers false, the tier is still written and still works for the
+  session, and only the memory of *who* chose it is lost.
+
 
 #### How far away it is
 
@@ -2238,10 +2823,18 @@ as you zoom in — the Google Earth behaviour. Things worth knowing:
   selected by the `CLUSTER_ICON_EXPR` expression and the matching images are
   registered on demand as counts appear. Point icons are stamped onto the
   GeoJSON as `_icon` instead, since we own that data.
-- Photo pins decode asynchronously and fall back to a dot until ready. Reading
-  a canvas back taints it if the photo is cross-origin without CORS headers;
-  the app's own photos are base64 data URLs so this only affects remote covers,
-  and it degrades to a dot rather than failing.
+- Photo pins decode asynchronously and fall back to a dot until ready.
+  **⚠️ They need CORS headers on the media host** — reading a canvas back
+  taints it otherwise. That note used to say the app's own photos were
+  base64 data URLs so only remote covers were affected; media moved to
+  R2 and it is now every pin. See the CORS bullet under **Media**.
+- **MapLibre's errors are collapsed by cause, not logged per tile**
+  (`attachMapErrorLog()`). A basemap refusing every request produced a
+  wall of identical stack traces, none of which said why — the 403 body
+  (`Key usage restricted`) never reached the console. Attaching an
+  `error` listener is also what suppresses MapLibre's own logging, so
+  anything unrecognised is re-logged in full. Do not turn it into a
+  silent catch.
 - **`globeFillZoom()`** computes the zoom at which the globe just fills the
   viewport (the sphere is ~211px across at zoom 0 and doubles per level) and
   is used as the map's `minZoom` and as a floor on `fitGlobal()`. Without it
@@ -2792,7 +3385,7 @@ saved preference.
 `Activities.target_date` is a **text** column holding one of two kinds of
 value, and code that reads it must handle both:
 
-- a **preset band** — `This Month`, `This Year`, `Next Year`, `In 2-3 Years`,
+- a **preset band** — `This Month`, `This Year`, `Next Year`, `In 2-4 Years`,
   `In 5+ Years`;
 - an **ISO date** the user picked — `2026-12-25`.
 
@@ -2815,7 +3408,25 @@ resolves a band to the date it means **at the moment it is saved** and stores
 that; `targetBand()` already derives the label back from a real date, so a row
 stored as `2027-12-31` *becomes* "This year" the instant 2027 begins — on every
 device, with nothing scheduled. Four bands resolve: This Month, This Year,
-Next Year, In 2-3 Years (to the far edge, +3).
+Next Year, In 2-4 Years (to the far edge, +4).
+
+**`In 2-3 Years` is retired and deliberately still recognised.** It was
+renamed to `In 2-4 Years`; `RESOLVING_BANDS` drops the old name so
+nothing writes it again, while `presetTargetDate()` and `OPEN_BANDS`
+keep it so a row written under it still resolves and still reads as
+something. No migration is needed and none should be written: dates
+resolved under the old +3 rule land inside the new band's window
+anyway, and `target_date` is free text with no constraint.
+`supabase/target-rollover.sql` names the old band because it ran before
+the rename — its literals describe rows already converted and must not
+be "corrected". **`supabase/target-band-2-4.sql` moves the rows filed
+under the old band out by a year** — `2029-12-31` → `2030-12-31` — plus
+any surviving literals. The window moved, so its contents move with it.
+It matches on intervals off `date_trunc('year', now())` rather than
+literal dates, so it reads as what it means; run it in the same year the
+old band was last resolved in, or replace the intervals with the dates
+you actually mean. An activity whose owner picked `2029-12-31` by hand
+moves too — nothing in the column separates the two.
 
 **`In 5+ Years` is deliberately not resolved.** It names no deadline at all —
 it resolves to +5 only so it can be sorted and grouped, which is exactly why
@@ -2832,9 +3443,10 @@ Things to keep:
 - **`isoLocal()`, never `toISOString()`.** The latter converts to UTC first, so
   local midnight on 31 December comes back as the 30th anywhere east of
   Greenwich and every band resolves a day early.
-- **`bandForStored()` is the reverse, and only the edit sheet uses it.**
-  A stored date that is *exactly* what a band resolves to today reopens with
-  that band selected rather than dumping the user into the specific-date field.
+- **`bandForStored()` is the reverse, and only the two target pickers on
+  an existing row use it** (`openTargetMenu()` and `openTargetSheet()`).
+  A stored date that is *exactly* what a band resolves to today reads back
+  as that band rather than as a specific date.
   The match has to be exact, or a date the user genuinely picked would be
   snapped to the end of its band on the next save — and because it is exact,
   re-saving an untouched row writes back the identical value.
@@ -2881,11 +3493,12 @@ both were reachable, one was the default, and anything holding them never
 surfaced in Up Next.
 
 They are retired from the *picker*, not from the data. `dateInfo()` still
-renders both, because existing rows carry them. And `openEditAct()` calls
-`addLegacyDateOption()` to put the retired value back as an option **for that
-one activity** if it has one — otherwise opening an old activity and pressing
-Save would silently rewrite its target date. Keep that behaviour if you touch
-the date field.
+renders both, because existing rows carry them. **The new-activity sheet
+cannot reach one** — it only ever creates, so `addLegacyDateOption()` and
+the whole `<select>` it patched are gone with the edit sheet.
+`openTargetSheet()` still re-adds a retired value as an option **for that
+one activity**, so opening it on an old row and pressing Done cannot
+silently rewrite a date nobody touched. Keep that behaviour.
 
 #### Showing priority
 
@@ -2934,17 +3547,40 @@ this, keep the shape identical across the three and vary only the colour.**
 Completed activities show no priority at all — it is about what to do next,
 and a finished thing has no next.
 
-**In the activity sheet the chooser shows all three colours, not just the
-one selected** (`.seg-pri`, `setPriorityChoice()`). It was a native
-`<select>`, which can only show the level already picked and cannot show
-its colour at all — the one thing you read the priority by everywhere
-else. Each option now carries its swatch, and the swatches stay at full
-strength whether or not that option is selected; dimming the unselected
-ones would hide the two colours the control exists to show. The value
-lives in a hidden `#aPri` input so `saveActivity()` still just reads
-`$('aPri').value`, which means **anything setting priority must go
-through `setPriorityChoice()`** or the buttons and the value drift
-apart.
+**Both sheets pick it from the same action sheet**, whose items carry a
+`tone` so all three hues are drawn while you choose:
+`openPriorityMenu()` on the detail sheet (which writes) and
+`openNewPriorityMenu()` on the new-activity sheet (which stages). The
+swatched `.seg-pri` segmented control that used to be on the create
+sheet is **gone**, and its CSS with it. Its argument was that a native
+`<select>` can show only the level already picked and cannot show its
+colour at all — which is true, and is answered better by the chip
+itself, since the chip *is* tinted by the value it holds.
+
+The staged value lives in a hidden `#aPri` input so `saveActivity()`
+still just reads `$('aPri').value`, which means **anything setting
+priority must go through `setPriorityChoice()`** — it repaints the chip
+— or the control and the value drift apart. `setDifficultyChoice()` is
+the same contract for `#aDiff`, and `maybeGuessLocation()` goes through
+it rather than writing the input.
+
+**⚠️ ON THE NEW-ACTIVITY SHEET IT IS REQUIRED AND NO LONGER DEFAULTED.**
+The sheet used to open on *Medium* — a value nobody chose, sitting in a
+control that looked answered — so every hurried capture claimed a
+priority it had never been given, and Up Next then ranked on it.
+`setPriorityChoice('')` is now what `openNewActivity()` calls, `''` is a
+real value that must not fall back to `'medium'`, and the chip draws
+`.ad-chip.c-none` — the same treatment an un-rated difficulty gets,
+because both say *nobody has answered this*. Two things to keep:
+
+- **`setPriorityChoice()` writes the hue with `classList`, not
+  `className`.** It used to rebuild the whole attribute, which now
+  silently drops `ad-req` — the class carrying the required rail. It
+  owns `c-high`/`c-medium`/`c-low`/`c-none` and must touch nothing else.
+- **The completion draft is unaffected.** `commitCompDraft()` still
+  writes `priority:'medium'` for something already done, and that is
+  right: a finished thing has no next, the sheet shows no priority
+  control, and nothing in the app draws one on it.
 
 **The rail is `.pri-high/.pri-medium/.pri-low::before`** in `components.css`,
 absolutely positioned so it is not a flex item on the rows and cards it lands
@@ -3063,6 +3699,14 @@ The covers pinned in `SMART_LISTS` are still used by the detail screen's
 banner, which is a real photo header. The `.coll-card-auto` badge that
 marked the old cards is gone from the Lists tab; the style remains in
 `collections.css`.
+
+**The empty prompt differs between the two callers**, which is why
+`renderActListValue()` takes it as an argument. The new-activity sheet's
+eyebrow has no label beside it — it *is* the value — so on its own
+"Choose" names nothing and reads as a stray verb above the title; it says
+**Choose List**. The completion sheet's row has a "List" label to its
+left, where that would say list twice, so it keeps "Choose". Two words
+for one state is the thing to avoid, not two words in one sentence.
 
 #### The list picker
 
@@ -3210,7 +3854,7 @@ since the target may have just changed, and when it cannot offer them
 the sheet says why rather than leaving them mysteriously absent.
 
 **Location is a top-level field**, in both the activity sheet (under
-Priority) and the edit sheet (under the date). It decides whether an activity
+Priority). It decides whether an activity
 ever appears on the map, so hiding it behind "More options" meant most
 activities silently never did — and that argument eventually took the whole
 disclosure with it. The activity sheet has none: see **The activity sheet's
@@ -3369,13 +4013,13 @@ Loaded in this order; **order matters**.
 | --- | --- |
 | `base.css` | The design system: `color-scheme`, the three type tokens (`--serif`/`--sans`/`--mono`), the warm palette with a full `prefers-color-scheme: dark` variant, the `--shadow-*` depth scale, the priority scale (`--tint`/`--violet`/`--slate` and their `-soft` fills), layout metrics (`--gutter`, `--nav-h`, `--tab-h`), the iOS safe-area tokens (`--safe-*`, plus the `--gx-l`/`--gx-r` gutter+inset shorthands every screen uses for horizontal padding), the type scale (`.t-*`, including `.t-eyebrow` for the mono small-caps label), the reset, and the shared keyframes. Everything depends on it. |
 | `layout.css` | The app shell: the translucent `.navbar` and its `.condensed` state, `.large-title`, the `.tabbar`, and the `.page` show/hide system with its push/fade animations. |
-| `components.css` | The reusable iOS primitives every screen builds from: `.group`/`.row` inset grouped lists, `.seg` segmented controls, `.btn` styles, `.searchfield`, `.badge`/`.tag`, **`.list-chip`** (a collection's name on any row that could have come from any list — Home's Up Next, the Up Next screen, search results, the duplicate sheet; sized to match `.tag` so the capsules on one row line up), the `.pri-*` priority marks, `.seg-pri`/`.pri-swatch` (the priority chooser), `.media-tile`/`.media-play` (one tile for a photo or a video, used by three screens), `.empty`, `.progress`, `.spinner`. Look here before inventing a new component. |
+| `components.css` | The reusable iOS primitives every screen builds from: `.group`/`.row` inset grouped lists, `.seg` segmented controls, `.btn` styles, `.searchfield`, `.badge`/`.tag`, **`.list-chip`** (a collection's name on any row that could have come from any list — Home's Up Next, the Up Next screen, search results, the duplicate sheet; sized to match `.tag` so the capsules on one row line up), the `.pri-*` priority marks, `.media-tile`/`.media-play` (one tile for a photo or a video, used by three screens), `.empty`, `.progress`, `.spinner`. Look here before inventing a new component. |
 | `auth.css` | The signed-out screen — no nav bar, no tab bar, its own centring. Plus `.auth-invite`, the tinted note shown when an invite link was opened while signed out; `.auth-notice`, the same shape for a confirmation link that could not be honoured, but carrying its own way out (a resend button) because "that link expired" with no way to get another is the same dead end the link was; `.auth-check`, the quieter waiting-for-confirmation panel — nothing has gone wrong there, and the title above is already carrying the message — and `.auth-forgot`, quieter still than the `.auth-toggle` beneath it (creating an account is one of the two things this screen is for; recovering one is what you reach for when neither worked) while keeping the same 44px target, since it is pressed by somebody already having a bad time. |
 | `home.css` | The dashboard: the greeting, the SVG progress ring, the context-free quick-add composer (`.home-composer-wrap` owns the gutters so `.home-suggest`, its results dropdown, can position against the field), the Up Next list, and the two `.shelf` grids (recently accomplished, your lists). |
 | `collections.css` | The Lists tab: `.smart-row`/`.smart-btn` — the three derived difficulty lists as a button strip above everything else (see **Three lists nobody edits**) — `.coll-card` photo cards, the "New List" tile, and the now-unused `.coll-card-auto`. |
-| `detail.css` | A collection's screen: `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. |
+| `detail.css` | A collection's screen (**and both activity sheets** — the `.ad-*` blocks are shared, see the note on `#actSheet` in `index.html`): `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. **The `.ad-*` blocks are shared with the NEW-ACTIVITY sheet** — the plate, the chips and the Where card are one set of rules drawn on both, which is why the four Orchard hues are declared on `#actDetailBody, #actSheetBody` together; the handful of differences an empty sheet has live in a block of their own at the end of the file. **`.ad-dock`/`.ad-dock-view`/`.ad-dock-disc` and `.ad-navbar`/`.ad-back`/`.ad-navtitle` are now used by THREE sheets** — the activity sheet, the new-activity sheet and the COMPLETION sheet, none of which has a `.sheet-bar` any more. They are generic sheet furniture despite the `ad-` prefix; change one and check all three. |
 | `me.css` | The Me tab: the stats card, the progress card, the identity row. |
-| `modals.css` | The three presentation styles — `.modal`/`.sheet-*` bottom sheets, `.action-sheet`, `.lightbox` — plus the form controls that live inside a sheet: `.fg` and its `.fg-hero` (the field a sheet is *about* — only the activity name) and `.fg-pair` (two short choices on one line), `.picker-btn` (a value that opens a picker, sized to match a `<select>` beside it), `.chip-field`, `.photo-*`, the completion sheet's own `.comp-*` (`.comp-card`/`.comp-row` — inset grouped rows whose overflow must stay visible for the location dropdown — `.comp-sec`, `.comp-note`), the list picker's `.lp-*`, and `.toast`. There are no disclosure styles here any more — `.more-toggle`/`.more-fields` went with the completion sheet's last collapsed section. |
+| `modals.css` | The three presentation styles — `.modal`/`.sheet-*` bottom sheets, `.action-sheet`, `.lightbox` — plus the form controls that live inside a sheet: `.fg` and its `.fg-hero` (the field a sheet is *about* — now only the completion sheet's name, since the new-activity sheet's is the detail sheet's own `.ad-title-edit`) and `.fg-pair` (two short choices on one line), `.picker-btn` (a value that opens a picker, sized to match a `<select>` beside it), `.chip-field`, `.photo-*`, the completion sheet's own `.comp-*` (`.comp-card`/`.comp-row` — inset grouped rows whose overflow must stay visible for the location dropdown — `.comp-sec`, `.comp-note`), the list picker's `.lp-*`, and `.toast`. There are no disclosure styles here any more — `.more-toggle`/`.more-fields` went with the completion sheet's last collapsed section. |
 | `map.css` | Map containers (the full-bleed `.page-map` and the inset detail map), the CSS sky gradient behind the globe, the floating `.map-filter`/`.map-count`/`.map-fab` chrome, `.map-pin`/`.map-cluster` markers, MapLibre's own controls restyled, the `.loc-*` autocomplete dropdown, `.loc-suggest-*` — the "from your photo" chip, deliberately a tinted *offer* rather than a filled control, since it must not read as though the field is already answered — `.loc-guess-*`, which is the opposite case and therefore shaped differently: a quiet caption marking a field the app has already filled in from the activity's name, with an ✕ that takes it back out — and `.pl-*`, the place sheet (everything at one point on the map), whose rows are `.act-row` from `detail.css` unchanged so only its container and header are new. |
 | `dupes.css` | `.dupe-*` — the "you may already have this" sheet. Deliberately quiet: no red, no alert iconography, an ordinary tinted confirm. It interrupts the fastest path in the app, so it has to read as a question. |
 | `sharing.css` | `.shr-people-*`/`.shr-avatar`/`.shr-role` and `.join-*` — the invite sheet's roster and the accept-an-invite card — plus `.shr-code-head`/`.shr-code` (the invite as something that can be read off one screen and typed into another) and `.join-code-input`. It also **defines** `.shr-lead`/`.shr-url`/`.shr-note`, which used to live in the deleted `import.css` and which the invite and accept-an-invite cards are now the only users of. |
@@ -3383,6 +4027,7 @@ Loaded in this order; **order matters**.
 | `notes.css` | `.note-*` — the append-only log on an activity, its composer, and `.fg-note`, the field on the new/edit activity sheet that writes the log's first entry. The meta line is mono and the body is sans, deliberately **not** the serif `.ad-note.prose` uses: "How it went" is a story you read back, this is working state you scan. |
 | `moderation.css` | `.report-*` (the report sheet — a radio group built out of buttons, for the same reason the priority chooser is), `.blocked-row`, `.auth-agree` (the terms line under the sign-up button) and the `.li-slate` glyph tile the Safety row uses. Deliberately quiet: it is opened by somebody already upset, and red panels make the app look like it has taken a side before it knows anything. |
 | `pwa.css` | The offline banner, install bar, iOS Add-to-Home-Screen sheet. |
+| `theme.css` | **The palette as tuned in `theme-lab.html`** — generated, never hand-written. Two halves: the light values at the top level and the dark ones inside `@media (prefers-color-scheme: dark)`. ⚠️ **It overrides `base.css`, which is therefore no longer the single source of truth for colour** despite its own header still saying so — read this file first when a colour is not what base.css claims. It loads second-to-last because the export's rule overrides (`.ad-chip.c-d-hard { background: … }`) have the same specificity as the rules they replace and win on source order alone, so it must come after base, components, collections, detail, me and modals; `responsive.css` still goes after it and there is no conflict, since responsive.css sets exactly one colour in the whole file (`.loc-item:hover`) and the export does not touch it. **Bump `CACHE_VERSION` in `sw.js` after every paste.** |
 | `responsive.css` | Only the two directions away from phone-first: <375px, and ≥700px where the app centres in a column instead of stretching. **Must load last.** |
 
 
@@ -3393,13 +4038,14 @@ Loaded in this order; **order matters**.
 | File | Domain |
 | --- | --- |
 | `config.js` | `SUPABASE_URL`/`SUPABASE_KEY`, **`MEDIA_WORKER_URL`/`MEDIA_PUBLIC_BASE`** (the Cloudflare Worker that authorizes uploads, and the R2 bucket reads come from — empty falls back to Supabase Storage; see **Media**), **`HERE_API_KEY`** (place search; public by design, restrict it by origin in the HERE portal — empty falls back to Nominatim), the `sb` client (auth options spelled out rather than defaulted — note `detectSessionInUrl:false`, the one that is *not* a default: `auth.js` handles the email-confirmation landing itself), the `COVERS` array of default Unsplash covers, and `randCover(existingCovers)` (picks a cover the user isn't already using). |
-| `state.js` | Every shared mutable global: `currentUser`, the navigation triple (`curTab`, `curPage`, `backTab`), `curListId`, **`curConvId`** (which conversation the conversation screen is showing — it *is* a collection id), `editingListId`, `editingActId`, `completingId`, `curFilter`, **`curSort`** (see **Sorting a collection**), `curView`, `upMedia`, `coverPhoto`, `userProfile`, and the map handles. Other files declare their own feature-local globals next to their code (`aLinks`, `bulkEntries`, `actMap`, `lbPhotos`, `locTimer`). |
-| `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl`, `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`normSortKey`/`sortActivities`** (see **Sorting a collection**), **`haversineMiles`/`distanceFromHome`/`fmtDistance`/`distanceReady`/`EARTH_MILES`** (how far an activity is from Home — see **How far away it is**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
+| `state.js` | Every shared mutable global: `currentUser`, the navigation triple (`curTab`, `curPage`, `backTab`), `curListId`, **`curConvId`** (which conversation the conversation screen is showing — it *is* a collection id), `editingListId`, `completingId`, `curFilter`, **`curSort`** (see **Sorting a collection**), `curView`, `upMedia`, `coverPhoto`, `userProfile`, and the map handles. Other files declare their own feature-local globals next to their code (`aLinks`, `bulkEntries`, `actMap`, `lbPhotos`, `locTimer`). |
+| `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl` and **`nudgeEl`** (a refusal and a pointer — see **Saying what is still required**; they are ±6px and ±2px and must not be swapped), `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`normSortKey`/`sortActivities`** (see **Sorting a collection**), **`haversineMiles`/`distanceFromHome`/`fmtDistance`/`distanceReady`/`EARTH_MILES`** (how far an activity is from Home — see **How far away it is**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
 | `exif.js` | `exifReadLocation(file)` — the GPS fix out of a photo's EXIF, or null. Handles **JPEG and HEIC/HEIF/AVIF**, dispatching on magic bytes rather than `file.type`. Underneath: the JPEG walk (`exifFindTiff`), the HEIC box walk (`isoBoxes`, `isoType`, `heicReadLocation`, `heicExifExtent`, `heicExifItemId`, `heicItemExtent`, `heicTiffStart`, `isTiffAt`), and the shared TIFF reader both land on (`exifGpsFrom`, `exifTagValue`, `exifDMS`). Pure, no dependencies, every failure path returns null rather than throwing. **Must be called against the original `File`**: a canvas re-encode strips every tag. See **Where the photo was taken**. |
+| `haptics.js` | The Taptic Engine, in the native shell only. `hapticsPlugin`, `hapticRun`, `hapticSuccess` (a completion saved), `hapticTap` (the check pressed). Reached through `Capacitor.Plugins.Haptics` with no import, exactly as `nav.js` reaches Keyboard, so it is silent no-ops in a browser. **Two call sites in the whole app, deliberately** — see **Haptics**. Both honour `prefers-reduced-motion` and swallow their own failures. |
 | `fuzzy.js` | Approximate string matching, shared by duplicate detection and search. `similarity(a,b)` (symmetric — are these the same thing?) and `matchScore(q,text)` (asymmetric — does this row answer what is being typed?), plus `scoreFields()` and the primitives underneath: `fuzzyNorm`, `fuzzyTokens`, `fuzzyStem`, `fuzzyTokenSim`, `fuzzySoftDice`, `fuzzyTrigrams`, `fuzzyDice`, `fuzzyEditRatio`. Pure and synchronous. **See How the fuzzy matching works** — the constants are tuned, not derived. |
 | `icons.js` | `ICON_PATHS`, the app's own inline-SVG glyph set (`sort` is the newest), plus `ICON_FILLED` (glyphs already solid, which must not be stroked) and `icon(name, cls)`. Icons inherit `currentColor`. **Add new glyphs here**, not inline in a template string. |
 | `offline.js` | **Reading from disk, queueing writes, syncing on reconnect.** The IndexedDB wrapper (`idbOpen`/`idbGet`/`idbAll`/`idbPut`/`idbDelete`/`idbClear`), the row snapshot (`snapshotSave`/`snapshotLoad`/`snapshotAge`/`snapshotClear`), the write queue (`queueWrite`/`queueLoadCount`/`pendingWrites`/`flushQueue`), **`dbInsert`/`dbUpdate`/`dbDelete` — which every mutation site calls instead of `sb.from(...)`** — the per-user `uid` stamp on every queued op — plus `applyOp`, `stampRow`, `isNetworkError`, `updateSyncUI` (the offline banner's text), `offlineSignOut` and `offlineInit`. Loads before `api.js`. See **Working offline**. |
-| `api.js` | **Every Supabase read, and the cache in front of them.** `mapCollection`/`mapActivity` translate snake_case columns into the camelCase shapes the UI uses; `normMedia`/`denormMedia` do the same for the two shapes the `photos` column holds; **`listFieldsFor`/`rowInAnyList`** are the write and read sides of `collection_id`, the one column that says which list an activity is in (see **One activity, one list**); **`probeHomeFlag`/`homeFlagReady`** do the same for `location_is_home` (see **Moving house**), and **`probeDifficulty`/`difficultyReady`** for `difficulty` (see **Guessing how hard it is**). Then `readRows` (network or disk — the one place that chooses), `fetchCollections`, `fetchActivitiesFor`, `fetchAllActivities`, `fetchActivity`, `fetchCollection`, and the cache: **`cacheOwnerCheck`** (the cache refuses to answer a user it was not filled for — see **One account at a time**), `invalidateCollections`/`invalidateActivities`/`invalidateAll`, **`primeActivities`/`primeCollections`** (patch it from a computed row set instead of dropping it — called by `applyOp`), **`primeFromSnapshot`** (paint before the network; called once, by `showApp`), `collectionsScope`, `cacheWarm`, `cachedActivities`/`cachedCollections` (synchronous reads, for the duplicate check), `revalidate`. Plus `updateCollectionStats`/`recountCollection`/`cancelPendingStats` — deliberately **off** the critical path, see the cache section. New queries belong here, not inline in a screen file. **Writes go through `offline.js`.** |
+| `api.js` | **Every Supabase read, and the cache in front of them.** `mapCollection`/`mapActivity` translate snake_case columns into the camelCase shapes the UI uses; `normMedia`/`denormMedia` do the same for the two shapes the `photos` column holds; **`listFieldsFor`/`rowInAnyList`** are the write and read sides of `collection_id`, the one column that says which list an activity is in (see **One activity, one list**); **`probeHomeFlag`/`homeFlagReady`** do the same for `location_is_home` (see **Moving house**), and **`probeDifficulty`/`difficultyReady`** for `difficulty` (see **Guessing how hard it is**), and **`probeDifficultyManual`/`difficultyManualReady`** for `difficulty_manual` (see **Correcting a rating**). Then `readRows` (network or disk — the one place that chooses), `fetchCollections`, `fetchActivitiesFor`, `fetchAllActivities`, `fetchActivity`, `fetchCollection`, and the cache: **`cacheOwnerCheck`** (the cache refuses to answer a user it was not filled for — see **One account at a time**), `invalidateCollections`/`invalidateActivities`/`invalidateAll`, **`primeActivities`/`primeCollections`** (patch it from a computed row set instead of dropping it — called by `applyOp`), **`primeFromSnapshot`** (paint before the network; called once, by `showApp`), `collectionsScope`, `cacheWarm`, `cachedActivities`/`cachedCollections` (synchronous reads, for the duplicate check), `revalidate`. Plus `updateCollectionStats`/`recountCollection`/`cancelPendingStats` — deliberately **off** the critical path, see the cache section. New queries belong here, not inline in a screen file. **Writes go through `offline.js`.** |
 
 **Shell and shared UI**
 
@@ -3407,16 +4053,17 @@ Loaded in this order; **order matters**.
 | --- | --- |
 | `auth.js` | **`resetAccountState()`** — everything belonging to one account, cleared on every auth transition (see **One account at a time**) — **`ensureSessionLive`/`verifyLiveUser`/`authAnswerIsDefinitive`/`signOutStaleSession`/`resetSessionLiveCheck`/`recheckSessionSoon`/`startSessionWatch`/`stopSessionWatch`**, which is how a session belonging to a deleted account stops being trusted, on every device (see **Being signed into an account that no longer exists**) — **`inviteSweepDue()`/`authJustAuthenticated`**, which decide when to ask the server whether an invite is waiting for this address (see **An invite that survives creating an account**) — plus `showAuth`/`showApp` (swap `#authPage` against `#appWrap`; `showApp` boots into Home, loads the profile, triggers the iOS install hint, and starts the token auto-refresh). Also the `visibilitychange` handler that stops/starts auto-refresh — browsers suspend timers in a backgrounded PWA, and without restarting on resume the access token goes stale and the next request 401s, which reads to the user as being logged out — and the `onAuthStateChange` listener that keeps `currentUser` in step and only shows the login screen on a real `SIGNED_OUT`, `toggleAuthMode`/`applyAuthMode` (tracked by the `authIsSignUp` flag, not by reading the heading text), `setAuthError`, `handleAuth`, `handleSignOut`. Sign-up also inserts the `Users` profile row. Plus **the confirmation-email landing** — `readEmailConfirmation` (boot; reads `token_hash`/`code`/implicit tokens/`error`, and strips only its own keys), `consumeEmailConfirmation`, `confirmFailureHTML`, `confirmRedirectUrl`, `setAuthNotice`, `setAuthView` (three states now: form / check / reset), `showCheckEmail`/`authBackToForm`, and the resend pair `sendConfirmationEmail`/`resendConfirmation`/`resendFromNotice`. See **Coming back through the confirmation email**. Plus **the password reset** — `requestPasswordReset`/`sendRecoveryEmail`/`showPasswordReset`/`savePasswordReset`/`PASSWORD_MIN` and the `recoveryLanding` flag `main.js` branches on. See **Resetting a password**. |
 | `router.js` | **A URL for every screen.** `ROUTE_PAGE`/`ROUTE_ID`/`PAGE_ROUTE` (the route-key ↔ page-id table), `routeHash`/`parseRoute`, `routeSync` (called by `nav()`), `routeEntry` (called once by `showApp()`), `routeClear` (called by `handleSignOut()`) and `onRouteChange`, behind `popstate` and `hashchange`. Plus **`ROUTE_SHEET`/`routeSheetSync`/`routeSheetClear`/`routeOpenActivity`** — the one route that names an overlay rather than a screen, so a link can point at a single activity; see **A URL for one activity**. Hash-based deliberately — see **A URL for every screen**. Loads after `nav.js`, before `main.js`. |
+| `deeplink.js` | **Universal Links.** `deepLinkPlugin`, `initDeepLinks` (the `appUrlOpen` listener *and* `getLaunchUrl()`, because on a cold start the event can beat the listener) and `handleDeepLink(url)`, which applies an incoming link to the running app — an invite onto the same shelf `readPendingJoin()` writes, a `?conv=`/`?act=` landing onto the same two globals `messages.js` reads, a `#route` handed to `router.js`. It deliberately never navigates the web view to the URL: that would replace the bundled app with the website. Loads after `router.js`, before `main.js`. See **Universal Links**. |
 | `nav.js` | `nav(page, listId)` — the single entry point for changing screens (see **Screens and navigation**), and where the screen's URL is written via `routeSync()`. Plus `PAGE_TAB`, `TAB_ROOT`, `TAB_ORDER` and **`visibleTabs()`** (the tabs a swipe can actually reach — the Messages tab is hidden until its migration is run), `selectTab`, `goBack`, `dismissOverlays`, **`refreshAfterChange(src)`** (the single answer to "something was written, what redraws?" — see **Refreshing after a change**), `updateNavbar` (**where each screen's bar buttons are defined**, and where the collection FAB is bound to `startNewActivity`; there is no search bar button — see **Finding things again**), `applyNavCondense`, a debounced `resize` handler, **`setBodyScrollLock(lock)`** — the single place that touches body overflow — `RENDERERS`/`scrollKey`/`_scrollMem` (each screen's renderer in one table, and the offset it was left at — see **Rendering without reloading**), `queueNavCondense` — and **`syncTabbarToKeyboard()`**, which keeps the tab bar behind the software keyboard instead of riding up on top of it (see **Mobile layout rules**). |
 | `gestures.js` | The two touch gestures, both delegated from `document`: **swipe a sheet down to dismiss it** (`.modal` and the action sheet) and **swipe sideways to change screen**. `overlayOpen`, `ownsHorizontal`/`ownsVertical` (surfaces with their own gesture), `SHEET_DISMISS_PX`/`SHEET_FLICK_PX`, `SWIPE_MIN`/`SWIPE_EDGE`, `TAB_ORDER` (in `nav.js`). See **Gestures** below. |
-| `modals.js` | `openModal` (**resets `.sheet-body` scrollTop** — see the note under *Sheets* below) / `closeModal` (they call `setBodyScrollLock`, so use them rather than toggling `.open` yourself), the scrim-click and Escape handlers, **`showActionSheet(opts)`** and `showConfirm` (iOS confirms destructive actions with an action sheet, not a dialog — `confirmDeleteCollection`/`confirmDeleteActivity` wrap it), the photo lightbox (swipe sideways to page, down to close), the list picker (`openListPicker`/`renderListPickerRows`/`listPickerPick` — single-select, see **The list picker**), `ensurePickerRoom`/`releasePickerRoom` (see **Gestures**), and `showToast`. |
+| `modals.js` | **`showActionSheet` items take an optional `tone`** — `high`/`medium`/`low`/`easy`/`hard` — which colours the label with the scale the rest of the app already draws (priority's rails, capsules and pins; the three difficulty buttons on the Lists tab). The menu used to be the one place those scales went missing. `openModal` (**resets `.sheet-body` scrollTop** — see the note under *Sheets* below) / `closeModal` (they call `setBodyScrollLock`, so use them rather than toggling `.open` yourself), the scrim-click and Escape handlers, **`showActionSheet(opts)`** and `showConfirm` (iOS confirms destructive actions with an action sheet, not a dialog — `confirmDeleteCollection`/`confirmDeleteActivity` wrap it), the photo lightbox (swipe sideways to page, down to close), the list picker (`openListPicker`/`renderListPickerRows`/`listPickerPick` — single-select, see **The list picker**), `ensurePickerRoom`/`releasePickerRoom` (see **Gestures**), and `showToast`. |
 
 **Reusable form widgets**
 
 | File | Domain |
 | --- | --- |
 | `links.js` | The URL chip input: `aLinks`, `handleTagKey`, `removeTag`, `renderTagChips`. ⚠️ `getChipArr(which)` ignores its argument and always returns `aLinks` — vestigial from when there were two chip fields. Adding a second means fixing this first. |
-| `location.js` | Everything that resolves a place. **`placeSearch(q, limit)`** — the one search entry point, HERE Autosuggest or Nominatim depending on `HERE_API_KEY` (`hereReady`, `hereSearch`, `nominatimSearch`, `hereName`, `hereSub`) — and `locSearch(input, resultsId)`, the debounced dropdown around it (`locItemHTML`, `locShortcutsHTML`, `locOpen`/`locClose`, `locPickIdx`, `locApply`, `locUseHome`, `locUseCurrent`, and the `_locSeq` race guard). Then the bias point (`biasPoint`, `requestBiasPoint`, `primeBias`) and **the text/coordinate contract** — `locGeoMark`, `locFieldsFor`, `locInvalidateIfChanged`, `resolveLocationField`, `requireLocation`, and the Home-intent pair `locIsHome`/`locSetHome`. See **Searching for a place**, **The text and the coordinates must agree** and **A location is required**. Plus `geocodeOnce(q)` (one-shot, no debounce, no DOM: resolves a place name we already have — an imported link's location — to `{display, lat, lng}` or null), `reverseGeocode(lat, lng)` (the other direction, for a photo's EXIF fix — `zoom=14`, so a place rather than a postal address), `positionLocBox` (the bulk sheet's dropdown is `position:fixed` so it can escape the sheet's scroll container, and therefore has to be placed by hand) and `locPick`. Plus the **guess from the activity's name** — which also carries the difficulty rating, see **Guessing how hard it is**: `maybeGuessLocation`, **`queueLocationGuess`** (the debounced `input` trigger) and the session-lived `_guessCache` — the two things that make the guess arrive while the sheet is still being filled — plus **`difficultyExamples`/`DIFF_EX_PER_TIER`/`resetGuessCache`** (the tier-balanced sample of the user's own ratings sent with every guess — see **Rating for one person, not an average one**), `guessMatchesName`, `resetLocationGuess`, `onActLocInput`, `undoLocationGuess`, `clearLocationGuessMark`. See **Guessing the location from the name**. |
+| `location.js` | Everything that resolves a place. (Note `maybeGuessLocation()` applies the difficulty half through **`setDifficultyChoice()`**, never straight into `#aDiff` — the chip on the new-activity sheet is painted by that function.) Plus **`warmGuess()`** — `warmGeo()`'s counterpart for `unfurl`, and the biggest single win on capture latency, since that function imports the Anthropic SDK and is the one thing here with a real cold start — and **`guessPending()`**, which marks the difficulty chip and the empty Where row while an answer is in flight. **`placeSearch(q, limit)`** — the one search entry point, HERE Autosuggest or Nominatim depending on `HERE_API_KEY` (`hereReady`, `hereSearch`, `nominatimSearch`, `hereName`, `hereSub`) — and `locSearch(input, resultsId)`, the debounced dropdown around it (`locItemHTML`, `locShortcutsHTML`, `locOpen`/`locClose`, `locPickIdx`, `locApply`, `locUseHome`, `locUseCurrent`, and the `_locSeq` race guard). Then the bias point (`biasPoint`, `requestBiasPoint`, `primeBias`) and **the text/coordinate contract** — `locGeoMark`, `locFieldsFor`, `locInvalidateIfChanged`, `resolveLocationField`, `requireLocation`, and the Home-intent pair `locIsHome`/`locSetHome`. See **Searching for a place**, **The text and the coordinates must agree** and **A location is required**. Plus `geocodeOnce(q)` (one-shot, no debounce, no DOM: resolves a place name we already have — an imported link's location — to `{display, lat, lng}` or null), `reverseGeocode(lat, lng)` (the other direction, for a photo's EXIF fix — `zoom=14`, so a place rather than a postal address), `positionLocBox` (the bulk sheet's dropdown is `position:fixed` so it can escape the sheet's scroll container, and therefore has to be placed by hand) and `locPick`. Plus the **guess from the activity's name** — which also carries the difficulty rating, see **Guessing how hard it is**: `maybeGuessLocation`, **`queueLocationGuess`** (the debounced `input` trigger) and the session-lived `_guessCache` — the two things that make the guess arrive while the sheet is still being filled — plus **`difficultyExamples`/`DIFF_EX_PER_TIER`/`resetGuessCache`** (the tier-balanced sample of the user's own ratings sent with every guess — see **Rating for one person, not an average one**), `guessMatchesName`, `resetLocationGuess`, `onActLocInput`, `undoLocationGuess`, `clearLocationGuessMark`. See **Guessing the location from the name**. |
 | `media.js` | Photos **and video**. `probeStorage()`/`storageReady()`, **`r2Ready`/`uploadToR2`/`uploadToSupabase`/`mediaDownloadUrl`** (uploads go to Cloudflare R2 through the Worker, with Supabase Storage as the fallback — see **Media**), `uploadPhoto`/`uploadVideo`, `videoPoster` (grabs a still so thumbnails and map pins have an image), `handleMedia`, `rmMedia`, `mediaTileHTML`, `renderThumbs` (which ends in `updateMediaRequirement()` — the completion sheet's media rule, owned by `activities.js`), and the ordering set — `coverIndex`, `moveMedia`, `makeCover`, `openMediaMenu`. Also the photo→location offer: `needsLocationSuggestion`, `suggestLocationFromPhoto`, `acceptPhotoLocation`, `dismissPhotoLocation`, `resetLocationSuggestion` (see **Where the photo was taken**). Working list is the `upMedia` global. Replaced `photos.js`; see **Media** below. |
 
 **Screens and features**
@@ -3432,8 +4079,9 @@ Loaded in this order; **order matters**.
 | `smartlists.js` | **The three derived lists — Easy, Medium, Hard.** `SMART_PREFIX`/`SMART_LISTS`, `isSmartList`/`smartTier`, `smartCollection`/`smartCollections` (the synthetic collection `fetchCollection()` hands back for a sentinel id), `smartActivitiesFor` (the query that *is* the list), `smartRowHTML` (the three buttons at the top of the Lists tab) and `openSmartListMenu`. Loads before `collections.js` and `detail.js`, which both draw them. **They are deliberately absent from `fetchCollections()`** — that is what makes them impossible to add to. See **Three lists nobody edits**. |
 | `collections.js` | `renderCollections()` (the Lists tab) plus the collection CRUD: `openNewList`, `openEditList`, `renderCoverPreview`, `clearCover`, `handleCoverUpload`, `saveList`, `delList`. `delList` deletes the collection's activities first — there is no DB cascade — in one statement, since an activity belongs to exactly one list. |
 | `detail.js` | One collection. Rendering is **deliberately split in two**: `renderDetail()` builds the banner and the controls, `renderActivitiesList()` rebuilds only the list. Search and filter call the second, so the search field never loses focus mid-typing. Also `activityRowHTML`/`activityCardHTML`, `sortButtonHTML()` (the sort control beside the filter), and the quick-add composer helpers (`composerHTML`, `onComposerKey`, `focusComposer`). |
-| `activities.js` | The whole activity flow. **Creating always goes through a sheet** — `quickAddActivity()` only takes the composer's text and hands it to **`startNewActivity()`**, the plan-or-record chooser, which opens either `openNewActivity(name)` or **`openCompDraft(name)`** (see **Adding something you already did**, plus `setCompNameShape`/`renderCompListRow`/`commitCompDraft`). Nothing here inserts an activity directly except `commitSaveActivity()` and `commitCompDraft()`, which are those two sheets' own Saves. `toggleComplete(id, isDone)` is the one-tap completion (see the note below). Then `openNewActivity`, `openEditAct`, `saveActivity`, `delActivity`, plus `renderActListPicker()`/`renderActListValue()`/`setTargetLists()` and the `targetListIds` global (an array capped at one id, with `targetListId` as its alias) — the List row that lets an activity be filed from outside any collection, and which is hidden when there is no choice to make. Also **`revealNewActivity()`** — where an add lands: the list it was filed in, with the activity's own sheet open on top (see **The two-speed activity flow**). Also `setPriorityChoice` (**the only way to set priority** — it keeps the swatched buttons and the hidden `#aPri` value in step), `openComp`/`openCompletedDate`/`confirmComplete` — the one completion sheet, every field on it — and `updateMediaRequirement()`, which is why that sheet will not save a *new* completion with no photo or video (see **The two-speed activity flow**) — and `openActDetail`/`setActDetailTab` which build the activity sheet and swap its Details/Notes tabs. Plus `openCollectionMenu` (the ⋯ action sheet, which holds the view switcher and everything the old five-button hero row spelled out; a derived difficulty list gets `openSmartListMenu()` in `smartlists.js` instead), `setFilter`, `setView`, and `openSortMenu`/`setSort`. |
+| `activities.js` | The whole activity flow. **Creating always goes through a sheet** — `quickAddActivity()` only takes the composer's text and hands it to **`startNewActivity()`**, the plan-or-record chooser, which opens either `openNewActivity(name)` or **`openCompDraft(name)`** (see **Adding something you already did**, plus `setCompNameShape`/`renderCompListRow`/`commitCompDraft`). Nothing here inserts an activity directly except `commitSaveActivity()` and `commitCompDraft()`, which are those two sheets' own Saves. `toggleComplete(id, isDone)` is the one-tap completion (see the note below). Then **the new-activity sheet, which only ever CREATES** — `openNewActivity`, `saveActivity`/`commitSaveActivity`, `delActivity`, the name field's `growNameField`/`onNameFieldKey`, and the staged editors that make it the detail sheet's twin: `setTargetChoice`/`openNewTargetMenu`/`readTargetDate`, `setPriorityChoice`/`openNewPriorityMenu`, `setDifficultyChoice`/`openNewDifficultyMenu`, `setRemindField`. Each is the only writer of its hidden input and repaints its own control. Plus **`NEW_REQUIRED`/`firstMissingRequired`/`updateNewSaveButton`/`nudgeMissingField`** — the four fields that block the save, the Add button that names the first one outstanding and the nudge that points at it (see **Saying what is still required**). Its three pages are `newSheetPane`/`NEW_PANES` (Cancel/Add ride the dock, the header is a title only, and a sub-page swaps it for its own `.ad-navbar`), the staged links page `openNewLinks`/`renderNewLinks`/`newLinkSummary`/`addNewLink`/`removeNewLink`/`onNewLinkKey` — editing `aLinks`, the array `saveActivity()` is about to send, so there is nothing to commit — and the first-note page `openNewNotes`/`renderNewNoteCard`, over the same `#aNotes` field `notes.js` already flushes. Plus `renderActListPicker()`/`renderActListValue()`/`setTargetLists()` and the `targetListIds` global (an array capped at one id, with `targetListId` as its alias) — the list eyebrow that lets an activity be filed from outside any collection, hidden when there is no choice to make. **`openEditAct`/`openEditActFrom` are GONE**, and with them `editingActId`, `addLegacyDateOption` and the `.seg-pri` chooser. Also **`revealNewActivity()`** — where an add lands: the list it was filed in, with the activity's own sheet open on top (see **The two-speed activity flow**). Also **`patchActivity`** and the in-place editors around it — the name (**`startTitleEdit`/`growTitleEdit`/`onTitleEditKey`/`cancelTitleEdit`/`commitTitleEdit`**), the location (**`startPlaceEdit`/`onPlaceEditKey`/`endPlaceEdit`/`cancelPlaceEdit`/`commitPlaceEdit`**), **`openActivityListPicker`**, **`openPriorityMenu`**, **`openDifficultyMenu`/`setActivityDifficulty`**, the target sheet (**`openTargetSheet`/`onTargetSheetChange`/`saveTargetSheet`/`clearTargetSheet`**) and **`onRowKey`** — every field on a pending activity's detail sheet is changed by tapping it there, and there is no longer an Edit form to open instead (see **Editing a pending activity in place** and **Correcting a rating**). Also `openComp`/`openCompletedDate`/`confirmComplete` — the one completion sheet, every field on it — and `updateMediaRequirement()`, which is why that sheet will not save a *new* completion with no photo or video (see **The two-speed activity flow**) — and `openActDetail`/`actDetailHeadHTML`/`repaintActDetailHead`/`adShowPane` which build the activity sheet and swap its details / notes / links pages. Plus `openCollectionMenu` (the ⋯ action sheet, which holds the view switcher and everything the old five-button hero row spelled out; a derived difficulty list gets `openSmartListMenu()` in `smartlists.js` instead), `setFilter`, `setView`, and `openSortMenu`/`setSort`. |
 | `me.js` | `renderMe()` (stats), `renderMeIdentity()`, **Home** — `homePlace`/`loadHomePlace`/`saveHomePlace`/`resetHomePlace`/`renderMeHome`/`openHomeSheet`/`saveHomeSheet`/`clearHomePlace` and the `bl_home:<uid>` localStorage mirror (see **Home**), plus **`updateHomeActivities`/`clearHomeActivityFlags`** — the cascade that moves everything set to Home when the home address changes (see **Moving house**) — **the difficulty profile** — `difficultyProfile`/`loadDifficultyProfile`/`resetDifficultyProfile`/`openDiffProfileSheet`/`saveDiffProfileSheet` (see **Rating for one person, not an average one**) — **the profile photo** — `avatarsReady`/`myAvatarUrl`/`openAvatarMenu`/`pickAvatar`/`handleAvatarFile`/`removeAvatar`/`saveAvatarUrl` (see **A face on the account**) — `openDeleteAccount`/`onDeleteAccountInput`/`deleteAccount` (see **Deleting an account**), `loadUserProfile()` (reads the `Users` row once per session into `userProfile` — **and creates it when missing**, via `createUserProfile`/`profileSeed`/`USERNAME_RE`; see **Signing up**), `confirmSignOut()`. The tab's one App row, Add to Home Screen, is wired to `pwaShowInstallHelp()` in `pwa.js`. *Share links into the app* and *Join a shared list* both used to sit beside it; the first went with the Shortcut tier (see **Sharing a link in**) and the second lives on the Lists tab, which is the screen the missing list was supposed to be on. |
+| `nativepush.js` | **APNs — push for the iOS shell.** `nativePush`/`nativePushAvailable`/`nativePushState`/`refreshNativePushState`, `saveNativeToken`, `initNativePush` (the registration, foreground and tap listeners), `requestNativePush` (the user pressing the row) / `registerNativePush` (the silent re-register at sign-in, which must never prompt) and `unregisterNativePush`. Exists because WKWebView gives the `capacitor://` scheme neither a service worker nor a Notification API, so every line of `reminders.js` that reaches for `PushManager` is dead in the shipping app. Loads before `reminders.js`, which branches to it. See **Push is APNs here, not Web Push**. |
 | `messages.js` | **A conversation per shared list, and the hub over them.** `probeMessages`/`messagesReady`/`resetMessagesProbe`/`applyMessagesAvailability` (the tab is hidden until the migration is run), the hub cache (`fetchConversations`/`refreshConversations`/`invalidateConversations`/`cachedConversations`/`unreadTotal`/`updateMessagesBadge`/**`setAppIconBadge`** (the same count on the home-screen app icon, via `navigator.setAppBadge`; the worker keeps its own copy in a `bucketlist-badge` cache entry and increments it on a push, the page overwrites it with the truth)) and its screen (`renderMessages`/`convRowHTML`), then one conversation — `openConversation`/`renderConversation`/`leaveConversation`, `loadMessages`/`loadOlderMessages`/`paintConversation`/`msgRowHTML`/`scrollConversationToEnd`, `sendMessage` (through `dbInsert`, so it queues offline), the `@` picker (`mentionQuery`/`updateMentionSuggest`/`pickMention`/`renderPendingMentions`/`removePendingMention`), `openMessageMenu`/`deleteMessage` (soft), the sender's photo (`loadConversationAvatars`/`avatarsFor`/`msgAvatarHTML`/`invalidateAvatars` — see **A face on the account**), read state (`markConversationRead`), realtime (`subscribeConversation`/`unsubscribeConversation`/`onRealtimeMessage`), `syncComposerToKeyboard`, the push pair `notifyMessageSent`/`loadConversationMute`/`toggleConversationMute`, the notification landing (`readPushLanding` at boot, `handlePushLanding` from `showApp`, and the `serviceWorker` message listener), and `resetMessagesState` — called by `resetAccountState()`. Plus the naming helpers `msgSenderLabel`/`msgSenderGone`/`msgIsMine` and the time ones `msgClock`/`msgWhenShort`/`msgDayLabel`, which `notes.js` also uses. See **Messages**. |
 | `notes.js` | **The append-only log on an activity.** `notesReady()` (= `messagesReady()`), `fetchNotes`, `renderActivityNotes`/`noteRowHTML`/`onNoteInput`/`onNoteKey`, `addNote`/`submitActivityNote`/`openNoteMenu`/`copyNote`/`deleteNote`, **`addMessageToNotes`** — promoting a message into the activity's log, which is the reason the feature exists — and the new/edit sheet's pair `resetActivityNoteField`/`flushActivityNoteField`. There is deliberately no update path. See **Notes on an activity**. |
 | `map.js` | All MapLibre GL. **`ensureMapLibre()`** — the library is loaded on demand here, not from `<head>`; at ~900KB it was the biggest single cost of a cold launch, blocking the parser on the way to a Home screen with no map on it. Both entry points await it and fall back to the "map unavailable" state if it cannot be fetched. Then `mapStyle()` (raster CARTO basemap + globe projection + sky), `webglOK()`, `actsToGeoJSON()`, and `attachActivityLayer()` — which adds the clustered GeoJSON source and the two symbol layers, and owns the click handlers. Then the marker icons (`ensureDotIcon`, `ensurePhotoIcon`, `ensureClusterIcon`, `stampPointIcons`). Then **one point, several activities**: `SAME_PLACE_DEG`/`CLUSTER_STACKED`/`samePlaceCluster` (is this bubble one place or a neighbourhood?), `indexActs`/`placeActs` (the id → activity index kept beside the layer data), `openClusterPlace`, `openPlaceSheet`/`placeTitle`/`sortPlaceActs`/`placeRowHTML`, and the two row actions `placeOpenActivity`/`placeToggleActivity` — see **Several activities at one point**. Then the two instances: the Map tab (`renderGlobalMap`, `fitGlobal`, `zoomGlobe`, `globeFillZoom`, `setGlobalMapFilter`) and the per-collection map (`renderMap`, `updateMapMarkers`). Plus `mapLoaded(map)` and `hasGeo`. Teardown is explicit — `destroyGlobalMap()`/`destroyDetailMap()` — because each map holds a WebGL context, but **only the detail map is torn down on navigation**. See **The immersive map** above for the traps. |
@@ -3485,9 +4133,10 @@ functions look redundant:
   on Home, which does not show the row you just wrote: the one thing you wanted
   to look at was the one thing you had to go and find. Three things about it:
 
-  - **Only an insert.** An edit stays where it was, because the user is already
-    looking at the row they changed — `commitSaveActivity()` gates on
-    `editingActId`.
+  - **Only an insert, and now that is all there is.**
+    `commitSaveActivity()` used to gate on `editingActId` so an edit
+    stayed where it was; the sheet cannot edit any more, so the gate is
+    gone with it.
   - **It replaces the `refreshAfterChange()` on that path**, rather than
     running after it. `nav()` renders the screen it lands on, so redrawing the
     one being left is wasted work.
@@ -3496,35 +4145,120 @@ functions look redundant:
     redraw. The delay before `openActDetail()` is the sheet's dismissal
     animation, the same 240ms `dupeOpenExisting()` waits.
 
-  **The activity sheet's shape.** Everything is on one screen: name, then
-  target date and list side by side, then priority, location, reminder
-  and links. Three things hold it together and none of them is
-  decoration:
+  **⚠️ THE NEW ACTIVITY SHEET IS THE DETAIL SHEET'S SHAPE, TO THE
+  PIXEL.** It used to be a form — a `.fg-hero` name box, a `.fg-pair`
+  holding the date and the list, a swatched `.seg-pri`, a `.fg` for the
+  location, a `.row` for the reminder — and the activity you got back a
+  moment later was a plate, a chip row and a tinted card. Two screens
+  for one thing, and the controls had to be learned twice.
 
-  - **The name uses `.fg-hero`** — serif, 22px, its own tinted ring, and
-    the only focus ring in the app. As a plain `.fg` input it was the
-    first of six identical boxes and the sheet had no visible subject.
-    The serif is doing the same job it does in every list: this is a
-    name, not a setting.
-  - **Target date and list share a line** (`.fg-pair`). Two one-tap
-    choices with short values; a full row each is what made the sheet
-    long enough to need hiding half of it. It is a **flex** row, not a
-    two-column grid, because `renderActListPicker()` hides the List half
-    when the user has no lists and the date must then span the line.
-    The List half is a `.picker-btn` rather than a `<select>` — it opens
-    `openListPicker()`, which is the one way to assign a collection.
-  - **There is no "More options" disclosure.** Links are shown outright.
-    Location was pulled out of it first, for the reason above; the rest
-    followed once the paired line made room, because a collapsed field is
-    one most people never open. Don't put it back — the whole sheet fits
-    a 320px screen without scrolling.
-  - **There is no Notes field**, and this is not the disclosure argument
-    again. "Why is this on your list?" is the wrong question at the
-    moment of capture: the answer is the activity's name. The field sat
-    empty on nearly every row while costing the sheet a block of height,
-    and what you thought about the thing *afterwards* already has a
-    home — "How it went" on the completion sheet. `Activities.description`
-    still exists and nothing writes it; see **Back end**.
+  It is now built from the same `.ad-*` blocks in `detail.css`: the
+  plate (list eyebrow, 29px serif name, target block with its divider),
+  the row of Priority / Difficulty / Remind chips, and the plum Where
+  card. `revealNewActivity()` opens exactly that sheet on the far side
+  of Add, so the two are the same screen with the fields filled in.
+
+  - **THE ONE DIFFERENCE THAT MATTERS IS INVISIBLE: every control here
+    STAGES**, into a hidden input, because there is no row yet and
+    Cancel has to mean "never mind". The detail sheet's editors write
+    immediately, which is right there and wrong here — see **Editing a
+    pending activity in place** for where that line falls. Each staged
+    value has exactly one writer (`setTargetChoice`,
+    `setPriorityChoice`, `setDifficultyChoice`, `setRemindField`) and
+    each repaints its own control.
+  - **The pickers are the detail sheet's, with the write taken out.**
+    `openNewTargetMenu()` shares `TARGET_BANDS` and the app's own
+    `showCalendar()` with `openTargetMenu()`; the priority and
+    difficulty menus share their labels and `tone`s. Two copies of a
+    band list is how the two sheets would come to offer different
+    answers.
+  - **Two fields differ from the detail sheet, and both are because the
+    sheet is empty.** The name is a live `<textarea>` from the start
+    rather than tap-to-edit (it is what you came here to write), and so
+    is the Where field — that is the field that decides whether the
+    activity ever appears on the map, and an extra tap in front of it is
+    the friction that made it the one people skip. The Where card keeps
+    its plum wash for that reason: `.ad-place.editing` takes the tint
+    off a row that had a resting state, and this one never had.
+  - **⚠️ The name's placeholder has to fit ONE LINE.** A textarea's
+    `scrollHeight` counts its content, not its placeholder, so an empty
+    box measures one line however long the prompt is and
+    `growNameField()` cannot make room for one that wraps. At 29px serif
+    in the plate's ~170px column that is about twenty characters.
+  - **Links and Notes are PAGES, not fields, and both are optional.**
+    Neither is something most people have at the moment of capture, so
+    neither may cost the main page height it would spend empty — but a
+    field that vanishes when empty says nothing at all, where a card
+    reading "None" says there is nothing there yet. `openNewLinks()` /
+    `openNewNotes()` swap the page in; `aLinks` and `#aNotes` are what
+    `saveActivity()` and `flushActivityNoteField()` already read, so
+    nothing downstream changed. The links page is the activity sheet's
+    own, with `saveActLinks()` left out of it — the rows edit the array
+    that is about to be inserted.
+  - **⚠️ FOUR THINGS BLOCK THE SAVE, AND THE SHEET SAYS SO — see
+    **Saying what is still required** below. `NEW_REQUIRED` is the one
+    table the rail, the Add button and the nudge all read.
+  - **⚠️ NO BUTTONS IN THE HEADER — THE ACTIONS ARE IN A DOCK, like the
+    activity sheet's.** Cancel is a `.ad-dock-disc` and Add a
+    `.btn.btn-filled.btn-block`, which is the same disc-plus-block pair
+    Delete and *Mark accomplished* make at the foot of a pending
+    activity. So the two sheets agree about **where an action lives**
+    as well as about what the fields look like, and the primary control
+    is under the thumb rather than in the hardest corner of the phone
+    to reach. What is left at the top is a `.sheet-bar.sheet-bar-title`
+    holding *New Activity* and nothing else — with no buttons beside it
+    the title takes the whole width rather than the half `.sheet-title`
+    normally leaves for two.
+  - **And each page carries its own `.ad-navbar`**, again the detail
+    sheet's. The left button used to be Cancel and Back at once —
+    `newSheetPane()` swapped its text and its handler — which is one
+    control meaning two things; now a page's way out is the Back bar at
+    the top of that page and the sheet's way out is the dock. Anything
+    that adds a page here writes its own Back bar with it, and
+    `NEW_PANE_TITLES` is gone with the bar it retitled. Back rather
+    than Cancel on a page is not a lost escape hatch — the dock's
+    Cancel, the scrim, Escape and a swipe down all still dismiss the
+    whole sheet from anywhere.
+  - **⚠️ ONE HEADER AT A TIME.** `newSheetPane()` hides `#actSheetHead`
+    on a sub-page and adds `barless` to the `.modal`, because that page
+    is bringing its own `.ad-navbar` — two stacked headers is exactly
+    the confusion the completion sheet's old bar-swap was written to
+    avoid, and it still applies. Two traps in those two lines:
+    `.sheet-bar` sets `display: flex`, which outranks the browser's own
+    `[hidden]` rule (hence `.sheet-bar[hidden]` in `modals.css`), and
+    `barless` is what gives the body back the top room the bar was
+    holding, or the grabber sits on the Back button.
+  - **`#actSaveBtn` keeps its id in the dock.** `saveActivity()` shakes
+    it through `requireLocation()` and `commitSaveActivity()` disables
+    it while the insert is in flight; both find it by id.
+  - **⚠️ THE NOTES BLOCK IS `.ad-nsec`, THE ACTIVITY SHEET'S OWN — not a
+    card of its own.** `renderNewNoteCard()` is `paintActivityNotes()`
+    over one staged entry instead of a fetched log: same head, same
+    count-or-*Add* on the right, same `.note-card`, same `.note-empty`,
+    and the whole block a button onto the page. This was briefly a
+    tinted `.ad-place` row with a disc, invented here rather than taken
+    from there — which made the one thing on this sheet that also
+    exists on that one look like a different feature. **If a Notes
+    style is wanted it goes in the `.ad-nsec` block and both sheets get
+    it.** (Links, by contrast, genuinely *is* `.ad-place.c-link` on both.)
+  - **⚠️ The staged note's `author_id` must be truthy.** `noteWho()` and
+    `noteAvatarHTML()` read a falsy one as "the account that wrote this
+    was deleted" and render the entry greyed over the words *Deleted
+    account* — on a note the user is in the middle of typing. The sheet
+    cannot open without a signed-in user, so the fallback in
+    `renderNewNoteCard()` is belt to that brace.
+  - **The Notes page holds one field, and that is not the log.** What is
+    staged is the log's *first entry*: the log is append-only and lives
+    on an activity that does not exist yet. The block is hidden entirely
+    without `activity_notes` — it carries the id `#aNotesRow` that
+    `resetActivityNoteField()` has always hidden, so `notes.js` needed
+    no change. "Why is this on your list?" is still the wrong question
+    at capture, which is why this is a page and not a box under the
+    name. `Activities.description` still exists and nothing writes it;
+    see **Back end**.
+  - **There is no Edit mode.** See the ⚠️ at the top of **Editing a
+    pending activity in place**: `openEditAct()` is gone, `saveActivity()`
+    only ever inserts, and `editingActId` no longer exists.
 - **Completing.** Tapping the check opens `openComp()` — **one sheet**, with
   every field on it: the name, the date, the place, the photos and video, and
   how it went. **Nothing is written until Save**, so an accidental tap costs a
@@ -3544,6 +4278,23 @@ functions look redundant:
   reopen and edit to fix it was worse than the box being there. (The
   `.sheet-subject` style that heading used is gone with it — don't
   reintroduce it here without reading this paragraph.)
+
+  **⚠️ NO BUTTONS IN ITS HEADER EITHER — the actions are in a dock, like
+  both activity sheets'.** An `.ad-dock` under the body with one
+  `.ad-dock-view` per page, swapped by `compShowPane()`: Cancel (an
+  `.ad-dock-disc`) plus the save button on the main page, and *Add a photo
+  or video* on the media page. `#compSaveBtn` keeps its id there —
+  `requireLocation()` shakes it and `confirmComplete()` disables it while
+  the write is in flight, both by id.
+
+  **The header is a title and nothing else**, reading *Mark as
+  Accomplished* or *Edit* — `openComp()`/`openCompDraft()` are its only
+  writers, alongside the button label they set in the same breath (**Done**
+  completes, **Save** edits a record, **Add** files something that was
+  never a plan). `compShowPane()` hides it on the media page and adds
+  `barless`, because that page has its own `.ad-navbar`: that is the same
+  "one header at a time" rule the new-activity sheet follows, and it is
+  what the old two-bar swap was doing by other means.
 
   **Below the name it is three blocks, not four fields.** It was four
   identically-shaped `.fg` blocks in a column — same mono label, same 46px
@@ -3605,6 +4356,102 @@ functions look redundant:
   storage bucket or a connection. **Video is not** — it is refused offline —
   so a tunnel means the requirement has to be met with a photo.
 
+#### Saying what is still required
+
+`NEW_REQUIRED` / `firstMissingRequired()` / `updateNewSaveButton()` /
+`nudgeMissingField()` in `activities.js`, `.ad-req` in `detail.css`.
+
+`saveActivity()` blocks on five things — a **list**, a **name**, a
+**target date**, a **priority** and a **place** — and until this the
+sheet said so nowhere.
+You found out by pressing Add and being shaken at, which is the same
+dead end `updateMediaRequirement()` already exists to close on the
+completion sheet: *a requirement discovered by pressing the button you
+thought would finish is a dead end, not a rule.*
+
+Three things answer it and **all three read one table, in one order**,
+so they cannot disagree:
+
+- **A red rail** beside each of them (`.ad-req`), static markup;
+- **the Add button**, which *names* the first one outstanding —
+  `Pick a list` → `Name it` → `Set a target date` → `Set a priority` →
+  `Add a place` → `Add`;
+- **a nudge**, which points at that one when the button is pressed.
+
+Things to keep:
+
+- **⚠️ `NEW_REQUIRED` IS READING ORDER, not the order the old code
+  happened to check in.** The button names the *first* unanswered field,
+  so an order that did not match the layout would send somebody down the
+  sheet past two blank fields to a third. It used to check name, then
+  the date, then the list, then the place.
+- **`el` is a getter, not an element.** The table is built once at parse
+  time, when none of the sheet's markup has been touched yet.
+- **The button is never `disabled`.** A disabled button cannot be
+  pressed, and pressing it is how you ask *which* field — which is the
+  whole point of the nudge. `.is-blocked` makes it look unavailable and
+  leaves it live.
+- **⚠️ `nudgeEl()` IS NOT `shakeEl()`,** and the two must not be
+  confused. `shakeEl()` is ±6px and means *refused* — a save was
+  attempted and rejected. `nudgeEl()` is ±2px over three passes and
+  means *that one, there*, about a field nobody has reached on a sheet
+  where nothing has gone wrong. It also honours
+  `prefers-reduced-motion`, which `shakeEl()` predates and does not: a
+  rejection has to register somehow, but a pointer has a free
+  alternative, because the button's own label already carries the whole
+  message.
+- **It scrolls first and nudges 160ms later**, or on a short phone the
+  movement happens off-screen and the button appears to do nothing.
+- **Only the two typed fields take focus.** Opening the keyboard for a
+  control whose answer is a menu would cover the menu.
+- **⚠️ SETTING `.value` FIRES NO `input` EVENT**, so
+  `updateNewSaveButton()` is called from every *writer* of the four —
+  `setTargetLists()`, `growNameField()`, `setTargetChoice()`,
+  `setPriorityChoice()`, `onActLocInput()`, `locApply()` and
+  `undoLocationGuess()`. `locApply()`
+  is the one that is easy to miss and covers four paths at once: a
+  dropdown pick, the Home shortcut, *Current location*, and the name
+  guess. Without it the button went on reading *Add a place* over a
+  filled field.
+- **The rail is block-level on the plate, and that is now exact.** It
+  marks the plate, the priority chip and the Where card; the plate
+  holds the list, the name *and* the target, and since the target
+  became required all three of its controls are. It was an imprecision
+  when the target was optional and is not one any more — which is worth
+  knowing before anything optional is added to that card.
+- **⚠️ THE RAIL IS A BORDER, NOT A BAR.** The first version was an
+  absolutely positioned 4px block at `left: 0`, which cannot follow a
+  rounded corner — so it had to be inset far enough to stay in the
+  straight part of the edge (16px against the plate's 18px radius) or
+  it poked visibly out of the curve, leaving three short stubs. A
+  full-inset pseudo-element with `border-radius: inherit` and a left
+  border only is drawn along the card's own curve, tapering where it
+  meets the zero-width top and bottom borders. No inset, no per-radius
+  tuning, and no clipping — which matters because `.ad-place` must keep
+  `overflow: visible` for the location dropdown, so it could never have
+  been clipped to shape.
+- **⚠️ THE HUE IS THE THING TO ARGUE WITH.** `--red` is destructive
+  everywhere else in this app, and the warm end is spoken for twice
+  besides — the deadline badge owns overdue/urgent, `--pri-high` owns
+  high priority. A required field is none of those. It was chosen over
+  `--tint` anyway because `--tint` means *tappable* and every control on
+  this sheet is tappable, so the rail would have marked nothing. If it
+  ever reads as an error, `--tint` at 3px is a one-line change in
+  `detail.css`.
+- **The rail does not clear when a field is answered.** It is a
+  statement about which fields are required, not a to-do list, so a
+  complete sheet still shows all four. That was the version benched and
+  chosen; making it clear as each is filled is one line in
+  `updateNewSaveButton()` if it reads as unfinished business.
+- **NEW-ACTIVITY SHEET ONLY.** `ad-req` lives in that sheet's markup and
+  nowhere else — the detail sheet edits a row that already exists, where
+  nothing is outstanding. Do not add it there.
+
+The bench these five options were compared on is `optional-lab.html`
+(dev tool, not linked, not in `sw.js`, outside `build-www.js`). It
+carries the four rejected alternatives and why, plus a `?audit=1` pass
+that measures every frame for overflow against the baseline.
+
 #### Adding something you already did
 
 You ride in a helicopter on a whim. It counts, it belongs in the app, and
@@ -3620,10 +4467,10 @@ enforces still applies, the mandatory photo above all: something worth adding
 after the fact is something you have a picture of.
 
 - **`compNew` and `compDraft` are separate flags.** `compNew` means "this
-  save is the moment it becomes accomplished" (media required, title reads
-  *Accomplished*, Save inserts nothing); `compDraft` means "there is no row
-  yet, Save inserts one". Every completion path sets `compNew`; only this one
-  sets both.
+  save is the moment it becomes accomplished" (media required, the dock's
+  button reads *Done*, and it inserts nothing); `compDraft` means "there is
+  no row yet, so that button reads *Add* and inserts one". Every completion
+  path sets `compNew`; only this one sets both.
 - **It grows one field: the list.** A third `.comp-row` in the card,
   `renderCompListRow()`, hidden outside draft mode — an activity completed in
   place is already filed, and moving it belongs on the activity sheet. It
@@ -3713,10 +4560,10 @@ There is no fourth entry point. The Search screen's "add what you typed"
   primary and keeps a full-width row of its own.
 
   **Once something is done, this sheet is the only way to edit it.** The
-  activity sheet's "Edit details" is hidden for a completed activity and the
-  remaining button is just "Edit" — everything `openEditAct()` offers (target
-  date, priority, reminder) is about what to do next, and a finished thing has
-  no next. So the name and the location live here too, not only the photos and
+  activity sheet's pencil is gone from a *pending* activity entirely (its
+  fields are edited in place) and on a completed one it opens this sheet —
+  everything the old Edit form offered (target date, priority, reminder) is
+  about what to do next, and a finished thing has no next. So the name and the location live here too, not only the photos and
   notes.
 
   It is opened by `openCompFrom()`, which registers a return *before* opening —
@@ -3739,7 +4586,7 @@ they can be queued when there is no network.
 | Table | Columns |
 | --- | --- |
 | `Collections` | `id`, `created_at`, `name`, `description`, `cover_image`, `user_id`, `number_activities`, `activites_completed`, `category_tag` |
-| `Activities` | `id`, `created_at`, `collection_id` *(the only list an activity is in — see **One activity, one list**)*, `name`, `description` *(dead — see below)*, `target_date`, `priority`, `date_completed`, `experience_notes`, `photos`, `links`, `location`, `location_lat`, `location_lng`, `location_is_home` *(optional — added by `home.sql`; see **Moving house**)*, `difficulty` *(optional — added by `difficulty.sql`; `easy`/`medium`/`hard` or null, inferred and never asked for — see **Guessing how hard it is**)*, `category_tag`, `remind_at` (see below) |
+| `Activities` | `id`, `created_at`, `collection_id` *(the only list an activity is in — see **One activity, one list**)*, `name`, `description` *(dead — see below)*, `target_date`, `priority`, `date_completed`, `experience_notes`, `photos`, `links`, `location`, `location_lat`, `location_lng`, `location_is_home` *(optional — added by `home.sql`; see **Moving house**)*, `difficulty` *(optional — added by `difficulty.sql`; `easy`/`medium`/`hard` or null, inferred and never asked for — see **Guessing how hard it is**)*, `difficulty_manual` *(optional — added by `difficulty-override.sql`; whether a person chose that tier rather than the model — see **Correcting a rating**)*, `category_tag`, `remind_at` (see below) |
 | `Users` | `id` (= `auth.users.id`), `created_at`, `display_name`, `username`, `icon`, `terms_accepted_at` *(optional — added by `moderation.sql`; null on accounts predating it, deliberately not backfilled)*, `home_location`, `home_lat`, `home_lng` *(the last three optional — added by `home.sql`; see **Home**)*, `avatar_url` *(optional — added by `avatars.sql`; see **A face on the account**)*, `difficulty_profile` *(optional — added by `difficulty-profile.sql`; a paragraph about the user, read only by the difficulty rating — see **Rating for one person, not an average one**)* |
 | `collection_members` *(optional)* | `collection_id`, `user_id`, `role`, `display_name`, `created_at` — added by `sharing.sql` |
 | `collection_invites` *(optional)* | `code` (PK), `collection_id`, `created_by`, `role`, `revoked`, `expires_at`, `created_at` |
@@ -3750,7 +4597,7 @@ they can be queued when there is no network.
 | `activity_notes` *(optional)* | `id`, `activity_id`, `author_id` (**`on delete set null`**), `author_name`, `body`, `created_at` — the append-only log. **No UPDATE policy, deliberately.** See **Notes on an activity** |
 | `user_blocks` *(optional)* | `blocker_id`, `blocked_id` (composite PK), `blocked_name` (a snapshot, for the same reason `messages.sender_name` is one), `created_at` — added by `moderation.sql`. Select is scoped to `blocker_id` alone, so a blocked user cannot discover the block |
 | `content_reports` *(optional)* | `id`, `reporter_id`, `reported_id` (both **`on delete set null`**), `target_kind`, `target_id`, `collection_id`, `reason`, `detail`, `snapshot`, `created_at`, `reviewed_at`, `resolution` — added by `moderation.sql`. **Insert-only: no select policy at all**, not even for the reporter. See **Reporting and blocking** |
-| `push_subscriptions` | `id`, `user_id`, `endpoint` (unique), `p256dh`, `auth`, `user_agent`, `created_at` — added by `schema.sql` |
+| `push_subscriptions` | `id`, `user_id`, `endpoint` (unique), `p256dh`, `auth` *(both nullable since `native-push.sql`)*, `platform` *(`'web'` \| `'ios'`, added by `native-push.sql`)*, `user_agent`, `created_at` — added by `schema.sql`. **A native row holds an APNs device token in `endpoint` and has no keys**; a check constraint keeps a *web* row from doing the same. One table rather than two because every question either push function asks is per-user, not per-transport — see **Push is APNs here, not Web Push** |
 | `reminder_deliveries` | `activity_id`, `user_id`, `remind_at` (composite PK), `sent_at` — added by `schema.sql`. Who has already been told about which reminder, per person. See **Reminders**. |
 
 RPCs, from `sharing.sql`: `peek_invite(code)` reads an invite without
@@ -3889,6 +4736,211 @@ the artwork smaller so Android's adaptive-icon mask cannot crop the peaks.
 
 Offline means *the shell*, not the data: activities come from Supabase, so a
 cold offline launch shows the UI with empty lists plus the `.offline-bar`.
+
+## The native iOS app
+
+A Capacitor shell around the same web app: `capacitor.config.json`, the
+Xcode project in `ios/`, and `scripts/build-www.js` assembling `www/` as
+the bundle. **The assets are bundled, never fetched** — read the header
+of that script before reaching for `server.url`.
+
+**Three facts about WKWebView drive everything in this section**, and
+all three are invisible from a browser:
+
+1. **The page is served from `capacitor://localhost`.** So
+   `location.origin` is not an address anybody else can open, and
+   anything that builds a link out of it produces a dead one.
+2. **A custom scheme gets no service worker.** `sw.js` never registers,
+   so the offline shell, the update-reload and the install bar are all
+   inert. That costs nothing — the assets are already in the binary,
+   and the *data* offline layer (`offline.js`: the IndexedDB snapshot
+   and the write queue) is untouched, which is the half that mattered.
+3. **There is no `Notification` API either.** Which took the whole push
+   feature with it — see below.
+
+### Push is APNs here, not Web Push
+
+`js/nativepush.js`, `supabase/native-push.sql`, and
+`supabase/functions/_shared/apns.ts`.
+
+**This shipped broken and silently.** Every push in the app went
+through the service worker, so in the native build
+`notificationsSupported()` answered false, the feature hid itself
+exactly as designed, and reminders collapsed to the Home banner while
+message notifications simply never arrived. Nothing said so; the code
+was working correctly against a platform that could not do the thing.
+
+Worse, the You tab's **Reminder alerts** row was a *dead control*. Its
+handler was built as `state==='default' ? request : () => { if denied …
+else if granted … }`, and `'unsupported'` — the state the native app
+was always in — fell off the end into a function that ran and did
+nothing at all.
+
+So the native app registers with APNs and stores its **device token in
+the same `push_subscriptions` table**, with `platform='ios'`.
+
+Things to keep:
+
+- **One table, not two.** Every question either sending function asks —
+  who the audience is, who has muted, who has already been told, which
+  endpoints are stale — is per *user*, not per transport. Splitting it
+  would duplicate all of that and give the two halves somewhere to
+  disagree about who was notified. `platform` is read at exactly one
+  point: which sender to use.
+- **The token is the `endpoint`.** It is unique in the same way a Web
+  Push endpoint is — one install, one device — so it shares the unique
+  key. `p256dh`/`auth` are null, and a check constraint keeps
+  "nullable" from meaning "optional for a web row too".
+- **The transports are branched once, in `reminders.js`.**
+  `notificationsSupported()` and `notificationState()` are the only two
+  functions that know there is a choice; nothing else touches
+  `Notification` directly.
+- **The notification is composed once and rendered twice.** Both Edge
+  Functions build one object, then stringify it for Web Push and map it
+  onto `aps` for APNs. Two renderings of one object cannot disagree
+  about what the banner says.
+- **A tap lands in the same place either way.** `nativepush.js` writes
+  the same `pendingConv`/`pendingAct` globals `messages.js` already
+  reads, then calls its `handlePushLanding()` — so a cold start and a
+  warm one cannot drift apart.
+- **Registration never prompts.** `registerNativePush()` re-registers
+  only when permission is already granted, on every launch — a token is
+  reissued after a restore from backup. The prompt lives behind the You
+  tab's row, the same rule `primeBias()` follows for geolocation. It is
+  called directly from `showApp()` rather than from the
+  `probeRemindColumn()` block beside it, because the native permission
+  is read *asynchronously* and that block's `notificationState()` check
+  would still be reading a stale `'default'` on the first launch.
+- **The middle delivery tier does not exist natively, and does not need
+  to.** Tier 2 — a local notification fired because the app happened to
+  be opened on the day — exists for browsers that can show a
+  notification but cannot receive a push. The native app *can* receive
+  one, so `checkDueReminders()` returns early there. Tier 1, the Home
+  banner, is unaffected.
+- **⚠️ `APNS_ENV` is the trap.** An Xcode build gets a **sandbox**
+  token; TestFlight and the App Store get **production** ones. Sending
+  one to the other's host answers `400 BadDeviceToken` — identical to a
+  genuinely uninstalled app — so the row is *pruned* and the device
+  silently stops receiving. Both functions report `apnsSkipped` so an
+  unconfigured project is a count rather than a mystery. See
+  `supabase/README.md` §2b.
+
+**No badge on a message push.** An absolute count would need one query
+per recipient on a path the sender is waiting on; omitting `badge`
+leaves it untouched, and `updateMessagesBadge()` overwrites it with the
+truth on the next open. `navigator.setAppBadge` itself is a no-op in
+WKWebView, so the icon badge is web-only today.
+
+### Links that leave the device
+
+`APP_WEB_ORIGIN` + `publicOrigin()` in `config.js`. **`location.origin`
+is `capacitor://localhost` in the shell**, and two things were building
+links out of it:
+
+- **`inviteUrl()`** produced `capacitor://localhost/index.html?join=…`.
+  Copying worked, sending worked, and the recipient got a URL their
+  phone did not recognise. Every invite shared from the iOS app was
+  dead.
+- **`confirmRedirectUrl()`** produced the same thing for
+  `emailRedirectTo`. Supabase silently falls back to the project's Site
+  URL for a redirect that is not allow-listed, so confirmation *worked*
+  — by landing in Safari, on the web copy, leaving the person who just
+  signed up inside the app with an apparently unconfirmed account.
+
+Both now go through `publicOrigin()`, which answers with
+`APP_WEB_ORIGIN` when it is set, `location.origin` in a browser, and
+**nothing** on a `capacitor:`/`file:` origin — a link nobody can open
+is worse than no link.
+
+### Universal Links
+
+`js/deeplink.js`. CLAUDE.md's **Shared lists** section says "iOS cannot
+be made to open the PWA instead of Safari, [because] Universal Links
+need a native app and an AASA file." There is now a native app, so that
+wall is down: an invite tapped in Messages opens the list in the app.
+
+**Four things must name the same domain or this silently does nothing:**
+`APP_WEB_ORIGIN` (`config.js`), `applinks:<host>` in
+`ios/App/App/App.entitlements`, the `appIDs` entry in
+`.well-known/apple-app-site-association`, and the host actually serving
+that file. iOS fetches it once at install, caches the result, and
+reports no error anywhere — links just keep opening in Safari. See
+`.well-known/README.md` for the four things the *host* has to get right
+(https, no redirect, `application/json`, no auth).
+
+Things to keep:
+
+- **It does not navigate the web view to the URL.** That would replace
+  the bundled app with the website — the Guideline 2.5.2 problem
+  `build-www.js` warns about, arrived at from the other end. What
+  travels is the link's *meaning*, handed to the same globals the boot
+  readers use.
+- **`getLaunchUrl()` as well as the `appUrlOpen` listener.** On a cold
+  start the event can fire before the listener exists, which is a race
+  this file cannot win. `handleDeepLink()` is idempotent for one URL,
+  so being told twice costs nothing.
+- **`initDeepLinks()` runs after the three boot readers**, in
+  `main.js`. `getLaunchUrl()` is a promise and cannot resolve before
+  the next tick, so it always lands second — the other order would have
+  `readPendingJoin()` overwrite the captured code with the nothing it
+  finds in a `capacitor://` URL.
+- **A hash route is handed to `router.js`**, by writing
+  `location.hash`, rather than re-implementing the routing table. When
+  the hash is already the current one no `hashchange` fires, so
+  `onRouteChange()` is called directly.
+- **`.well-known/` is deliberately NOT in `www/`.** It is served by the
+  website to a device that has not opened the app; `build-www.js`
+  assembles what goes *inside the binary*. Two different jobs.
+- **A confirmation or reset link arriving mid-session is not handled.**
+  Those are consumed at boot, and replaying that sequence with a live
+  session in place is a different problem. In practice somebody
+  following one is signed out and launching cold, which works.
+
+### Haptics
+
+`js/haptics.js`. Two calls, and deliberately no more: `hapticTap()`
+when the check is pressed, `hapticSuccess()` when a completion is
+saved. **Haptics on every tap is the same mistake as captioning every
+field** — it stops meaning anything, and it is the specific thing
+people turn off. Do not add one to navigation, sheet dismissal or
+ordinary buttons.
+
+Both honour `prefers-reduced-motion`, the same test `confetti()`
+already makes, and both swallow their own failures: a device with the
+Taptic Engine switched off rejects them, and an unhandled rejection for
+something purely cosmetic is not worth a console line.
+
+`hapticTap()` hangs off **`openCompletedDate()`**, not `openComp()` —
+both `toggleComplete()` and Home's `toggleCompleteFrom()` funnel
+through the first, while the second is also reached by
+`openCompFrom()` when *editing* something already finished, where a
+completion haptic would be a lie.
+
+### Plugins are reached through `Capacitor.Plugins`, never imported
+
+The pattern `nav.js` already established for Keyboard, and the reason
+none of this needs a bundler: the native side registers a plugin and
+the runtime exposes it on `window.Capacitor.Plugins`. So every guard in
+these three files is load-bearing rather than defensive — in a browser
+`window.Capacitor` does not exist and they all do nothing.
+
+**They still need the npm package installed and `npx cap sync ios` run**:
+the JS is a proxy onto native code that has to be in the binary.
+Without it every function answers the same "unsupported" a browser
+gets, which is the honest degradation this app applies everywhere else.
+
+### iPhone only
+
+`TARGETED_DEVICE_FAMILY = "1"`. It was `"1,2"`, which declares iPad
+support — and that obliges the submission to carry 13" iPad screenshots
+and makes iPad layout reviewable. The layout caps content at
+`--content-max` (720px at ≥1000px), so on a 13" iPad the app is a
+narrow column in a field of parchment: honest phone-first design, and
+not something to put in front of a reviewer as an iPad app. Setting it
+back to `"1,2"` means designing for iPad first.
+
+`UISupportedInterfaceOrientations~ipad` is still in `Info.plist` and is
+now inert.
 
 ## Mobile layout rules
 
@@ -4133,17 +5185,34 @@ select
   (select count(*) from information_schema.columns
      where table_name='Users' and column_name='difficulty_profile') as has_diff_profile,
   (select count(*) from information_schema.columns
+     where table_name='Activities' and column_name='difficulty_manual') as has_diff_override,
+  (select count(*) from information_schema.columns
      where table_name='Users' and column_name='avatar_url') as has_avatars,
   (select count(*) from information_schema.columns
      where table_name='Users' and column_name='terms_accepted_at') as has_moderation,
   (select count(*) from information_schema.tables
      where table_name='user_blocks') as has_blocks,
+  (select count(*) from information_schema.columns
+     where table_name='push_subscriptions' and column_name='platform') as has_native_push,
   (select count(*) from "Activities"
      where target_date in ('This Month','This Year','Next Year','In 2-3 Years')) as needs_rollover;
 ```
 
 `needs_single_list` and `needs_rollover` should be **0**; everything else
 should be **1**.
+
+**`has_native_push` is the one that is not optional if the iOS app is
+being shipped.** Without it the native app cannot store an APNs token
+at all, so reminders and message notifications do not exist on the one
+platform being submitted — and, like every other missing migration
+here, that is invisible from inside the app. Run
+`supabase/native-push.sql`.
+
+**And the migration is only half of it.** The `APNS_*` function
+secrets cannot be checked from SQL or from the client. Both push
+functions report `apnsSkipped` in their JSON for exactly this reason:
+a non-zero count means a device is registered and the secrets are not
+set. See `supabase/README.md` §2b.
 
 **And the RLS audit is a different question that no client can answer.**
 The project shipped for a while with a policy literally named `ALL` on
@@ -4171,6 +5240,80 @@ policies at all — reachable only by the service role, which is the
 design.*
 
 ## Known issues / cleanup backlog
+
+- **⚠️ FOUR PLACEHOLDERS HAVE TO BE FILLED IN BEFORE THE NATIVE APP
+  SHIPS**, and every one of them fails silently rather than loudly:
+  `APP_WEB_ORIGIN` in `js/config.js` (empty — invite links and the
+  confirmation redirect fall back to `location.origin`, which in the
+  shell is `capacitor://localhost`), `applinks:REPLACE-WITH-YOUR-DOMAIN.example`
+  in `ios/App/App/App.entitlements`, `REPLACE-WITH-TEAM-ID` in
+  `.well-known/apple-app-site-association`, and `[YOUR JURISDICTION]`
+  in `legal/terms.html`. Grep for `REPLACE-WITH` and `[YOUR`.
+- **Native push is unverified against a real device**, like the
+  location guess and the difficulty rating before it. The JWT signing,
+  the payload shape, the prune reasons and the client branch are all
+  written and none of it has spoken to Apple. Expect the first failure
+  to be `APNS_ENV` (see below) or a missing Push Notifications
+  capability on the App ID.
+- **⚠️ `APNS_ENV` mismatches present as a dead device, not an error.**
+  An Xcode build gets a sandbox token and TestFlight/App Store get
+  production ones; sending one to the other's host answers
+  `400 BadDeviceToken`, which `_shared/apns.ts` treats as terminal and
+  prunes — correctly, since that is also what an uninstalled app
+  answers. So a debug build silently stops receiving after one send and
+  the row is gone. There is no way to serve both from one setting,
+  because the token does not say which it is.
+- **The app icon badge is web-only.** `navigator.setAppBadge` is a
+  no-op in WKWebView, and `send-message-push` deliberately omits APNs's
+  `badge` because an absolute count would cost one query per recipient
+  on a path the sender is waiting on. So the native app never shows an
+  unread count on its home-screen icon. Fixing it means either a
+  fourth Capacitor plugin or a cheap per-user unread count the service
+  role can read.
+- **There is no local-notification tier in the native app.** Tier 2 of
+  the three in `reminders.js` — a banner fired because the app was
+  opened on the day — needs `@capacitor/local-notifications`, a fourth
+  plugin, and was left out: the native app has real push, which is
+  strictly better, and the Home banner still covers the case where the
+  cron has never run. It becomes worth adding the moment background
+  delivery proves unreliable.
+- **A message sent while offline still never notifies anybody**, and
+  the native app does not change that — `flushQueue()` upserts directly
+  and never calls `notifyMessageSent()`. Unchanged from the Web Push
+  version of this entry; teaching the flush to fire it for replayed
+  `messages` inserts is still the few-line fix.
+- **Nothing in the repo can assert that Universal Links work.** Four
+  things have to name one domain and a fifth (the host's content-type
+  and redirect behaviour) is outside the repo entirely. iOS caches the
+  AASA at install and reports nothing on failure, so the only test is
+  to install the app and tap a link. Delete and reinstall after
+  changing the file — the cached copy is not refreshed.
+- **`target="_blank"` on the two legal links is unverified in
+  WKWebView.** `index.html` opens `legal/privacy.html` and
+  `legal/terms.html` that way from the sign-up screen and the You tab,
+  and Capacitor's handling of `_blank` on a *local* URL may be a no-op.
+  If it is, the Terms link under Create Account is dead — which is
+  precisely the Guideline 1.2 requirement that the terms be reachable
+  before the account exists. Test on device; the fix is
+  `@capacitor/browser` or an in-app route.
+- **The launch screen is still the stock Capacitor splash.** All three
+  `Splash.imageset` PNGs are byte-identical defaults and
+  `LaunchScreen.storyboard` uses `systemBackgroundColor` — so launching
+  in dark mode flashes **black** before the app's `#16140f`, and white
+  before `#efece6` in light. Cheap to fix and the first thing anyone
+  sees.
+- **The App target has no `PrivacyInfo.xcprivacy`.** Capacitor ships
+  privacy manifests for its own frameworks
+  (`node_modules/@capacitor/ios/…`), but the app target declares
+  nothing. Separately, the App Store Connect privacy questionnaire is
+  mandatory and non-trivial here: the app collects email, name, photos,
+  **precise location** and user content.
+- **App Review needs a demo account.** The app is behind an auth wall
+  with email confirmation on, so a reviewer who signs up has to go and
+  find a confirmation email. Put pre-confirmed credentials in the
+  review notes, on an account with real lists, photos, and a shared
+  list carrying a conversation — otherwise the likely outcome is a 2.1
+  "unable to review".
 
 - **A location typed offline never gets coordinates.** `requireLocation()`
   accepts the text and lets the activity sync without a pin, because blocking
@@ -4363,11 +5506,11 @@ design.*
   `PLACE_SYSTEM` against real activity names. It commits rather than
   refusing, so the failure to watch for is a systematic lean (everything
   coming back `medium`), not silence.
-- **A rating cannot be corrected.** The personalisation above feeds the
-  model its own past answers, so a systematic lean reinforces itself and
-  the user has no way to say "no, that one is easy for me". A
-  `difficulty` override on the activity sheet, preferred over the
-  inferred value in `difficultyExamples()`, is the missing half.
+- **~~A rating cannot be corrected.~~ DONE.** See **Correcting a
+  rating** — the detail sheet's Difficulty chip is now the control, and
+  corrections lead each tier in `difficultyExamples()`. What is still
+  missing is any way to correct one **in bulk**: fixing a systematic
+  lean means opening rows one at a time.
 - **~~`supabase/difficulty-profile.sql` has to be run by hand.~~ DONE**
   (verified against `information_schema` on 31 Aug 2026 —
   `Users.difficulty_profile` exists). Re-check with the query in
@@ -4377,12 +5520,17 @@ design.*
   `difficulty` defaults to null and is only ever written at capture, so
   every row predating this is un-rated: it sorts last under **Difficulty**
   and appears in none of the three smart lists.
-  **`tools/difficulty-backfill.py` is the one-off** — export the rows,
-  rate them however you like, and it turns a `id,difficulty` CSV into a
-  single `UPDATE ... FROM (VALUES ...)`. It writes only rows still null,
-  so it cannot overwrite a rating the app has since inferred and is safe
-  to re-run. It has to be run by hand, and until it is the three lists
-  are missing most of the library.
+  **Two scripts do it, and they are deliberately separate.**
+  `tools/difficulty-rate.py` asks Claude to rate every row still null,
+  grouped by the owner of the collection so each is judged against that
+  person's Home and profile, and writes an `id,difficulty` CSV;
+  `tools/difficulty-backfill.py` turns that CSV into a single
+  `UPDATE ... FROM (VALUES ...)`. Splitting them is what lets the ratings
+  be READ, and edited, before any of them land — and the backfill writes
+  only rows still null, so neither can overwrite a rating the app has
+  since inferred and both are safe to re-run. They have to be run by
+  hand, and until they are the three lists are missing most of the
+  library.
 - **Only the activity sheet rates anything.** `openCompDraft()` — logging
   something you already did — inserts without going near
   `maybeGuessLocation()`, so it carries no rating and lands in none of the

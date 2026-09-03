@@ -1,0 +1,3623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Theme Lab — Someday We'll Die</title>
+
+<!-- ============================================================
+     THEME LAB — the bench for the palette, dark mode above all.
+
+     Five real screens plus a swatch board, rendered from the app's
+     OWN stylesheets, with a control for EVERY colour they draw.
+
+     TWO KINDS OF CONTROL, and the split is the whole design:
+
+       TOKEN   a custom property in css/base.css. Editing it moves
+               everything in the app that reads it.
+       RULE    an explicit `selector { property: value }` override, for
+               the places the app hardcodes a colour or derives it from
+               a token shared with something unrelated. The Difficulty
+               chip is the case that forced these: it is
+               `background: var(--fill-3); color: var(--label-2)`, so
+               there was no way to recolour it without also moving the
+               segmented control, the search field and every badge.
+
+     A RULE ALWAYS BEATS ITS TOKEN, because it is a later, equally
+     specific declaration. So a rule is only ever written where the app
+     gives no independent control today — never as a duplicate of a
+     token that already works, or editing the token would look broken.
+
+     LIGHT AND DARK ARE FULLY INDEPENDENT. Every control holds two
+     values and Copy CSS emits the dark half inside a
+     `@media (prefers-color-scheme: dark)` block, so a colour with no
+     dark variant in the app today (the four Orchard hues, every white
+     on a photo) can be given one here.
+
+     ⚠️ It LINKS css/*.css, so the screens cannot drift. What it copies
+     is the seed VALUES — it has to, because a media query cannot be
+     forced on from script. Change a value in base.css and change its
+     seed here, or the lab opens showing the old colour.
+
+     Dev tool only: not linked from index.html, not in sw.js, and
+     outside build-www.js's allowlist. Serve and open it directly.
+     #light opens on the light palette.
+     ============================================================ -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+
+<!-- ⚠️ EVERY STYLESHEET THE APP LINKS, IN THE APP'S OWN ORDER, except
+     pwa.css and responsive.css: the first draws only the install and
+     offline chrome, which no frame here shows, and the second is
+     breakpoint behaviour rather than colour. A file left out does not
+     announce itself — the frames using it simply render unstyled, and
+     that is how the invite and duplicate sheets shipped flush against
+     the glass with dupes.css and sharing.css missing. theme.css is deliberately
+     NOT linked — the lab is where that file's contents are decided, so
+     loading it would mean editing the palette on top of itself. -->
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/layout.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/auth.css" />
+<link rel="stylesheet" href="css/home.css" />
+<link rel="stylesheet" href="css/collections.css" />
+<link rel="stylesheet" href="css/detail.css" />
+<link rel="stylesheet" href="css/me.css" />
+<link rel="stylesheet" href="css/modals.css" />
+<link rel="stylesheet" href="css/map.css" />
+<link rel="stylesheet" href="css/dupes.css" />
+<link rel="stylesheet" href="css/sharing.css" />
+<link rel="stylesheet" href="css/messages.css" />
+<link rel="stylesheet" href="css/notes.css" />
+<link rel="stylesheet" href="css/moderation.css" />
+
+<!-- The lab's own chrome. Deliberately literal hex, never app tokens:
+     the panel has to stay readable no matter what you do to the
+     palette you are editing. -->
+<style>
+  html, body {
+    background: #101214 !important; color: #e7e9ec;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    height: 100%; overflow: hidden;
+  }
+  .lab { display: flex; height: 100vh; height: 100dvh; }
+
+  /* ---- the panel ---- */
+  .lab-panel {
+    width: 404px; flex: none; display: flex; flex-direction: column;
+    border-right: 1px solid #262b31; background: #15181c;
+  }
+  .lab-head { padding: 12px 15px 11px; border-bottom: 1px solid #262b31; }
+  .lab-head h1 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .lab-head p  { font-size: 11.5px; color: #8b949e; margin-top: 3px; line-height: 1.42; }
+  .lab-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+  .lab-btn {
+    font: inherit; font-size: 12px; font-weight: 550;
+    padding: 6px 10px; border-radius: 7px; cursor: pointer;
+    background: #232930; color: #e7e9ec; border: 1px solid #333b44;
+  }
+  .lab-btn:hover { background: #2b323a; }
+  .lab-btn:disabled { opacity: .45; cursor: default; }
+  .lab-btn.on { background: #3d6ee0; border-color: #3d6ee0; color: #fff; }
+  .lab-btn.go { background: #2f7d4f; border-color: #2f7d4f; color: #fff; }
+  .lab-btn.sm { font-size: 11px; padding: 5px 8px; }
+  .lab-find {
+    width: 100%; margin-top: 8px; font: inherit; font-size: 12px;
+    padding: 6px 10px; border-radius: 7px;
+    background: #0e1114; color: #d7dce2; border: 1px solid #333b44;
+  }
+
+  /* The held colour — the clipboard behind every row's paste button. */
+  .held { display: flex; align-items: center; gap: 7px; margin-top: 9px; font-size: 11px; color: #8b949e; }
+  .held.is-empty { opacity: .5; }
+  /* ⚠️ THE LAB LINKS THE APP'S REAL STYLESHEETS, so every class it
+     invents has to be one the app does not already use — a collision
+     is silent and looks like the lab's own CSS being ignored. Two were
+     caught this way, both on this one row: .chip (modals.css, the URL
+     chip on the links field) and .empty (components.css, which is a
+     centred column with 52px of padding). Hence .lb-chip and
+     .is-empty. The audit is one grep of `\.[a-z-]+` over css/*.css
+     against this block; `gone`, `on` and `ok` also appear in both but
+     the app only ever uses them compounded (.msg-avatar.gone,
+     .ad-slide.on), so they never match anything here. */
+  .held .lb-chip {
+    width: 22px; height: 18px; flex: none; border-radius: 4px; border: 1px solid #3a424b;
+    background-color: #8b949e;
+    background-image:
+      linear-gradient(45deg,#454b52 25%,transparent 25%), linear-gradient(-45deg,#454b52 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#454b52 75%), linear-gradient(-45deg,transparent 75%,#454b52 75%);
+    background-size: 8px 8px; background-position: 0 0,0 4px,4px -4px,-4px 0;
+    position: relative; overflow: hidden;
+  }
+  .held .lb-chip::after { content:''; position:absolute; inset:0; background: var(--v); }
+  .held code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #b8c0c8; }
+
+  .lab-scroll { flex: 1; overflow-y: auto; padding: 6px 0 80px; }
+  .lab-group { padding: 10px 15px 3px; }
+  .lab-group.gone { display: none; }
+  .lab-group > h2 {
+    font-size: 10px; font-weight: 650; letter-spacing: .1em;
+    text-transform: uppercase; color: #7d8590; margin-bottom: 3px;
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+  }
+  .lab-group > h2 .pick {
+    margin-left: auto; font-size: 9px; letter-spacing: .04em; color: #4d82ff;
+    text-transform: none; opacity: 0; font-weight: 550;
+  }
+  .lab-group:hover > h2 .pick { opacity: 1; }
+  .lab-group > .note {
+    font-size: 10.5px; color: #5c646d; line-height: 1.4; margin-bottom: 6px;
+  }
+  .lab-group.shut .tok, .lab-group.shut .tok-raw, .lab-group.shut .note { display: none; }
+
+  /* ---- a control row: two lines, so the slider and the value field
+         both get real width. One line could not hold a typeable value
+         AND a slider you can land on .11 with. ---- */
+  .tok, .tok-raw {
+    padding: 5px 6px; margin: 0 -6px; border-radius: 7px; cursor: default;
+  }
+  .tok.gone, .tok-raw.gone { display: none; }
+  .tok.hot, .tok-raw.hot { background: #1d2836; box-shadow: inset 2px 0 0 #4d82ff; }
+  .tok.pin, .tok-raw.pin { background: #24303f; box-shadow: inset 2px 0 0 #ffb454; }
+  .tok.sel, .tok-raw.sel { background: #1b2a22; box-shadow: inset 2px 0 0 #3fb26b; }
+  .tok.sel.hot, .tok-raw.sel.hot { background: #1d2836; }
+
+  .tok-l1 { display: flex; align-items: center; gap: 7px; }
+  .tok-l2 { display: flex; align-items: center; gap: 7px; margin-top: 5px; padding-left: 21px; }
+
+  .aicheck { width: 13px; height: 13px; flex: none; accent-color: #3fb26b; cursor: pointer; }
+
+  /* The swatch shows the composed value — alpha included — over a
+     checkerboard, because half of what makes the dark ground look
+     muddy is a fill's opacity rather than its hue. The native colour
+     input is invisible on top of it and does the picking. */
+  .sw {
+    position: relative; width: 30px; height: 24px; flex: none;
+    border: 1px solid #3a424b; border-radius: 6px; overflow: hidden; cursor: pointer;
+    background-color: #8b949e;
+    background-image:
+      linear-gradient(45deg, #454b52 25%, transparent 25%),
+      linear-gradient(-45deg, #454b52 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #454b52 75%),
+      linear-gradient(-45deg, transparent 75%, #454b52 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  }
+  .sw::after { content: ''; position: absolute; inset: 0; background: var(--v); pointer-events: none; }
+  .sw input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; padding: 0; border: 0; cursor: pointer; }
+
+  .tok-name { flex: 1; min-width: 0; }
+  .tok-name b { display: block; font-size: 12px; font-weight: 550; line-height: 1.25; }
+  .tok-name code {
+    display: block; font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px; color: #6e7781; letter-spacing: .01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Says whether this control's two modes hold different values — the
+     question "can I pick totally different colours" answered on the
+     row rather than by toggling back and forth. */
+  .tok-name code .oth { color: #4b535b; }
+  .tok-name code .neq { color: #b3823a; }
+
+  /* ⚠️ THE LOCK IS ALWAYS VISIBLE, unlike copy/paste. A lock you can only
+     see by hovering is not a lock — the whole point is reading, at a
+     glance, which rows Reset is about to leave alone. It also takes the
+     RIGHT edge rather than the left, because the left is already carrying
+     three transient states (hover blue, click-pin amber, AI-picked green)
+     and a lock has to compose with all of them. */
+  .lockbtn {
+    font: inherit; font-size: 10px; line-height: 1; padding: 4px 6px; flex: none;
+    border-radius: 5px; cursor: pointer;
+    background: #1b1f24; color: #5c646d; border: 1px solid #2b323a;
+  }
+  .lockbtn:hover { color: #b8c0c8; border-color: #3a424b; }
+  .tok.lockd .lockbtn, .tok-raw.lockd .lockbtn {
+    background: #3a2c46; color: #d8a8ea; border-color: #6b4a80;
+  }
+  .tok.lockd, .tok-raw.lockd { box-shadow: inset -3px 0 0 #a86fc4; }
+  .tok.lockd.hot, .tok-raw.lockd.hot { box-shadow: inset 2px 0 0 #4d82ff, inset -3px 0 0 #a86fc4; }
+  .tok.lockd.pin, .tok-raw.lockd.pin { box-shadow: inset 2px 0 0 #ffb454, inset -3px 0 0 #a86fc4; }
+  .tok.lockd .aicheck, .tok-raw.lockd .aicheck { opacity: .25; }
+
+  .seedline { margin-top: 9px; font-size: 10.5px; color: #5c646d; line-height: 1.4; }
+  .seedline.live { color: #3fb26b; }
+  .lockline { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 11px; color: #d8a8ea; }
+  .lockline[hidden] { display: none; }
+
+  .rowbtns { display: flex; gap: 3px; flex: none; opacity: .3; }
+  .tok:hover .rowbtns, .tok-raw:hover .rowbtns { opacity: 1; }
+  .rowbtn {
+    font: inherit; font-size: 10px; line-height: 1; padding: 4px 5px;
+    border-radius: 5px; cursor: pointer;
+    background: #232930; color: #b8c0c8; border: 1px solid #333b44;
+  }
+  .rowbtn:hover { background: #2f3740; color: #fff; }
+
+  /* Typed as well as dragged. The slider alone could not be landed on
+     a specific hundredth, which is exactly the precision a translucent
+     fill on a near-black ground needs. */
+  .val, .alpha-n {
+    font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+    padding: 5px 7px; border-radius: 5px;
+    background: #0e1114; color: #d7dce2; border: 1px solid #333b44;
+  }
+  .val { flex: 1; min-width: 0; }
+  .alpha-n { width: 46px; flex: none; text-align: right; }
+  .tok input[type=range] { width: 104px; flex: none; accent-color: #4d82ff; }
+
+  .tok-raw .val { width: 100%; }
+  /* A value the browser cannot parse. It is KEPT rather than rejected —
+     you may be mid-type — but it must never be silently exported: a
+     dropped declaration leaves that one element at its old colour while
+     everything around it changes, which reads as the paste not working. */
+  .val.bad { border-color: #e0736a; color: #e0736a; }
+
+  /* ---- the AI panel ---- */
+  .ai {
+    border-bottom: 1px solid #262b31; background: #171b20;
+    padding: 11px 15px 13px;
+  }
+  .ai > h2 {
+    font-size: 10px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
+    color: #7d8590; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  }
+  .ai > h2 .count { margin-left: auto; color: #3fb26b; text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+  .ai.shut .ai-body { display: none; }
+  .ai-body { margin-top: 9px; }
+  .ai textarea, .ai input[type=password] {
+    width: 100%; font: inherit; font-size: 11.5px; line-height: 1.4;
+    padding: 7px 9px; border-radius: 7px; resize: vertical;
+    background: #0e1114; color: #d7dce2; border: 1px solid #333b44;
+  }
+  .ai label {
+    display: block; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: #6e7781; margin: 9px 0 4px;
+  }
+  .ai .hint { font-size: 10.5px; color: #5c646d; line-height: 1.45; margin-top: 6px; }
+  .ai .status { font-size: 11px; margin-top: 8px; min-height: 14px; }
+  .ai .status.err { color: #e0736a; }
+  .ai .status.ok  { color: #3fb26b; }
+
+  /* ---- the stage ---- */
+  .lab-stage { flex: 1; overflow: auto; padding: 26px; }
+  .stage-row { display: flex; gap: 26px; align-items: flex-start; min-width: min-content; }
+  .frame { flex: none; }
+  .frame > h3 {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: #8b949e; margin-bottom: 10px;
+  }
+  .phone {
+    /* ⚠️ --content-max IS DEFINED ONLY IN responsive.css, which the lab
+       does not link — its media queries key off the VIEWPORT, so on a
+       1000px-wide bench they would apply tablet layout to 390px frames.
+       But messages.css uses that token inside a @media (min-width:700px)
+       block of its own, which DOES fire here. An unresolvable var() is
+       invalid at computed-value time, and that does not fall back to the
+       shorthand above it — it falls back to the property's INITIAL
+       value. So .conv-scroll's 16px gutters computed to 0 and the whole
+       conversation sat flush against the glass. Declaring it here is the
+       fix; at 390px the max() picks the gutter either way. */
+    --content-max: 640px;
+    position: relative; width: 390px; height: 810px;
+    border-radius: 30px; overflow: hidden;
+    border: 1px solid #2e353d; box-shadow: 0 18px 50px rgba(0,0,0,.55);
+    background: var(--bg); color: var(--label);
+    font-family: var(--sans); font-size: 17px; line-height: 1.29;
+    letter-spacing: -.01em;
+  }
+
+  /* Hover and click linking. Outline rather than a border or a shadow:
+     it takes no space, so nothing on the stage moves when a control
+     lights up. */
+  .hot-el { outline: 2px solid #4d82ff !important; outline-offset: 1px; }
+  .pin-el { outline: 2px solid #ffb454 !important; outline-offset: 1px; }
+  .lab-stage .phone * { cursor: crosshair; }
+
+  /* ---- teach the app's chrome to live inside a 390×810 box ---- */
+  .phone .page {
+    display: block; position: absolute; inset: 0;
+    min-height: 0; overflow-y: auto;
+    padding-top: 26px; padding-bottom: 80px;
+  }
+  .phone .page.page-pushed { padding-top: 60px; }
+  .phone .navbar, .phone .tabbar { position: absolute; }
+  .phone .modal-overlay {
+    position: absolute; inset: 0; height: 100%;
+    opacity: 1; pointer-events: auto;
+  }
+  .phone .modal { transform: none; height: 91%; max-height: none; }
+  .phone .det-banner { margin-top: 0; }
+  /* The sheets are shown over a still copy of the collection screen, so
+     the scrim has something to sit on. */
+  .phone .backdrop { position: absolute; inset: 0; overflow: hidden; }
+  .phone .backdrop .page { position: absolute; }
+
+  /* ---- the four screens that are not ordinary scrolling pages ----
+     Each owns its own layout in the app and each does it with
+     position: fixed, which inside a 390×810 box would anchor to the
+     window instead of the frame. Absolute is the whole correction;
+     nothing else about them changes. */
+  .phone .conv-scroll {
+    position: absolute; left: 0; right: 0;
+    top: 60px; bottom: 118px; overflow-y: auto;
+  }
+  .phone .conv-composer { position: absolute; bottom: 60px; }
+  .phone .map-overlay  { position: absolute; top: 60px; }
+  .phone .map-actions  { position: absolute; }
+  /* .auth-page is display:none until auth.js flips it — it is the one
+     screen nav() knows nothing about. */
+  .phone .auth-page { display: flex; min-height: 0; }
+  /* The globe is not drawn here (see the Map frame's comment), so the
+     sky gradient .map-box paints is the whole of that ground. */
+  .phone .map-box { display: block; }
+
+  /* ---- the overlays that are not .modal-overlay ----
+     Three more position:fixed containers, corrected the same way. The
+     .open / .show classes are the app's own — nothing here fakes a
+     state, it is the real one held on. */
+  .phone .action-sheet { position: absolute; }
+  .phone .lightbox     { position: absolute; }
+  .phone .toast        { position: absolute; bottom: 76px; }
+  /* An alert is centred rather than bottom-anchored, and two of them
+     share a frame, so the second gets no scrim of its own. */
+  .phone .pr-card, .phone .cal-card { margin: auto; }
+
+  /* The swatch board is a bench artifact, not a screen — every variant
+     the five real screens do not happen to show, so nothing in the
+     control list is left with nowhere to point. */
+  .board { padding: 22px 16px 40px; overflow-y: auto; position: absolute; inset: 0; }
+  .board h4 {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--label-3); margin: 20px 0 8px;
+  }
+  .board h4:first-child { margin-top: 0; }
+  .board .strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .board .strip .ad-chip { flex: 0 0 auto; min-width: 88px; }
+</style>
+</head>
+
+<body>
+<div class="lab">
+
+  <!-- =========================== PANEL =========================== -->
+  <aside class="lab-panel">
+    <div class="lab-head">
+      <h1>Theme Lab</h1>
+      <p>Hover a row to find it on screen. Hover the screen to highlight its
+         row; <b>click</b> to scroll to it &mdash; hovering never moves the list.</p>
+      <div class="lab-actions">
+        <button class="lab-btn on" id="modeDark">Dark</button>
+        <button class="lab-btn" id="modeLight">Light</button>
+        <button class="lab-btn" id="resetBtn">Reset</button>
+        <button class="lab-btn go" id="copyBtn">Copy CSS</button>
+      </div>
+      <!-- 30 frames is ~12,000px of stage. This is not a filter on the
+           controls — every control stays live and exported whichever
+           view is showing; it only decides what is worth scrolling
+           past. -->
+      <div class="lab-actions" id="kindBar">
+        <button class="lab-btn sm on" data-kind="all">All</button>
+        <button class="lab-btn sm" data-kind="screen">Screens</button>
+        <button class="lab-btn sm" data-kind="sheet">Sheets</button>
+      </div>
+      <div class="seedline" id="seedLine">seeding&hellip;</div>
+      <div class="lockline" id="lockLine" hidden>
+        <span id="lockCount"></span>
+        <button class="lab-btn sm" id="unlockAll">Unlock all</button>
+      </div>
+      <div class="held is-empty" id="heldBox">
+        <span class="lb-chip" id="heldChip"></span>
+        <code id="heldVal">nothing held</code>
+        <span id="heldFrom"></span>
+      </div>
+      <input class="lab-find" id="findBox" type="search" placeholder="Filter — chip, badge, --fill, where&hellip;" autocomplete="off"/>
+    </div>
+
+    <!-- ---------- ASK CLAUDE ----------
+         Two paths, and the first needs nothing set up: it writes the
+         prompt (the whole current palette, the items you ticked, and
+         what you said you like) for you to paste into Claude, and
+         takes the JSON back. The second calls the API directly, for
+         which you supply your own key.
+
+         The key is held in this browser's localStorage and sent only
+         to api.anthropic.com. It is a local dev tool; if that is not
+         a trade you want, use the copy-the-prompt path, which is the
+         default and is not second-best. -->
+    <div class="ai shut" id="aiBox">
+      <h2 id="aiToggle">Ask Claude for colours
+        <span class="count" id="aiCount">0 picked</span></h2>
+      <div class="ai-body">
+        <div class="hint">Tick the box beside any row — or use <b>pick all</b> on a
+          group header — then say what you are after.</div>
+
+        <label>What you like</label>
+        <textarea id="aiCtx" rows="4" placeholder="Warmer and less muddy on the dark ground. Keep the terracotta. The Where card should read plum without going pink. I like the olive."></textarea>
+
+        <div class="lab-actions">
+          <button class="lab-btn sm" id="aiCopyPrompt">Copy prompt</button>
+          <button class="lab-btn sm" id="aiClearSel">Clear picks</button>
+          <button class="lab-btn sm go" id="aiSend">Generate</button>
+        </div>
+
+        <label>Paste Claude&rsquo;s answer</label>
+        <textarea id="aiIn" rows="4" placeholder='{"--bg": "#17150f", ".ad-chip.c-d-easy | background": "rgba(108,136,83,.17)"}'></textarea>
+        <div class="lab-actions">
+          <button class="lab-btn sm" id="aiApply">Apply answer</button>
+          <button class="lab-btn sm" id="aiUndo" disabled>Undo</button>
+        </div>
+
+        <label>API key &mdash; optional, for Generate</label>
+        <input type="password" id="aiKey" placeholder="sk-ant-… (kept in this browser only)" autocomplete="off"/>
+        <div class="status" id="aiStatus"></div>
+      </div>
+    </div>
+
+    <div class="lab-scroll" id="tokenList"></div>
+  </aside>
+
+  <!-- =========================== STAGE =========================== -->
+  <main class="lab-stage" id="stage">
+   <div class="stage-row">
+
+    <!-- ─────────────── HOME ─────────────── -->
+    <div class="frame">
+      <h3>Home</h3>
+      <div class="phone">
+        <div class="navbar"><div class="navbar-side"></div><div class="navbar-title">Someday We&rsquo;ll Die</div><div class="navbar-side right"></div></div>
+        <div class="page active">
+          <div class="home-greeting">
+            <div class="eyebrow">Tuesday afternoon</div>
+            <h1>What&rsquo;s <em>next</em>, Landon?</h1>
+          </div>
+          <div class="home-progress">
+            <div class="hp-ring">
+              <svg viewBox="0 0 128 128" aria-hidden="true">
+                <circle class="hp-track" cx="64" cy="64" r="52"/>
+                <circle class="hp-fill" cx="64" cy="64" r="52" stroke-dasharray="326.7" stroke-dashoffset="209.1"/>
+              </svg>
+              <div class="hp-ring-label">
+                <div class="hp-pct">36<span>%</span></div>
+                <div class="hp-cap">Complete</div>
+              </div>
+            </div>
+            <div class="hp-stats">
+              <div class="hp-stat"><div class="hp-num">23</div><div class="hp-lab">Accomplished</div></div>
+              <div class="hp-stat"><div class="hp-num">41</div><div class="hp-lab">To go</div></div>
+              <div class="hp-stat"><div class="hp-num">7</div><div class="hp-lab">Lists</div></div>
+            </div>
+          </div>
+          <div class="home-composer-wrap">
+            <div class="home-composer">
+              <span class="composer-icon" data-icon="plus"></span>
+              <input type="text" placeholder="Add or find something" readonly/>
+              <button class="home-composer-go" data-icon="chevron-right"></button>
+            </div>
+          </div>
+          <div class="home-sec-head"><h2>Up next</h2><button>See all</button></div>
+          <div class="up-list">
+            <div class="up-row pri-high">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Book the ryokan in Hakone</span>
+                <span class="up-meta">
+                  <span class="tag tag-high">High</span>
+                  <span class="list-chip">Japan 2027</span>
+                  <span class="badge b-overdue">Overdue</span>
+                </span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+            <div class="up-row pri-medium">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Eat at a standing sushi bar</span>
+                <span class="up-meta">
+                  <span class="tag tag-medium">Medium</span>
+                  <span class="list-chip">Japan 2027</span>
+                  <span class="badge b-soon">4 months left</span>
+                </span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+            <div class="up-row pri-low">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Swim at Hanakapiai</span>
+                <span class="up-meta">
+                  <span class="tag tag-low">Low</span>
+                  <span class="list-chip">Somewhere warm</span>
+                  <span class="badge b-moderate">9 months left</span>
+                </span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+          </div>
+          <div class="home-sec-head"><h2>Recently accomplished</h2><button>See all</button></div>
+          <div class="shelf shelf-3">
+            <button class="rec-card">
+              <span class="rec-photo"><img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=400&q=80" alt=""/></span>
+              <span class="rec-name">Onsen in the snow</span>
+              <span class="rec-date">Feb 14</span>
+            </button>
+            <button class="rec-card">
+              <span class="rec-photo"><span class="rec-photo-empty" data-icon="check"></span></span>
+              <span class="rec-name">Learn to make soba</span>
+              <span class="rec-date">Jan 2</span>
+            </button>
+            <button class="rec-card">
+              <span class="rec-photo"><img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&q=80" alt=""/></span>
+              <span class="rec-name">Camp above the tree line</span>
+              <span class="rec-date">Nov 8</span>
+            </button>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab active"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span><span class="tab-badge">3</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── UP NEXT (pushed on Home) ─────────────── -->
+    <div class="frame">
+      <h3>Up Next</h3>
+      <div class="phone">
+        <div class="navbar condensed">
+          <div class="navbar-side"><button class="navbtn"><span data-icon="chevron-left"></span>Home</button></div>
+          <div class="navbar-title">Up Next</div>
+          <div class="navbar-side right"></div>
+        </div>
+        <div class="page page-pushed active">
+          <div class="large-title">
+            <div class="eyebrow">41 to go</div>
+            <h1>Up <em>Next</em></h1>
+          </div>
+          <div class="home-sec-head"><h2>This month</h2><span class="upnext-count">2</span></div>
+          <div class="up-list">
+            <div class="up-row pri-high">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Book the ryokan in Hakone</span>
+                <span class="up-meta"><span class="tag tag-high">High</span><span class="list-chip">Japan 2027</span><span class="badge b-overdue">Overdue</span></span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+            <div class="up-row pri-high">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Walk the Fushimi Inari gates at dawn</span>
+                <span class="up-meta"><span class="tag tag-high">High</span><span class="list-chip">Japan 2027</span><span class="badge b-urgent">18 days left</span></span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+          </div>
+          <div class="home-sec-head"><h2>This year</h2><span class="upnext-count">2</span></div>
+          <div class="up-list">
+            <div class="up-row pri-medium">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">Eat at a standing sushi bar</span>
+                <span class="up-meta"><span class="tag tag-medium">Medium</span><span class="list-chip">Japan 2027</span><span class="badge b-soon">4 months left</span></span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+            <div class="up-row pri-low">
+              <button class="act-check" data-icon="circle"></button>
+              <button class="up-main">
+                <span class="up-name">See a sumo tournament</span>
+                <span class="up-meta"><span class="tag tag-low">Low</span><span class="list-chip">Japan 2027</span><span class="badge b-relaxed">2&ndash;4 years</span></span>
+              </button>
+              <span class="act-chevron" data-icon="chevron-right"></span>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab active"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── ACCOMPLISHED (pushed on Home) ─────────────── -->
+    <div class="frame">
+      <h3>Accomplished</h3>
+      <div class="phone">
+        <div class="navbar condensed">
+          <div class="navbar-side"><button class="navbtn"><span data-icon="chevron-left"></span>Home</button></div>
+          <div class="navbar-title">Accomplished</div>
+          <div class="navbar-side right"></div>
+        </div>
+        <div class="page page-pushed active">
+          <div class="large-title">
+            <div class="eyebrow">23 done</div>
+            <h1><em>Accomplished</em></h1>
+          </div>
+          <div class="home-sec-head"><h2>February</h2><span class="upnext-count">2</span></div>
+          <div class="shelf shelf-3">
+            <button class="rec-card">
+              <span class="rec-photo"><img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=400&q=80" alt=""/></span>
+              <span class="rec-name">Onsen in the snow</span>
+              <span class="rec-date">Feb 14</span>
+            </button>
+            <button class="rec-card">
+              <span class="rec-photo"><span class="rec-photo-empty" data-icon="check"></span></span>
+              <span class="rec-name">Ride the night bus to Kyoto</span>
+              <span class="rec-date">Feb 2</span>
+            </button>
+          </div>
+          <div class="home-sec-head"><h2>January</h2><span class="upnext-count">3</span></div>
+          <div class="shelf shelf-3">
+            <button class="rec-card">
+              <span class="rec-photo"><img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&q=80" alt=""/></span>
+              <span class="rec-name">Camp above the tree line</span>
+              <span class="rec-date">Jan 19</span>
+            </button>
+            <button class="rec-card">
+              <span class="rec-photo"><span class="rec-photo-empty" data-icon="check"></span></span>
+              <span class="rec-name">Learn to make soba</span>
+              <span class="rec-date">Jan 2</span>
+            </button>
+            <button class="rec-card">
+              <span class="rec-photo"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=400&q=80" alt=""/></span>
+              <span class="rec-name">Swim in the Rhône</span>
+              <span class="rec-date">Jan 1</span>
+            </button>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab active"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE COLLECTION SCREEN ─────────────── -->
+    <div class="frame">
+      <h3>Collection detail</h3>
+      <div class="phone">
+        <div class="navbar condensed">
+          <div class="navbar-side"><button class="navbtn"><span data-icon="chevron-left"></span>Lists</button></div>
+          <div class="navbar-title">Japan 2027</div>
+          <div class="navbar-side right"><button class="navbtn disc" data-icon="ellipsis"></button></div>
+        </div>
+
+        <div class="page page-pushed active" id="srcDetailPage">
+          <div class="det-banner">
+            <img class="det-banner-img" src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=1600&q=90" alt=""/>
+            <div class="det-banner-scrim"></div>
+            <div class="det-banner-body">
+              <div class="det-banner-eyebrow">8 activities &middot; 38% done</div>
+              <div class="det-banner-title">Japan 2027</div>
+              <div class="det-banner-desc">The trip we keep almost booking.</div>
+              <div class="det-progress">
+                <div class="progress"><div class="progress-fill" style="width:38%"></div></div>
+                <span class="det-progress-label">3 of 8</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="det-controls">
+            <div class="searchbar">
+              <div class="searchfield">
+                <span data-icon="search"></span>
+                <input type="search" placeholder="Search" readonly/>
+              </div>
+            </div>
+            <div class="det-ctl-row">
+              <div class="seg">
+                <button class="active">All</button>
+                <button>To Do</button>
+                <button>Done</button>
+              </div>
+              <!-- .custom deliberately: it is the state that uses
+                   --tint-soft, and an untinted button would leave that
+                   token with nothing on screen to show it. -->
+              <span><button class="det-sort custom"><span data-icon="sort" data-cls="ic-sm"></span><span class="det-sort-label">Target</span></button></span>
+            </div>
+          </div>
+
+          <div class="acts">
+            <div class="act-group">
+              <div class="act-row pri-high">
+                <button class="act-check" data-icon="circle"></button>
+                <button class="act-main">
+                  <span class="act-name">Walk the Fushimi Inari gates at dawn</span>
+                  <span class="act-meta">
+                    <span class="tag tag-high">High</span>
+                    <span class="badge b-urgent">18 days left</span>
+                    <span class="dot">·</span>
+                    <span class="act-loc"><span data-icon="pin" data-cls="ic-xs"></span><span>Kyoto, Japan</span></span>
+                  </span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="act-row pri-medium">
+                <button class="act-check" data-icon="circle"></button>
+                <button class="act-main">
+                  <span class="act-name">Eat at a standing sushi bar</span>
+                  <span class="act-meta">
+                    <span class="tag tag-medium">Medium</span>
+                    <span class="badge b-soon">4 months left</span>
+                    <span class="dot">·</span>
+                    <span class="act-loc"><span data-icon="pin" data-cls="ic-xs"></span><span>Tokyo, Japan</span></span>
+                  </span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="act-row pri-low">
+                <button class="act-check" data-icon="circle"></button>
+                <button class="act-main">
+                  <span class="act-name">Ride the Shinkansen past Fuji</span>
+                  <span class="act-meta">
+                    <span class="tag tag-low">Low</span>
+                    <span class="badge b-moderate">9 months left</span>
+                  </span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="act-row pri-high">
+                <button class="act-check" data-icon="circle"></button>
+                <button class="act-main">
+                  <span class="act-name">Book the ryokan in Hakone</span>
+                  <span class="act-meta">
+                    <span class="tag tag-high">High</span>
+                    <span class="badge b-overdue">Overdue</span>
+                  </span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="act-row pri-low">
+                <button class="act-check" data-icon="circle"></button>
+                <button class="act-main">
+                  <span class="act-name">See a sumo tournament</span>
+                  <span class="act-meta">
+                    <span class="tag tag-low">Low</span>
+                    <span class="badge b-relaxed">2&ndash;4 years</span>
+                  </span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="act-row done">
+                <button class="act-check" data-icon="check-circle"></button>
+                <button class="act-main">
+                  <span class="act-name">Onsen in the snow</span>
+                  <span class="act-meta"><span class="badge b-done">Feb 14, 2026</span></span>
+                </button>
+                <span class="act-chevron" data-icon="chevron-right"></span>
+              </div>
+              <div class="composer">
+                <span class="composer-icon" data-icon="plus"></span>
+                <input type="text" placeholder="Add an activity" readonly/>
+                <button class="composer-go" data-icon="chevron-right"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="fab" data-icon="plus"></button>
+
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE LISTS TAB ─────────────── -->
+    <div class="frame">
+      <h3>Lists</h3>
+      <div class="phone">
+        <div class="navbar"><div class="navbar-side"></div><div class="navbar-title">Your Lists</div><div class="navbar-side right"></div></div>
+        <div class="page active">
+          <div class="large-title">
+            <div class="eyebrow">Everything you're chasing</div>
+            <h1>Your <em>Lists</em></h1>
+          </div>
+          <!-- The three derived difficulty lists. Each tier's name takes
+               a hue off the priority scale — see smartlists.js. -->
+          <div class="smart-row">
+            <button class="smart-btn smart-easy"><span class="smart-btn-name">Easy</span><span class="smart-btn-count">4/11</span></button>
+            <button class="smart-btn smart-medium"><span class="smart-btn-name">Medium</span><span class="smart-btn-count">2/9</span></button>
+            <button class="smart-btn smart-hard"><span class="smart-btn-name">Hard</span><span class="smart-btn-count">1/6</span></button>
+          </div>
+          <div class="coll-grid">
+            <button class="coll-card">
+              <img class="coll-card-img" src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=90" alt=""/>
+              <div class="coll-card-scrim"></div>
+              <div class="coll-card-pri">3 High</div>
+              <div class="coll-card-shared" data-icon="share" data-cls="ic-xs"></div>
+              <div class="coll-card-body">
+                <div class="coll-card-title">Japan 2027</div>
+                <div class="coll-card-meta">
+                  <div class="progress"><div class="progress-fill" style="width:38%"></div></div>
+                  <span>3/8</span>
+                </div>
+              </div>
+            </button>
+            <button class="coll-card">
+              <img class="coll-card-img" src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=90" alt=""/>
+              <div class="coll-card-scrim"></div>
+              <div class="coll-card-done" data-icon="check"></div>
+              <div class="coll-card-body">
+                <div class="coll-card-title">Weekends close to home</div>
+                <div class="coll-card-meta">
+                  <div class="progress"><div class="progress-fill" style="width:100%"></div></div>
+                  <span>6/6</span>
+                </div>
+              </div>
+            </button>
+            <button class="coll-card">
+              <img class="coll-card-img" src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800&q=90" alt=""/>
+              <div class="coll-card-scrim"></div>
+              <div class="coll-card-pri">1 High</div>
+              <div class="coll-card-body">
+                <div class="coll-card-title">Someday, somewhere cold</div>
+                <div class="coll-card-meta">
+                  <div class="progress"><div class="progress-fill" style="width:12%"></div></div>
+                  <span>1/8</span>
+                </div>
+              </div>
+            </button>
+            <button class="coll-card-new"><span data-icon="plus"></span><span>New List</span></button>
+            <button class="coll-card-new coll-card-join"><span data-icon="share"></span><span>Join a List</span></button>
+          </div>
+        </div>
+        <button class="fab" data-icon="plus"></button>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE YOU TAB ─────────────── -->
+    <div class="frame">
+      <h3>You</h3>
+      <div class="phone">
+        <div class="navbar"><div class="navbar-side"></div><div class="navbar-title">You</div><div class="navbar-side right"></div></div>
+        <div class="page active">
+          <div class="large-title">
+            <div class="eyebrow">A life in progress</div>
+            <h1><em>You</em></h1>
+          </div>
+          <div class="me-identity">
+            <div class="me-avatar-btn">
+              <span class="me-avatar">L</span>
+              <span class="me-avatar-edit" data-icon="camera" data-cls="ic-xs"></span>
+            </div>
+            <div class="me-identity-body">
+              <div class="me-identity-name">Landon James</div>
+              <div class="me-identity-sub">@landon</div>
+            </div>
+          </div>
+          <div class="stats-card">
+            <div class="stat"><div class="stat-num">7</div><div class="stat-label">Lists</div></div>
+            <div class="stat"><div class="stat-num">64</div><div class="stat-label">Activities</div></div>
+            <div class="stat accent"><div class="stat-num">23</div><div class="stat-label">Accomplished</div></div>
+            <div class="stat"><div class="stat-num">51</div><div class="stat-label">On the map</div></div>
+          </div>
+          <div class="me-progress">
+            <div class="me-progress-top"><strong>36% complete</strong><span>23 of 64</span></div>
+            <div class="progress"><div class="progress-fill" style="width:36%"></div></div>
+          </div>
+          <div class="me-version">From essential to extraordinary</div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+
+    <!-- ─────────────── MESSAGES (the hub) ─────────────── -->
+    <div class="frame">
+      <h3>Messages</h3>
+      <div class="phone">
+        <div class="navbar"><div class="navbar-side"></div><div class="navbar-title">Messages</div><div class="navbar-side right"></div></div>
+        <div class="page active">
+          <div class="large-title">
+            <div class="eyebrow">Sorting it out together</div>
+            <h1><em>Messages</em></h1>
+          </div>
+          <div class="conv-list">
+            <button class="conv-row unread">
+              <img class="conv-cover" src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=200&q=80" alt=""/>
+              <span class="conv-body">
+                <span class="conv-top">
+                  <span class="conv-name">Japan 2027</span>
+                  <span class="conv-when">14:02</span>
+                </span>
+                <span class="conv-bottom">
+                  <span class="conv-preview"><span class="conv-who">Sarah:</span> I can book the ryokan tonight if we settle on the 14th</span>
+                  <span class="conv-unread">3</span>
+                </span>
+              </span>
+            </button>
+            <button class="conv-row">
+              <img class="conv-cover" src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=200&q=80" alt=""/>
+              <span class="conv-body">
+                <span class="conv-top">
+                  <span class="conv-name">Weekends close to home</span>
+                  <span class="conv-when">Tue</span>
+                </span>
+                <span class="conv-bottom">
+                  <span class="conv-preview"><span class="conv-who">You:</span> Permit window opens in March</span>
+                </span>
+              </span>
+            </button>
+            <button class="conv-row">
+              <span class="conv-cover conv-cover-blank" data-icon="stack" data-cls="ic-sm"></span>
+              <span class="conv-body">
+                <span class="conv-top">
+                  <span class="conv-name">Someday, somewhere cold</span>
+                </span>
+                <span class="conv-bottom">
+                  <span class="conv-preview"><span class="conv-empty-preview">No messages yet</span></span>
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span><span class="tab-badge">3</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── ONE CONVERSATION ─────────────── -->
+    <div class="frame">
+      <h3>Conversation</h3>
+      <div class="phone">
+        <div class="navbar condensed">
+          <div class="navbar-side"><button class="navbtn"><span data-icon="chevron-left"></span>Chat</button></div>
+          <div class="navbar-title">Japan 2027</div>
+          <div class="navbar-side right"><button class="navbtn disc" data-icon="ellipsis"></button></div>
+        </div>
+        <div class="page page-pushed page-conv active">
+          <div class="conv-scroll">
+            <div class="msg-day">Tuesday</div>
+            <div class="msg">
+              <div class="msg-head">
+                <span class="msg-avatar">S</span>
+                <span class="msg-who">Sarah</span>
+                <span class="msg-time">13:58</span>
+              </div>
+              <div class="msg-bubble">
+                <div class="msg-text">Peak bloom is the first week of April — we should book before Christmas.</div>
+              </div>
+            </div>
+            <div class="msg run">
+              <div class="msg-bubble">
+                <div class="msg-text">I can do the ryokan tonight if we settle on the 14th.</div>
+                <div class="msg-chips">
+                  <span class="msg-chip"><span data-icon="circle" data-cls="ic-xs"></span><span>Book the ryokan in Hakone</span></span>
+                </div>
+              </div>
+            </div>
+            <div class="msg mine">
+              <div class="msg-head">
+                <span class="msg-avatar">L</span>
+                <span class="msg-who">You</span>
+                <span class="msg-time">14:02</span>
+              </div>
+              <div class="msg-bubble">
+                <div class="msg-text">14th works. I&rsquo;ll sort the train.</div>
+                <div class="msg-chips">
+                  <span class="msg-chip done"><span data-icon="check-circle" data-cls="ic-xs"></span><span>Onsen in the snow</span></span>
+                  <span class="msg-chip gone"><span data-icon="circle" data-cls="ic-xs"></span><span>No longer in this list</span></span>
+                </div>
+              </div>
+            </div>
+            <div class="msg">
+              <div class="msg-head">
+                <span class="msg-avatar gone">M</span>
+                <span class="msg-who">Mika</span>
+                <span class="msg-gone">Deleted account</span>
+                <span class="msg-time">14:11</span>
+              </div>
+              <div class="msg-bubble"><div class="msg-text">Have fun you two.</div></div>
+            </div>
+          </div>
+          <div class="conv-composer">
+            <div class="conv-composer-row">
+              <textarea rows="1" placeholder="@ to pick activity" readonly></textarea>
+              <button class="conv-composer-go" data-icon="chevron-right"></button>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── MAP ───────────────
+         ⚠️ NO REAL MAP HERE. The globe is MapLibre on a WebGL context;
+         loading a ~900KB library and spinning up a second context per
+         frame would cost the whole lab its responsiveness to draw a
+         basemap whose colours come from CARTO and are not ours to tune.
+         What IS ours is the floating chrome, and that is drawn for
+         real over the same CSS sky gradient .map-box paints. -->
+    <div class="frame">
+      <h3>Map <span style="text-transform:none;letter-spacing:0;color:#5c646d">— chrome only, see comment</span></h3>
+      <div class="phone">
+        <div class="page page-map active">
+          <div class="map-box active" style="position:absolute;inset:0"></div>
+          <div class="map-overlay">
+            <div class="map-filter">
+              <button class="active">All</button>
+              <button>To Go</button>
+              <button>Done</button>
+            </div>
+            <div class="map-count"><span data-icon="pin"></span>51 places</div>
+          </div>
+          <div class="map-actions">
+            <button class="map-fab" data-icon="compass"></button>
+            <button class="map-fab" data-icon="locate"></button>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── SETTINGS (pushed on You) ─────────────── -->
+    <div class="frame">
+      <h3>Settings</h3>
+      <div class="phone">
+        <div class="navbar condensed">
+          <div class="navbar-side"><button class="navbtn"><span data-icon="chevron-left"></span>You</button></div>
+          <div class="navbar-title">Settings</div>
+          <div class="navbar-side right"></div>
+        </div>
+        <div class="page page-pushed active">
+          <div class="large-title">
+            <div class="eyebrow">Preferences and account</div>
+            <h1><em>Settings</em></h1>
+          </div>
+          <div class="section-header">Preferences</div>
+          <div class="group">
+            <button class="row tappable has-leading">
+              <span class="row-leading li-orange" data-icon="clock"></span>
+              <span class="row-body"><span class="row-title">Reminder alerts</span></span>
+            </button>
+            <button class="row tappable has-leading">
+              <span class="row-leading li-green" data-icon="home"></span>
+              <span class="row-body"><span class="row-title">Home</span></span>
+            </button>
+            <button class="row tappable has-leading">
+              <span class="row-leading li-purple" data-icon="target"></span>
+              <span class="row-body"><span class="row-title">About you</span></span>
+            </button>
+            <button class="row tappable has-leading">
+              <span class="row-leading li-blue" data-icon="share"></span>
+              <span class="row-body"><span class="row-title">Add to Home Screen</span></span>
+              <span class="row-chevron" data-icon="chevron-right"></span>
+            </button>
+          </div>
+          <div class="section-header">Safety</div>
+          <div class="group">
+            <button class="row tappable has-leading">
+              <span class="row-leading li-slate" data-icon="flag"></span>
+              <span class="row-body"><span class="row-title">Blocked People</span></span>
+              <span class="row-trailing">
+                <span class="row-value">2</span>
+                <span class="row-chevron" data-icon="chevron-right"></span>
+              </span>
+            </button>
+          </div>
+          <div class="section-header">Legal</div>
+          <div class="group">
+            <a class="row tappable has-leading">
+              <span class="row-leading li-blue" data-icon="rows"></span>
+              <span class="row-body"><span class="row-title">Privacy Policy</span></span>
+              <span class="row-chevron" data-icon="chevron-right"></span>
+            </a>
+            <a class="row tappable has-leading">
+              <span class="row-leading li-green" data-icon="rows"></span>
+              <span class="row-body"><span class="row-title">Terms of Use</span></span>
+              <span class="row-chevron" data-icon="chevron-right"></span>
+            </a>
+          </div>
+          <div class="section-header">Account</div>
+          <div class="group">
+            <button class="row tappable destructive"><span class="row-body"><span class="row-title">Sign Out</span></span></button>
+            <button class="row tappable destructive"><span class="row-body"><span class="row-title">Delete Account</span></span></button>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <button class="tab"><span class="ic-off" data-icon="home"></span><span class="ic-on" data-icon="home-fill"></span><span>Home</span></button>
+          <button class="tab"><span class="ic-off" data-icon="stack"></span><span class="ic-on" data-icon="stack-fill"></span><span>Lists</span></button>
+          <button class="tab"><span class="ic-off" data-icon="message"></span><span class="ic-on" data-icon="message-fill"></span><span>Chat</span></button>
+          <button class="tab"><span class="ic-off" data-icon="compass"></span><span class="ic-on" data-icon="compass-fill"></span><span>Map</span></button>
+          <button class="tab active"><span class="ic-off" data-icon="summit"></span><span class="ic-on" data-icon="summit-fill"></span><span>You</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ─────────────── SIGNED OUT ───────────────
+         Not a .page — #authPage is swapped against #appWrap by
+         showAuth()/showApp() and nav() knows nothing about it. So it
+         has no nav bar and no tab bar, which is the whole point of it. -->
+    <div class="frame">
+      <h3>Sign in</h3>
+      <div class="phone">
+        <div class="auth-page" style="position:absolute;inset:0">
+          <div class="auth-inner">
+            <div class="auth-brand">
+              <img class="auth-mark" src="icons/icon-192.png" alt=""/>
+              <div class="auth-eyebrow">Someday We&rsquo;ll Die</div>
+              <h1 class="auth-title">Welcome Back</h1>
+              <p class="auth-sub">Sign in to reach your lists.</p>
+            </div>
+            <div class="auth-invite">Sarah shared &ldquo;Japan 2027&rdquo; with you.</div>
+            <div>
+              <div class="auth-fields">
+                <input type="email" placeholder="Email" readonly/>
+                <input type="password" placeholder="Password" readonly/>
+              </div>
+              <div class="auth-error">That email or password is wrong.</div>
+              <button class="btn btn-filled auth-submit">Sign In</button>
+              <div class="auth-forgot"><button>Forgot password?</button></div>
+              <div class="auth-toggle">
+                <span>Don&rsquo;t have an account?</span>
+                <button>Create one</button>
+              </div>
+              <p class="auth-agree">By creating an account you agree to the
+                <a>Terms of Use</a> and <a>Privacy Policy</a>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE NEW ACTIVITY SHEET ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>New activity</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="actSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">New Activity</div>
+              <button class="navbtn strong">Add</button>
+            </div>
+            <div class="sheet-body" id="actSheetBody">
+              <div class="ad-pane active">
+                <div class="ad-plate">
+                  <div class="ad-plate-main">
+                    <button class="t-eyebrow ad-eyebrow-btn" type="button">
+                      <span>Japan 2027</span><span data-icon="chevron-right" data-cls="ic-eyebrow"></span>
+                    </button>
+                    <div class="ad-title ad-title-edit" style="min-height:0">See the cherry blossoms in Kyoto</div>
+                  </div>
+                  <button class="ad-target" type="button">
+                    <span class="ad-target-k">Target<span data-icon="chevron-right"></span></span>
+                    <b>Next year</b>
+                  </button>
+                </div>
+                <div class="ad-chips">
+                  <button class="ad-chip ad-chip-btn c-high" type="button">
+                    <small>Priority</small>
+                    <span class="ad-chip-v"><span class="ad-chip-t">High</span><span data-icon="chevron-right"></span></span>
+                  </button>
+                  <button class="ad-chip ad-chip-btn c-d-medium" type="button">
+                    <small>Difficulty</small>
+                    <span class="ad-chip-v"><span class="ad-chip-t">Medium</span><span data-icon="chevron-right"></span></span>
+                  </button>
+                  <button class="ad-chip ad-chip-btn c-remind" type="button">
+                    <small>Remind</small>
+                    <span class="ad-chip-v"><span class="ad-chip-t">Mar 1</span><span data-icon="chevron-right"></span></span>
+                  </button>
+                </div>
+                <div class="ad-place c-where">
+                  <span class="ad-place-disc" data-icon="pin"></span>
+                  <span class="ad-place-body">
+                    <span class="ad-place-k">Where</span>
+                    <span class="ad-place-v">Maruyama Park, Kyoto</span>
+                  </span>
+                  <span class="ad-place-chev" data-icon="chevron-right"></span>
+                </div>
+                <div class="ad-place c-link" role="button">
+                  <span class="ad-place-disc" data-icon="link"></span>
+                  <span class="ad-place-body">
+                    <span class="ad-place-k">Links</span>
+                    <span class="ad-place-v">2 links</span>
+                  </span>
+                  <span class="ad-place-chev" data-icon="chevron-right"></span>
+                </div>
+                <div class="ad-nsec" role="button">
+                  <div class="ad-nsec-h">
+                    <p class="h">Notes</p>
+                    <span class="ad-nsec-more">1 note <span data-icon="chevron-right" data-cls="ic-xs"></span></span>
+                  </div>
+                  <div class="note-card">
+                    <p class="m"><span>You &middot; Today</span></p>
+                    <p class="t">Peak bloom is the first week of April — book before Christmas.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE COMPLETION SHEET ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>Completed activity</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="compSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Accomplished</div>
+              <button class="navbtn strong">Done</button>
+            </div>
+            <div class="sheet-body">
+              <div class="comp-pane active">
+                <div class="fg fg-hero">
+                  <label>Activity</label>
+                  <input value="Onsen in the snow" readonly/>
+                </div>
+                <div class="fg-pair">
+                  <div class="fg fg-tint fg-c-target">
+                    <label>Date</label>
+                    <input type="date" value="2026-02-14"/>
+                  </div>
+                  <div class="fg">
+                    <label>List</label>
+                    <button type="button" class="picker-btn">
+                      <span class="picker-btn-value">Japan 2027</span>
+                      <span class="picker-btn-chevron" data-icon="chevron-right"></span>
+                    </button>
+                  </div>
+                </div>
+                <div class="fg fg-tint fg-c-where">
+                  <label>Location</label>
+                  <div class="loc-wrap"><input value="Hakone, Japan" readonly/></div>
+                </div>
+                <div class="fg">
+                  <label>Media</label>
+                  <div class="comp-media-card" role="button">
+                    <div class="comp-media-body"><div class="comp-media-v">3 photos</div></div>
+                    <span class="comp-media-thumb"></span>
+                    <span class="comp-media-chev" data-icon="chevron-right"></span>
+                  </div>
+                </div>
+                <div class="comp-req-hint">Add at least one photo or video to mark this accomplished.</div>
+                <div class="comp-sec">
+                  <div class="comp-sec-head">
+                    <span class="comp-sec-label">How it went<span class="opt"> optional</span></span>
+                  </div>
+                  <textarea class="comp-note" readonly>Snow coming down the whole time. We stayed in until our hands went pink and then ran back through it barefoot.</textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ─────────────── ACTIVITY SHEET — PENDING ───────────────
+         The one every other sheet is measured against. Its .ad-* blocks
+         are shared with the new-activity sheet; the difference is that
+         every control HERE writes immediately, because the row exists.
+         #actDetailBody is the id the Orchard hues are declared on. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Activity — pending</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="actDetailSheet">
+          <div class="modal barless">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-body" id="actDetailBody">
+              <div class="ad-pane active">
+                <div class="ad-plate">
+                  <div class="ad-plate-main">
+                    <button class="t-eyebrow ad-eyebrow-btn"><span>Japan 2027</span><span data-icon="chevron-right" data-cls="ic-eyebrow"></span></button>
+                    <button class="ad-title ad-title-btn">Walk the Fushimi Inari gates at dawn</button>
+                  </div>
+                  <button class="ad-target is-due">
+                    <span class="ad-target-k">Target<span data-icon="chevron-right"></span></span>
+                    <b>18 days</b>
+                  </button>
+                </div>
+                <div class="ad-chips">
+                  <button class="ad-chip ad-chip-btn c-high"><small>Priority</small><span class="ad-chip-v"><span class="ad-chip-t">High</span><span data-icon="chevron-right"></span></span></button>
+                  <button class="ad-chip ad-chip-btn c-d-hard"><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">Hard</span><span data-icon="chevron-right"></span></span></button>
+                  <button class="ad-chip ad-chip-btn c-remind"><small>Remind</small><span class="ad-chip-v"><span class="ad-chip-t">03/01/27</span><span data-icon="chevron-right"></span></span></button>
+                </div>
+                <div class="ad-place c-where" role="button">
+                  <span class="ad-place-disc" data-icon="pin"></span>
+                  <span class="ad-place-body">
+                    <span class="ad-place-k">Where</span>
+                    <span class="ad-place-v">Fushimi Inari Taisha, Kyoto</span>
+                  </span>
+                  <span class="ad-place-chev" data-icon="chevron-right"></span>
+                </div>
+                <div class="ad-place c-link" role="button">
+                  <span class="ad-place-disc" data-icon="link"></span>
+                  <div class="ad-place-body">
+                    <span class="ad-place-k">Links</span>
+                    <div class="ad-place-v">2 links</div>
+                  </div>
+                  <span class="ad-place-chev" data-icon="chevron-right"></span>
+                </div>
+                <div class="ad-nsec" role="button">
+                  <div class="ad-nsec-h">
+                    <p class="h">Notes</p>
+                    <span class="ad-nsec-more">2 notes <span data-icon="chevron-right" data-cls="ic-xs"></span></span>
+                  </div>
+                  <div class="note-card">
+                    <p class="m"><span>Sarah &middot; Today</span></p>
+                    <p class="t">Go before 7am — the gates are empty and the light is better.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="ad-dock">
+              <div class="ad-dock-view">
+                <button class="ad-dock-disc red" data-icon="trash"></button>
+                <button class="btn btn-green btn-block"><span data-icon="check"></span>Mark accomplished</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ACTIVITY SHEET — COMPLETED ───────────────
+         A record rather than a plan: centred title, a date button and a
+         place badge instead of the plate, the media stage, "How it
+         went" in the serif, and a different dock. No notes tab at all. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Activity — completed</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay">
+          <div class="modal barless">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-body">
+              <div class="ad-head">
+                <div class="ad-title centered">Onsen in the snow</div>
+                <div class="ad-badges">
+                  <button class="badge ad-datebtn"><span data-icon="calendar" data-cls="ic-xs"></span>Feb 14, 2026</button>
+                  <span class="badge ad-locbadge"><span data-icon="pin" data-cls="ic-xs"></span><span>Hakone, Japan</span></span>
+                </div>
+              </div>
+              <div class="ad-head">
+                <div class="ad-photos">
+                  <div class="ad-photo-cell"><span class="media-tile"><img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=400&q=80" alt=""/></span></div>
+                  <div class="ad-photo-cell"><span class="media-tile"><img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&q=80" alt=""/></span></div>
+                  <div class="ad-photo-cell"><span class="media-tile"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=400&q=80" alt=""/></span></div>
+                  <button class="ad-photo-cell ad-photo-more"><span data-icon="plus" data-cls="ic-sm"></span><span>4</span></button>
+                </div>
+              </div>
+              <div class="ad-section ad-note-sec">
+                <div class="ad-section-label ad-note-head">How it went<span class="ad-count">6 photos, 1 video</span></div>
+                <div class="ad-note prose">Snow coming down the whole time. We stayed in until our hands went pink and then ran back through it barefoot.</div>
+              </div>
+              <div class="ad-section">
+                <div class="ad-section-label">Links</div>
+                <div class="group ad-links" style="margin:0">
+                  <a class="ad-link"><span data-icon="link" data-cls="ic-sm"></span><span>hakone-ryokan.jp/onsen</span></a>
+                </div>
+              </div>
+            </div>
+            <div class="ad-dock">
+              <div class="ad-dock-view">
+                <button class="ad-dock-disc red" data-icon="trash"></button>
+                <button class="ad-dock-disc" data-icon="undo"></button>
+                <button class="btn btn-filled btn-block"><span data-icon="pencil"></span>Edit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ACTIVITY SHEET — THE NOTES PAGE ───────────────
+         A pending activity is a stack of pages inside one sheet, and
+         the sub-pages have their own back bar (.ad-navbar) because the
+         sheet itself is .barless. The composer rides the dock. This is
+         also the only frame that shows the append-only log itself
+         rather than its one-card preview. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Activity — notes page</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay">
+          <div class="modal barless">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-body">
+              <div class="ad-pane active">
+                <div class="ad-navbar">
+                  <button class="ad-back"><span data-icon="chevron-left" data-cls="ic-sm"></span>Back</button>
+                  <span class="ad-navtitle">Notes</span>
+                </div>
+                <div class="ad-notes-pane">
+                  <div class="note-row">
+                    <div class="note-meta">
+                      <span class="msg-avatar">S</span>
+                      <span class="note-who">Sarah</span>
+                      <span class="note-when">Today &middot; 13:58</span>
+                      <button class="note-menu" data-icon="ellipsis" data-cls="ic-xs"></button>
+                    </div>
+                    <div class="note-body">Go before 7am — the gates are empty and the light is better.</div>
+                  </div>
+                  <div class="note-row">
+                    <div class="note-meta">
+                      <span class="msg-avatar">L</span>
+                      <span class="note-who">You</span>
+                      <span class="note-when">Tuesday &middot; 09:12</span>
+                      <button class="note-menu" data-icon="ellipsis" data-cls="ic-xs"></button>
+                    </div>
+                    <div class="note-body">Settled on the 14th. Sarah is booking the car.</div>
+                  </div>
+                  <div class="note-row">
+                    <div class="note-meta">
+                      <span class="msg-avatar gone">M</span>
+                      <span class="note-who gone">Mika</span>
+                      <span class="msg-gone">Deleted account</span>
+                      <span class="note-when">1 Mar &middot; 20:40</span>
+                      <button class="note-menu" data-icon="ellipsis" data-cls="ic-xs"></button>
+                    </div>
+                    <div class="note-body">The permit window opens in March.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="ad-dock">
+              <div class="ad-dock-view">
+                <div class="note-add">
+                  <textarea rows="1" placeholder="Add a note…" readonly></textarea>
+                  <button class="note-add-go show" data-icon="plus" data-cls="ic-sm"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ACTION SHEET ───────────────
+         Not a .modal — its own container, and the app's most-used menu.
+         `tone` colours a label with a scale the rest of the app already
+         draws, so the menu is not the one place that scale goes missing. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Action sheet</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="action-sheet open">
+          <div class="as-panel">
+            <div class="as-group">
+              <div class="as-heading"><strong>Difficulty</strong>How hard is this for you?</div>
+              <button class="as-item as-t-easy"><span class="as-check" data-icon="check" data-cls="ic-sm"></span><span>Easy</span></button>
+              <button class="as-item as-t-medium"><span class="as-check" data-icon="check" data-cls="ic-sm"></span><span>Medium</span></button>
+              <button class="as-item as-t-hard"><span class="as-check" data-icon="check" data-cls="ic-sm"></span><span>Hard</span></button>
+              <button class="as-item"><span data-icon="rows" data-cls="ic-sm"></span><span>Not rated</span></button>
+            </div>
+            <div class="as-group">
+              <button class="as-item destructive"><span data-icon="trash" data-cls="ic-sm"></span><span>Delete activity</span></button>
+            </div>
+            <div class="as-group"><button class="as-item cancel">Cancel</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── LIGHTBOX ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>Lightbox</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="lightbox open" style="position:absolute">
+          <button class="lb-close" data-icon="x"></button>
+          <div class="lb-img-wrap">
+            <button class="lb-nav lb-prev" data-icon="chevron-left"></button>
+            <img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=900&q=85" alt=""/>
+            <button class="lb-nav lb-next" data-icon="chevron-right"></button>
+          </div>
+          <div class="lb-counter">2 / 7</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ALERT, CALENDAR, TOAST ───────────────
+         The three overlays that are centred rather than bottom-anchored:
+         a sheet is a place you go, an alert is a question you answer. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Alert &middot; Calendar &middot; Toast</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="promptSheet" style="align-items:flex-start;padding-top:26px">
+          <div class="pr-card">
+            <div class="pr-head"><div class="pr-title">Reminder note</div></div>
+            <div class="pr-body"><textarea rows="2" readonly>Book the permit — they sell out in an hour</textarea></div>
+            <div class="pr-actions">
+              <button>Skip</button>
+              <button class="strong">Save</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-overlay" style="align-items:center;background:none">
+          <div class="cal-card">
+            <div class="cal-head">
+              <div class="cal-title">Target date</div>
+              <div class="cal-nav">
+                <button data-icon="chevron-left"></button>
+                <span>March 2027</span>
+                <button data-icon="chevron-right"></button>
+              </div>
+            </div>
+            <div class="cal-grid">
+              <span class="cal-dow">S</span><span class="cal-dow">M</span><span class="cal-dow">T</span><span class="cal-dow">W</span><span class="cal-dow">T</span><span class="cal-dow">F</span><span class="cal-dow">S</span>
+              <button class="cal-day is-muted">28</button><button class="cal-day">1</button><button class="cal-day">2</button><button class="cal-day">3</button><button class="cal-day">4</button><button class="cal-day">5</button><button class="cal-day">6</button>
+              <button class="cal-day">7</button><button class="cal-day">8</button><button class="cal-day is-today">9</button><button class="cal-day">10</button><button class="cal-day">11</button><button class="cal-day">12</button><button class="cal-day">13</button>
+              <button class="cal-day">14</button><button class="cal-day">15</button><button class="cal-day is-sel">16</button><button class="cal-day">17</button><button class="cal-day">18</button><button class="cal-day">19</button><button class="cal-day">20</button>
+            </div>
+            <div class="cal-actions"><button>Cancel</button></div>
+          </div>
+        </div>
+        <div class="toast show" style="position:absolute">Moved 4 activities to Austin</div>
+      </div>
+    </div>
+
+    <!-- ─────────────── NEW / EDIT LIST ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>New list</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="listSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">New List</div>
+              <button class="navbtn strong">Add</button>
+            </div>
+            <div class="sheet-body">
+              <div class="cover-pick-wrap">
+                <button class="cover-pick">
+                  <span class="cover-pick-empty">
+                    <span data-icon="photo" data-cls="ic-lg"></span>
+                    <span>Choose a cover</span>
+                  </span>
+                </button>
+              </div>
+              <div class="fg"><label>Name</label><input placeholder="Japan 2027" readonly/></div>
+              <div class="fg"><label>Description</label><input value="The trip we keep almost booking." readonly/></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── LIST PICKER ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>List picker</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="listPickerSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Add to List</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Cancel</span>
+            </div>
+            <div class="lp-sub">Walk the Fushimi Inari gates at dawn</div>
+            <div class="searchbar">
+              <div class="searchfield"><span data-icon="search"></span><input type="search" placeholder="Search lists" readonly/></div>
+            </div>
+            <div class="sheet-body lp-body">
+              <button class="lp-row current">
+                <img class="lp-cover" src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=120&q=70" alt=""/>
+                <span class="lp-name">Japan 2027</span>
+                <span class="lp-check" data-icon="check"></span>
+              </button>
+              <button class="lp-row">
+                <img class="lp-cover" src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=120&q=70" alt=""/>
+                <span class="lp-name">Weekends close to home</span>
+                <span class="lp-check" data-icon="check"></span>
+              </button>
+              <button class="lp-row">
+                <img class="lp-cover" src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=120&q=70" alt=""/>
+                <span class="lp-name">Someday, somewhere cold</span>
+                <span class="lp-check" data-icon="check"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── DUPLICATE QUESTION ───────────────
+         Deliberately quiet: no red, no alert iconography, an ordinary
+         tinted confirm. It interrupts the fastest path in the app, so
+         it has to read as a question. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Duplicate</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="dupeSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Looks familiar</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Cancel</span>
+            </div>
+            <div class="sheet-body">
+              <p class="dupe-lead">You may already have this on a list.</p>
+              <div class="dupe-list">
+                <div class="dupe-row">
+                  <span class="dupe-score strong">92%</span>
+                  <span class="dupe-main">
+                    <span class="dupe-name">Go skydiving in Interlaken</span>
+                    <span class="dupe-meta"><span class="list-chip">Someday, somewhere cold</span><span class="badge b-relaxed">2&ndash;4 years</span></span>
+                  </span>
+                  <span class="act-chevron" data-icon="chevron-right"></span>
+                </div>
+                <div class="dupe-row">
+                  <span class="dupe-score">64%</span>
+                  <span class="dupe-main">
+                    <span class="dupe-name">Skydive over the Alps</span>
+                    <span class="dupe-meta"><span class="list-chip">Japan 2027</span><span class="badge b-done">Done</span></span>
+                  </span>
+                  <span class="act-chevron" data-icon="chevron-right"></span>
+                </div>
+              </div>
+              <div class="sheet-actions">
+                <button class="btn btn-tinted btn-block">Add it anyway</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── EVERYTHING AT ONE PLACE ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>Place</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="placeSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Done</button>
+              <div class="sheet-title">Place</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Done</span>
+            </div>
+            <div class="sheet-body">
+              <div class="pl-head">
+                <div class="pl-title">Denver, Colorado</div>
+                <div class="pl-count">5 activities</div>
+              </div>
+              <div class="pl-list">
+                <div class="act-row pri-high">
+                  <button class="act-check" data-icon="circle"></button>
+                  <button class="act-main">
+                    <span class="act-name">Clear the gutters</span>
+                    <span class="act-meta"><span class="tag tag-high">High</span><span class="list-chip">Around the house</span></span>
+                  </button>
+                  <span class="act-chevron" data-icon="chevron-right"></span>
+                </div>
+                <div class="act-row done">
+                  <button class="act-check" data-icon="check-circle"></button>
+                  <button class="act-main">
+                    <span class="act-name">Finish the garage</span>
+                    <span class="act-meta"><span class="list-chip">Around the house</span><span class="pl-when">Feb 14, 2026</span></span>
+                  </button>
+                  <span class="act-chevron" data-icon="chevron-right"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SHARE A LIST ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>Share a list</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="shareListSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Done</button>
+              <div class="sheet-title">Share</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Done</span>
+            </div>
+            <div class="sheet-body" id="shareListBody">
+              <p class="shr-lead">Anyone with the link can add to <strong>Japan 2027</strong>, tick things off, and join the conversation.</p>
+              <div class="shr-people-head">3 people</div>
+              <div class="group">
+                <div class="row has-leading shr-person">
+                  <span class="row-leading li-purple shr-avatar">L</span>
+                  <span class="row-body"><span class="row-title">Landon James</span><span class="row-sub">@landon</span></span>
+                  <span class="row-trailing"><span class="shr-role">Owner</span></span>
+                </div>
+                <div class="row has-leading shr-person">
+                  <span class="row-leading li-purple shr-avatar">S</span>
+                  <span class="row-body"><span class="row-title">Sarah Okonkwo</span><span class="row-sub">@sarah</span></span>
+                  <span class="row-trailing"><span class="shr-role">Editor</span><button class="shr-remove" data-icon="x" data-cls="ic-xs"></button></span>
+                </div>
+              </div>
+              <div class="sheet-actions">
+                <button class="btn btn-filled btn-block">Send invite link</button>
+                <button class="btn btn-tinted btn-block">Copy link</button>
+              </div>
+              <p class="shr-note">A link can be revoked at any time.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ACCEPT AN INVITE + JOIN BY CODE ─────────────── -->
+    <div class="frame" data-kind="sheet">
+      <h3>Join a list</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="joinSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Not now</button>
+              <div class="sheet-title">Shared with you</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Not now</span>
+            </div>
+            <div class="sheet-body" id="joinBody">
+              <p class="shr-lead">Sarah shared a list with you.</p>
+              <div class="join-card">
+                <div class="join-name">Japan 2027</div>
+                <div class="join-count">8 activities</div>
+              </div>
+              <p class="shr-note">You&rsquo;ll be able to add to it, tick things off, and see what everyone else is planning.</p>
+              <div class="sheet-actions">
+                <button class="btn btn-filled btn-block">Join list</button>
+              </div>
+              <div class="fg"><label>Or enter a code</label>
+                <input class="join-code-input" value="K7M2QX9PLD4VN1RB80" readonly/></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── REPORT + BLOCKED ───────────────
+         Deliberately quiet: it is opened by somebody already upset, and
+         red panels make the app look like it has taken a side before it
+         knows anything. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Report</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="reportSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Report</div>
+              <button class="navbtn strong">Send</button>
+            </div>
+            <div class="sheet-body">
+              <p class="report-lead">Tell us what is wrong with <strong>this message</strong>.</p>
+              <div class="report-reasons">
+                <button class="report-reason"><span class="report-radio"></span><span>Spam or a scam</span></button>
+                <button class="report-reason selected"><span class="report-radio"></span><span>Harassment or hate</span></button>
+                <button class="report-reason"><span class="report-radio"></span><span>Sexual content</span></button>
+                <button class="report-reason"><span class="report-radio"></span><span>Something else</span></button>
+              </div>
+              <div class="report-detail">
+                <textarea readonly placeholder="Anything else we should know? (optional)"></textarea>
+              </div>
+              <p class="report-note">We review every report within 24 hours.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame" data-kind="sheet">
+      <h3>Blocked people</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="blockedSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Done</button>
+              <div class="sheet-title">Blocked People</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Done</span>
+            </div>
+            <div class="sheet-body">
+              <div class="group">
+                <div class="row has-leading blocked-row">
+                  <span class="row-leading li-slate" data-icon="circle" data-cls="ic-sm"></span>
+                  <span class="row-body"><span class="row-title">Mika</span></span>
+                  <button class="btn btn-tinted btn-sm">Unblock</button>
+                </div>
+                <div class="row has-leading blocked-row">
+                  <span class="row-leading li-slate" data-icon="circle" data-cls="ic-sm"></span>
+                  <span class="row-body"><span class="row-title">Someone</span></span>
+                  <button class="btn btn-tinted btn-sm">Unblock</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE PLAIN FIELD SHEETS ───────────────
+         Home, About you, Target date, Remind me and Delete account are
+         one shape: a sheet bar over .fg blocks. They are separate frames
+         because each carries something the others do not — a tinted
+         .fg-c-target field, a hint, a destructive action, a typed
+         confirmation — and those are what there is to look at. -->
+    <div class="frame" data-kind="sheet">
+      <h3>Home &middot; About you</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="homeSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Home</div>
+              <button class="navbtn strong">Save</button>
+            </div>
+            <div class="sheet-body">
+              <div class="fg">
+                <label>Your home address</label>
+                <div class="loc-wrap"><input value="Denver, Colorado" readonly/></div>
+                <p class="fg-hint">Used for the &ldquo;Home&rdquo; shortcut when you set an activity&rsquo;s location, and to put nearby places first when you search.</p>
+              </div>
+              <div class="fg">
+                <label>What makes something easy or hard for you</label>
+                <textarea rows="4" readonly>No car, tight budget, hike most weekends, won't fly.</textarea>
+              </div>
+              <div class="sheet-actions">
+                <button class="btn btn-destructive btn-block">Remove Home</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame" data-kind="sheet">
+      <h3>Target &middot; Remind</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="targetSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Remind Me</div>
+              <button class="navbtn strong">Done</button>
+            </div>
+            <div class="sheet-body">
+              <div class="fg fg-tint fg-c-target">
+                <label>When</label>
+                <select><option>Specific date&hellip;</option></select>
+              </div>
+              <div class="fg fg-c-target"><label>Date</label><input type="date" value="2027-03-01"/></div>
+              <p class="fg-hint">Assign this activity a specific target date to unlock more reminder options.</p>
+              <div class="fg">
+                <label>Note<span class="opt"> optional</span></label>
+                <textarea rows="2" readonly>Book the permit — they sell out in an hour.</textarea>
+              </div>
+              <div class="sheet-actions">
+                <button class="btn btn-destructive btn-block">Remove reminder</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame" data-kind="sheet">
+      <h3>Delete account</h3>
+      <div class="phone">
+        <div class="backdrop"></div>
+        <div class="modal-overlay" id="delAcctSheet">
+          <div class="modal">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-bar">
+              <button class="navbtn">Cancel</button>
+              <div class="sheet-title">Delete Account</div>
+              <span class="navbtn" style="pointer-events:none;opacity:0">Cancel</span>
+            </div>
+            <div class="sheet-body">
+              <div class="del-acct-summary">This erases 7 lists, 64 activities and 58 photos. A list you own and have shared is deleted for everyone on it.</div>
+              <div class="fg">
+                <label>Type DELETE to confirm</label>
+                <input placeholder="DELETE" readonly/>
+              </div>
+              <div class="del-acct-error">That doesn&rsquo;t match.</div>
+              <div class="sheet-actions">
+                <button class="btn btn-destructive btn-block">Delete My Account</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── THE SWATCH BOARD ───────────────
+         Not a screen. Every variant the five above do not happen to
+         show, so no control in the list is left with nowhere to point
+         and nothing to be judged against. The three difficulty chips
+         are here because the sheet only ever draws one at a time. -->
+    <div class="frame" data-kind="board">
+      <h3>All states</h3>
+      <div class="phone">
+        <div class="board" id="boardPage">
+          <h4>Difficulty chips</h4>
+          <div class="ad-chips strip" id="boardDiff">
+            <button class="ad-chip ad-chip-btn c-d-easy"><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">Easy</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-d-medium"><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">Medium</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-d-hard"><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">Hard</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-d-none"><small>Difficulty</small><span class="ad-chip-v"><span class="ad-chip-t">Not rated</span><span data-icon="chevron-right"></span></span></button>
+          </div>
+
+          <h4>Priority &amp; other chips</h4>
+          <div class="ad-chips strip">
+            <button class="ad-chip ad-chip-btn c-high"><small>Priority</small><span class="ad-chip-v"><span class="ad-chip-t">High</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-medium"><small>Priority</small><span class="ad-chip-v"><span class="ad-chip-t">Medium</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-low"><small>Priority</small><span class="ad-chip-v"><span class="ad-chip-t">Low</span><span data-icon="chevron-right"></span></span></button>
+            <button class="ad-chip ad-chip-btn c-remind"><small>Remind</small><span class="ad-chip-v"><span class="ad-chip-t">Mar 1</span><span data-icon="chevron-right"></span></span></button>
+            <span class="ad-chip c-dist"><small>Distance</small><span class="ad-chip-v"><span class="ad-chip-t">12 miles</span></span></span>
+          </div>
+
+          <h4>Priority capsules</h4>
+          <div class="strip">
+            <span class="tag tag-high">High</span>
+            <span class="tag tag-medium">Medium</span>
+            <span class="tag tag-low">Low</span>
+            <span class="tag tag-done">Done</span>
+          </div>
+
+          <h4>Deadline badges</h4>
+          <div class="strip">
+            <span class="badge b-overdue">Overdue</span>
+            <span class="badge b-urgent">18 days left</span>
+            <span class="badge b-soon">4 months left</span>
+            <span class="badge b-moderate">9 months left</span>
+            <span class="badge b-relaxed">2&ndash;4 years</span>
+            <span class="badge b-done">Feb 14, 2026</span>
+          </div>
+
+          <h4>Glyph tiles (settings rows)</h4>
+          <div class="strip">
+            <span class="row-leading li-blue" data-icon="share"></span>
+            <span class="row-leading li-green" data-icon="home"></span>
+            <span class="row-leading li-orange" data-icon="clock"></span>
+            <span class="row-leading li-purple" data-icon="target"></span>
+            <span class="row-leading li-gray" data-icon="rows"></span>
+            <span class="row-leading li-red" data-icon="trash"></span>
+          </div>
+
+          <h4>Buttons</h4>
+          <div class="strip" style="flex-direction:column;align-items:stretch;gap:8px">
+            <button class="btn btn-filled">Filled</button>
+            <button class="btn btn-tinted">Tinted</button>
+            <button class="btn btn-destructive">Destructive</button>
+          </div>
+
+          <h4>Grounds, side by side</h4>
+          <div class="strip" style="gap:0">
+            <div style="flex:1;height:54px;background:var(--bg)"></div>
+            <div style="flex:1;height:54px;background:var(--sheet-bg)"></div>
+            <div style="flex:1;height:54px;background:var(--bg-elevated)"></div>
+            <div style="flex:1;height:54px;background:var(--bg-raised)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+   </div>
+  </main>
+</div>
+
+<script src="js/icons.js"></script>
+<script>
+/* ==============================================================
+   THE CONTROLS
+
+   tok(name, label, targets, L, D)         — a base.css custom property
+   ovar(name, label, targets, L, D)        — a property scoped to the
+                                             sheet bodies (the Orchard four)
+   rule(sel, prop, label, L, D, targets)   — an explicit override
+   raw(...)                                — the same, as a text field,
+                                             for values a swatch cannot
+                                             express (gradients, shadows,
+                                             filters, color-mix)
+
+   `targets` are the selectors this control visibly affects, INSIDE a
+   .phone. They drive the hover and click linking in both directions,
+   so an empty list means "not shown on these screens" — the control
+   still exports, it just has nothing to point at.
+   ============================================================== */
+
+const ROOT = ':root';
+const ORCH = '#actDetailBody, #actSheetBody, #actSheet .sheet-body, #compSheet .sheet-body';
+
+const V = {};   /* key -> {light, dark} seeds */
+let  seq = 0;
+
+function tok(name, label, targets, L, D){
+  V[name] = { light:L, dark:D };
+  return { id:'k'+(seq++), kind:'tok', key:name, sel:ROOT, label, targets:targets||[] };
+}
+function ovar(name, label, targets, L, D){
+  V[name] = { light:L, dark:D };
+  return { id:'k'+(seq++), kind:'tok', key:name, sel:ORCH, label, targets:targets||[] };
+}
+function rule(sel, prop, label, L, D, targets){
+  const key = sel + ' | ' + prop;
+  V[key] = { light:L, dark:D };
+  return { id:'k'+(seq++), kind:'rule', key, sel, prop, label, targets:targets||[sel] };
+}
+function raw(it){ it.raw = true; return it; }
+
+/* Values that recur, written once so the seeds cannot drift apart. */
+const FILL2_L = 'rgba(122,112,92,.17)', FILL2_D = 'rgba(200,186,158,.15)';
+const FILL3_L = 'rgba(122,112,92,.12)', FILL3_D = 'rgba(200,186,158,.11)';
+const FILL4_L = 'rgba(122,112,92,.07)', FILL4_D = 'rgba(200,186,158,.07)';
+const LAB2_L  = 'rgba(58,55,48,.74)',   LAB2_D  = 'rgba(233,226,211,.68)';
+const LAB3_L  = 'rgba(78,74,64,.52)',   LAB3_D  = 'rgba(220,212,196,.46)';
+const LAB4_L  = 'rgba(110,104,92,.34)', LAB4_D  = 'rgba(210,200,182,.28)';
+const INK_L   = '#1c1a16',              INK_D   = '#f2eee4';
+const ELEV_L  = '#fbf9f5',              ELEV_D  = '#2a2620';
+const TINT_L  = '#9c5a2e',              TINT_D  = '#d98f5c';
+const GREEN   = '#6c8853', VIOLET = '#6c44ab', SLATE = '#42879a', PRIHI = '#9c5a2e';
+const PURPLE_L= '#6b5b8a', PURPLE_D = '#a695c9';
+const MOSS = '#5f7d3a', GOLD = '#a07a1f', PLUM = '#8c3f68', BLUE = '#3a6ea8';
+const WHITE = '#ffffff';
+
+const GROUPS = [
+
+{ g:'Grounds', items:[
+  tok('--bg',          'App background',        ['.phone'],                      '#eeeae2','#16140f'),
+  tok('--bg-elevated', 'Card / row / field',    ['.act-group','.ad-plate','.composer','.fg input','.comp-note','.picker-btn','.note-card','.seg button.active','.coll-card','.me-identity','.stats-card','.me-progress'], ELEV_L, ELEV_D),
+  tok('--bg-raised',   'Raised surface',        [],                              '#ffffff','#37322a'),
+  tok('--sheet-bg',    'Sheet ground',          ['.modal','.sheet-bar'],         '#f7f4ee','#1c1a15'),
+  tok('--nav-bg',      'Nav + tab bar',         ['.navbar','.tabbar'],           'rgba(238,234,226,.78)','rgba(22,20,15,.78)'),
+  tok('--scrim',       'Scrim behind a sheet',  ['.modal-overlay'],              'rgba(34,30,24,.44)','rgba(0,0,0,.6)'),
+]},
+
+{ g:'Ink', items:[
+  tok('--label',   'Primary text',       ['.act-name','.navbar-title','.ad-title','.sheet-title','.fg input','.comp-note','.picker-btn-value','.note-card .t','.searchfield input','.ad-target b','.large-title h1','.me-identity-name','.stat-num'], INK_L, INK_D),
+  tok('--label-2', 'Secondary text',     ['.tab','.seg button','.det-sort','.badge.b-relaxed','.comp-req-hint','.note-card .m'], LAB2_L, LAB2_D),
+  tok('--label-3', 'Tertiary text',      ['.act-check','.act-meta','.picker-btn-chevron','.comp-sec-label .opt','.ad-nsec-h .h','.act-row.done .act-name','.smart-btn-count','.stat-label','.me-identity-sub','.me-progress-top span'], LAB3_L, LAB3_D),
+  tok('--label-4', 'Faint / grab handle',['.sheet-grabber','.act-chevron','.me-version','.coll-card-new'], LAB4_L, LAB4_D),
+]},
+
+{ g:'Fills', items:[
+  tok('--fill-1','Control fill 1',               [],                                 'rgba(122,112,92,.22)','rgba(200,186,158,.20)'),
+  tok('--fill-2','Control fill 2 — progress',    ['.me-progress .progress'],         FILL2_L, FILL2_D),
+  tok('--fill-3','Control fill 3 — seg, search', ['.seg','.searchfield','.det-sort'],FILL3_L, FILL3_D),
+  tok('--fill-4','Control fill 4 — quiet tiles', ['.coll-card-new'],                 FILL4_L, FILL4_D),
+]},
+
+{ g:'Edges', items:[
+  tok('--separator',       'Hairline / ring', ['.act-row','.sheet-bar','.navbar','.tabbar','.stats-card'], 'rgba(120,110,92,.20)','rgba(206,193,167,.26)'),
+  tok('--separator-solid', 'Solid divider',   [],                                            '#d6d0c4','#423b31'),
+  tok('--field-edge',      'Field edge',      ['.fg input','.comp-note'],                    'rgba(60,48,32,.19)','rgba(206,193,167,.34)'),
+  raw(rule(ROOT,'--ring','Ring shadow','0 0 0 .5px var(--separator)','0 0 0 1px var(--separator)',[])),
+  raw(rule(ROOT,'--field-ring','Field ring','0 0 0 1px var(--field-edge)','0 0 0 1px var(--field-edge)',[])),
+]},
+
+{ g:'Accent', items:[
+  tok('--tint',        'Tint — tappable',  ['.navbtn','.navbtn.disc','.fab','.composer-go','.ad-eyebrow-btn','.ad-target-k','.tab.active','.fg > label','.comp-sec-label','.ad-nsec-more','.det-sort.custom','.large-title .eyebrow','.coll-card-pri','.me-avatar-edit','.li-blue','.btn-filled'], TINT_L, TINT_D),
+  tok('--tint-strong', 'Tint pressed',     [],                     '#8a4d25','#e5a273'),
+  tok('--tint-soft',   'Tint soft fill',   ['.det-sort.custom','.btn-tinted'],   'rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  tok('--green',       'Completed',        ['.act-row.done .act-check','.badge.b-done','.progress-fill','.smart-easy .smart-btn-name','.coll-card-done','.stat.accent .stat-num','.li-green'], GREEN, GREEN),
+  tok('--green-soft',  'Green soft fill',  ['.tag-done'],          'rgba(108,136,83,.25)','rgba(108,136,83,.17)'),
+  tok('--red',         'Overdue / destroy',['.badge.b-overdue','.badge.b-urgent','.li-red','.btn-destructive'], '#a8443c','#e0736a'),
+  tok('--red-soft',    'Red soft fill',    ['.btn-destructive'],   'rgba(168,68,60,.12)','rgba(224,115,106,.16)'),
+  tok('--orange',      'Deadline — soon',  ['.badge.b-soon','.li-orange'],  '#b8752f','#d99a4e'),
+  tok('--yellow',      'Deadline — later', ['.badge.b-moderate'],  '#9a8433','#cfb85e'),
+  tok('--purple',      'Purple',           ['.coll-card-shared','.coll-card-join','.li-purple'], PURPLE_L, PURPLE_D),
+  tok('--gray',        'Gray',             ['.li-gray'],           '#8a8375','#8a8375'),
+  tok('--sand',        'Sand',             [],                     '#b5a688','#c7b795'),
+]},
+
+{ g:'Priority — capsules on a row',
+  note:'Fill and text are already separate tokens here. The sheet chips read the same pair, one step lighter.',
+  items:[
+  tok('--pri-soft',        'High — fill',   ['.tag-high','.ad-chip.c-high'],    'rgba(156,90,46,.25)','rgba(156,90,46,.17)'),
+  tok('--pri-high-strong', 'High — text',   ['.tag-high'],                      '#8a481c','#ae6c40'),
+  tok('--pri-high',        'High — rail / chip text', ['.act-row.pri-high','.ad-chip.c-high','.smart-hard .smart-btn-name'], PRIHI, PRIHI),
+  tok('--violet-soft',     'Medium — fill', ['.tag-medium','.ad-chip.c-medium'],'rgba(108,68,171,.25)','rgba(108,68,171,.17)'),
+  tok('--violet',          'Medium — text / rail', ['.tag-medium','.act-row.pri-medium','.ad-chip.c-medium','.smart-medium .smart-btn-name'], VIOLET, VIOLET),
+  tok('--slate-soft',      'Low — fill',    ['.tag-low','.ad-chip.c-low'],      'rgba(66,135,154,.25)','rgba(66,135,154,.17)'),
+  tok('--slate',           'Low — text / rail',   ['.tag-low','.act-row.pri-low','.ad-chip.c-low'], SLATE, SLATE),
+]},
+
+/* ⚠️ ONE RULE PER TIER, matching how priority works.
+   The app draws all four from a single shared declaration
+   (`--fill-3` + `--label-2`), on the argument in CLAUDE.md that a
+   third colour scale on the chip row would be three rankings arguing
+   over one glance. That argument is about the CHIP ROW; the same three
+   tiers ARE hue-coded on the Lists tab's smart buttons and in the
+   Difficulty menu's tones. These give each tier its own pair, seeded
+   at today's shared grey so nothing moves until you move it. */
+{ g:'Difficulty chips — one colour per tier',
+  note:'The app shares one declaration across all four. Split per tier here, seeded at the current grey.',
+  items:[
+  rule('.ad-chip.c-d-easy','background','Easy — fill',   FILL3_L, FILL3_D),
+  rule('.ad-chip.c-d-easy','color',     'Easy — text',   LAB2_L,  LAB2_D),
+  rule('.ad-chip.c-d-medium','background','Medium — fill', FILL3_L, FILL3_D),
+  rule('.ad-chip.c-d-medium','color',     'Medium — text', LAB2_L,  LAB2_D),
+  rule('.ad-chip.c-d-hard','background','Hard — fill',   FILL3_L, FILL3_D),
+  rule('.ad-chip.c-d-hard','color',     'Hard — text',   LAB2_L,  LAB2_D),
+  rule('.ad-chip.c-d-none','background','Not rated — fill', FILL3_L, FILL3_D),
+  rule('.ad-chip.c-d-none','color',     'Not rated — text', LAB3_L,  LAB3_D),
+  rule('.ad-chip.c-dist','background','Distance chip — fill', FILL3_L, FILL3_D),
+  rule('.ad-chip.c-dist','color',      'Distance chip — text', LAB2_L, LAB2_D),
+]},
+
+/* ⚠️ ONE FILL PER TIER, as with the chips. The app gives all three the
+   same `--fill-4` ground and hue-codes only the NAME, on the argument in
+   CLAUDE.md that these three buttons are the one place difficulty is the
+   only scale on screen. Splitting the fill and the count out per tier is
+   the same trade the chips took: seeded at today's shared values, so
+   nothing moves until you move it. The tier selectors are (0,1,0) like
+   `.smart-btn` itself and this block is emitted last, so they win on
+   source order; the count selectors out-specify `.smart-btn-count`. */
+{ g:'Difficulty list buttons — one colour per tier',
+  note:'The three buttons at the top of Lists. The app colours only the name; fill and count are shared. Split per tier here.',
+  items:[
+  rule('.smart-easy','background','Easy — fill', FILL4_L, FILL4_D),
+  rule('.smart-easy .smart-btn-name','color','Easy — name', GREEN, GREEN),
+  rule('.smart-easy .smart-btn-count','color','Easy — count', LAB3_L, LAB3_D),
+  rule('.smart-medium','background','Medium — fill', FILL4_L, FILL4_D),
+  rule('.smart-medium .smart-btn-name','color','Medium — name', VIOLET, VIOLET),
+  rule('.smart-medium .smart-btn-count','color','Medium — count', LAB3_L, LAB3_D),
+  rule('.smart-hard','background','Hard — fill', FILL4_L, FILL4_D),
+  rule('.smart-hard .smart-btn-name','color','Hard — name', PRIHI, PRIHI),
+  rule('.smart-hard .smart-btn-count','color','Hard — count', LAB3_L, LAB3_D),
+]},
+
+{ g:'Remind chip',
+  note:'One token drove the fill and the text together. Split here.',
+  items:[
+  rule('.ad-chip.c-remind','background','Remind chip — fill','rgba(160,122,31,.18)','rgba(160,122,31,.18)'),
+  rule('.ad-chip.c-remind','color',     'Remind chip — text', GOLD, GOLD),
+]},
+
+{ g:'Orchard hues',
+  note:'The four data colours. They have NO dark variant in the app today — give them one here and Copy CSS emits it.',
+  items:[
+  ovar('--c-target','Target — moss',['.fg-c-target'], MOSS, MOSS),
+  ovar('--c-remind','Remind — gold',[],               GOLD, GOLD),
+  ovar('--c-where', 'Where — plum', ['.fg-c-where'],  PLUM, PLUM),
+  ovar('--c-link',  'Links — blue', [],               BLUE, BLUE),
+]},
+
+{ g:'Where card', items:[
+  rule('.ad-place.c-where','background','Where — card fill','rgba(140,63,104,.14)','rgba(140,63,104,.14)'),
+  rule('.ad-place.c-where .ad-place-disc','background','Where — disc', PLUM, PLUM),
+  rule('.ad-place.c-where .ad-place-disc','color','Where — disc glyph', WHITE, WHITE),
+  rule('.ad-place.c-where .ad-place-k','color','Where — label', PLUM, PLUM),
+  rule('.ad-place.c-where .ad-place-v','color','Where — value', INK_L, INK_D),
+  rule('.ad-place.c-where .ad-place-chev','color','Where — chevron', PLUM, PLUM),
+]},
+
+{ g:'Links card', items:[
+  rule('.ad-place.c-link','background','Links — card fill','rgba(58,110,168,.14)','rgba(58,110,168,.14)'),
+  rule('.ad-place.c-link .ad-place-disc','background','Links — disc', BLUE, BLUE),
+  rule('.ad-place.c-link .ad-place-disc','color','Links — disc glyph', WHITE, WHITE),
+  rule('.ad-place.c-link .ad-place-k','color','Links — label', BLUE, BLUE),
+  rule('.ad-place.c-link .ad-place-v','color','Links — value', BLUE, BLUE),
+  rule('.ad-place.c-link .ad-place-chev','color','Links — chevron', BLUE, BLUE),
+]},
+
+{ g:'The plate & notes block', items:[
+  rule('.ad-plate','background','Plate — fill', ELEV_L, ELEV_D),
+  rule('.ad-title','color','Plate — activity name', INK_L, INK_D),
+  rule('.ad-eyebrow-btn','color','Plate — list eyebrow', TINT_L, TINT_D),
+  rule('.ad-target-k','color','Plate — TARGET label', TINT_L, TINT_D),
+  rule('.ad-target b','color','Plate — target value', INK_L, INK_D),
+  rule('.ad-nsec-h .h','color','Notes — head', LAB3_L, LAB3_D),
+  rule('.ad-nsec-more','color','Notes — count / Add', TINT_L, TINT_D),
+  rule('.note-card','background','Notes — card fill', ELEV_L, ELEV_D),
+  rule('.note-card .m','color','Notes — byline', LAB2_L, LAB2_D),
+  rule('.note-card .t','color','Notes — body', INK_L, INK_D),
+]},
+
+{ g:'Completion sheet', items:[
+  rule('.fg > label','color','Field label', TINT_L, TINT_D),
+  rule('.fg input, .fg textarea','background','Field fill', ELEV_L, ELEV_D, ['.fg input']),
+  rule('.fg input, .fg textarea','color','Field text', INK_L, INK_D, ['.fg input']),
+  rule('.picker-btn','background','List picker — fill', ELEV_L, ELEV_D),
+  rule('.picker-btn-value','color','List picker — value', INK_L, INK_D),
+  rule('.picker-btn-chevron','color','List picker — chevron', LAB3_L, LAB3_D),
+  raw(rule('.fg-tint input, .fg-tint select, .fg-tint .row','background-color','Tinted field — fill',
+       'color-mix(in srgb, var(--fc) 10%, var(--bg-elevated))',
+       'color-mix(in srgb, var(--fc) 10%, var(--bg-elevated))', ['.fg-tint input'])),
+  raw(rule('.fg-tint input, .fg-tint select, .fg-tint .row','box-shadow','Tinted field — edge',
+       '0 0 0 .5px color-mix(in srgb, var(--fc) 34%, transparent)',
+       '0 0 0 .5px color-mix(in srgb, var(--fc) 34%, transparent)', ['.fg-tint input'])),
+  rule('.comp-media-card','background','Media card — fill','rgba(58,110,168,.14)','rgba(58,110,168,.14)'),
+  raw(rule('.comp-media-card','box-shadow','Media card — edge',
+       '0 0 0 .5px rgba(58,110,168,.34)','0 0 0 .5px rgba(58,110,168,.34)')),
+  rule('.comp-media-thumb','background','Media card — thumb well','rgba(58,110,168,.18)','rgba(58,110,168,.18)'),
+  rule('.comp-media-v','color','Media card — value', INK_L, INK_D),
+  rule('.comp-media-chev','color','Media card — chevron', BLUE, BLUE),
+  rule('.comp-req-hint','color','Media requirement hint', LAB2_L, LAB2_D),
+  rule('.comp-sec-label','color','How it went — label', TINT_L, TINT_D),
+  rule('.comp-sec-label .opt','color','How it went — “optional”', LAB3_L, LAB3_D),
+  rule('.comp-note','background','How it went — fill', ELEV_L, ELEV_D),
+  rule('.comp-note','color','How it went — text', INK_L, INK_D),
+]},
+
+{ g:'Lists tab', items:[
+  rule('.large-title .eyebrow','color','Screen eyebrow', TINT_L, TINT_D),
+  rule('.large-title h1','color','Screen title', INK_L, INK_D),
+  rule('.coll-card','background','List card — fill', ELEV_L, ELEV_D),
+  raw(rule('.coll-card-scrim','background','List card — photo wash',
+    'linear-gradient(to top, rgba(20,16,10,.86) 0%, rgba(20,16,10,.42) 34%, rgba(20,16,10,.06) 64%, transparent 100%), linear-gradient(to bottom, rgba(156,90,46,.10), rgba(74,83,64,.14))',
+    'linear-gradient(to top, rgba(20,16,10,.86) 0%, rgba(20,16,10,.42) 34%, rgba(20,16,10,.06) 64%, transparent 100%), linear-gradient(to bottom, rgba(156,90,46,.10), rgba(74,83,64,.14))')),
+  rule('.coll-card-title','color','List card — name', WHITE, WHITE),
+  rule('.coll-card-meta','color','List card — count','rgba(255,255,255,.88)','rgba(255,255,255,.88)'),
+  rule('.coll-card-meta .progress','background','List card — progress track','rgba(255,255,255,.26)','rgba(255,255,255,.26)'),
+  rule('.coll-card-meta .progress-fill','background','List card — progress fill', WHITE, WHITE),
+  rule('.coll-card-pri','background','List card — “N High” badge', TINT_L, TINT_D),
+  rule('.coll-card-pri','color','List card — “N High” text', WHITE, WHITE),
+  rule('.coll-card-done','background','List card — finished badge', GREEN, GREEN),
+  rule('.coll-card-done','color','List card — finished glyph', WHITE, WHITE),
+  rule('.coll-card-shared','background','List card — shared badge', PURPLE_L, PURPLE_D),
+  rule('.coll-card-shared','color','List card — shared glyph', WHITE, WHITE),
+  rule('.coll-card-new','background','New / Join tile — fill', FILL4_L, FILL4_D),
+  rule('.coll-card-new','border-color','New / Join tile — dashes', LAB4_L, LAB4_D),
+  rule('.coll-card-new','color','New tile — text', TINT_L, TINT_D),
+  rule('.coll-card-join','color','Join tile — text', PURPLE_L, PURPLE_D),
+]},
+
+{ g:'You tab', items:[
+  rule('.me-identity','background','Identity card — fill', ELEV_L, ELEV_D),
+  raw(rule('.me-avatar','background','Avatar — gradient',
+    'linear-gradient(145deg, var(--tint), var(--green))','linear-gradient(145deg, var(--tint), var(--green))')),
+  rule('.me-avatar','color','Avatar — initial', WHITE, WHITE),
+  rule('.me-avatar-edit','background','Avatar — camera badge', TINT_L, TINT_D),
+  rule('.me-avatar-edit','color','Avatar — camera glyph', WHITE, WHITE),
+  rule('.me-identity-name','color','Identity — name', INK_L, INK_D),
+  rule('.me-identity-sub','color','Identity — handle', LAB3_L, LAB3_D),
+  rule('.stats-card','background','Stats card — fill', ELEV_L, ELEV_D),
+  rule('.stat-num','color','Stat — numeral', INK_L, INK_D),
+  rule('.stat-label','color','Stat — label', LAB3_L, LAB3_D),
+  rule('.stat.accent .stat-num','color','Stat — accomplished numeral', GREEN, GREEN),
+  rule('.me-progress','background','Progress card — fill', ELEV_L, ELEV_D),
+  rule('.me-progress-top strong','color','Progress — percentage', INK_L, INK_D),
+  rule('.me-progress-top span','color','Progress — count', LAB3_L, LAB3_D),
+  rule('.progress','background','Progress bar — track', FILL2_L, FILL2_D),
+  rule('.progress-fill','background','Progress bar — fill', GREEN, GREEN),
+  rule('.me-version','color','Footer line', LAB4_L, LAB4_D),
+]},
+
+{ g:'Home screen', items:[
+  rule('.home-greeting .eyebrow','color','Greeting eyebrow', TINT_L, TINT_D),
+  rule('.home-greeting h1','color','Greeting', INK_L, INK_D),
+  rule('.home-progress','background','Progress card — fill', ELEV_L, ELEV_D),
+  rule('.hp-track','stroke','Ring — track', FILL2_L, FILL2_D),
+  rule('.hp-fill','stroke','Ring — fill', GREEN, GREEN),
+  rule('.hp-pct','color','Ring — percentage', INK_L, INK_D),
+  rule('.hp-pct span','color','Ring — “%” sign', LAB3_L, LAB3_D),
+  rule('.hp-cap','color','Ring — “Complete”', LAB3_L, LAB3_D),
+  rule('.hp-num','color','Stat — numeral', INK_L, INK_D),
+  rule('.hp-lab','color','Stat — label', LAB3_L, LAB3_D),
+  rule('.home-composer','background','Composer — fill', ELEV_L, ELEV_D),
+  rule('.home-composer .composer-icon','color','Composer — plus', TINT_L, TINT_D),
+  rule('.home-composer input','color','Composer — text', INK_L, INK_D),
+  rule('.home-composer-go','background','Composer arrow — fill', TINT_L, TINT_D),
+  rule('.home-composer-go','color','Composer arrow — glyph', WHITE, WHITE),
+  rule('.home-sec-head h2','color','Section head', TINT_L, TINT_D),
+  rule('.home-sec-head button','color','Section head — “See all”', LAB3_L, LAB3_D),
+  rule('.upnext-count','color','Section head — count', LAB3_L, LAB3_D),
+  rule('.up-list','background','Up Next card — fill', ELEV_L, ELEV_D),
+  rule('.up-row','background','Up Next row — fill', ELEV_L, ELEV_D),
+  rule('.up-name','color','Up Next — activity name', INK_L, INK_D),
+  rule('.up-meta','color','Up Next — meta line', LAB3_L, LAB3_D),
+  rule('.list-chip','color','List chip — text', TINT_L, TINT_D),
+  raw(rule('.list-chip','box-shadow','List chip — edge',
+    'inset 0 0 0 .5px var(--separator-solid)','inset 0 0 0 .5px var(--separator-solid)')),
+]},
+
+{ g:'Accomplished shelf', items:[
+  rule('.rec-photo','background','Tile — empty well','rgba(108,136,83,.25)','rgba(108,136,83,.17)'),
+  rule('.rec-photo-empty','color','Tile — check glyph', GREEN, GREEN),
+  rule('.rec-name','color','Tile — activity name', INK_L, INK_D),
+  rule('.rec-date','color','Tile — date', GREEN, GREEN),
+]},
+
+{ g:'Messages — the hub', items:[
+  rule('.conv-row','background','Conversation row — fill', ELEV_L, ELEV_D),
+  rule('.conv-cover-blank','background','Row — coverless thumb', FILL3_L, FILL3_D),
+  rule('.conv-cover-blank','color','Row — coverless glyph', LAB4_L, LAB4_D),
+  rule('.conv-name','color','Row — list name', INK_L, INK_D),
+  rule('.conv-when','color','Row — timestamp', LAB3_L, LAB3_D),
+  rule('.conv-preview','color','Row — preview', LAB2_L, LAB2_D),
+  rule('.conv-who','color','Row — “Sarah:”', LAB3_L, LAB3_D),
+  rule('.conv-empty-preview','color','Row — “No messages yet”', LAB4_L, LAB4_D),
+  rule('.conv-row.unread .conv-preview','color','Row — preview when unread', INK_L, INK_D),
+  rule('.conv-unread','background','Unread pip — fill', TINT_L, TINT_D),
+  rule('.conv-unread','color','Unread pip — count', WHITE, WHITE),
+  rule('.tab-badge','background','Tab bar badge — fill','#a8443c','#e0736a'),
+  rule('.tab-badge','color','Tab bar badge — count', WHITE, WHITE),
+]},
+
+{ g:'One conversation', items:[
+  /* .msg-day, NOT .conv-day — the latter does not exist, and a demo
+     using it rendered as an unstyled full-width block flush against
+     the frame. It is a flex row whose ::before/::after are the two
+     hairlines; there is no fill to set. */
+  rule('.msg-day','color','Day divider — text', LAB3_L, LAB3_D),
+  rule('.msg-day::before, .msg-day::after','background','Day divider — hairlines',
+       'rgba(120,110,92,.20)','rgba(206,193,167,.26)', ['.msg-day']),
+  rule('.msg-avatar','background','Avatar — fill','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.msg-avatar','color','Avatar — initial', TINT_L, TINT_D),
+  rule('.msg-avatar.gone','background','Avatar — deleted account', FILL3_L, FILL3_D),
+  rule('.msg-avatar.gone','color','Avatar — deleted initial', LAB4_L, LAB4_D),
+  rule('.msg-who','color','Author name', LAB2_L, LAB2_D),
+  rule('.msg-gone','background','“Deleted account” — fill', FILL3_L, FILL3_D),
+  rule('.msg-gone','color','“Deleted account” — text', LAB3_L, LAB3_D),
+  rule('.msg-time','color','Timestamp', LAB4_L, LAB4_D),
+  rule('.msg-bubble','background','Bubble — theirs', ELEV_L, ELEV_D),
+  rule('.msg.mine .msg-bubble','background','Bubble — yours','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.msg-text','color','Bubble — text', INK_L, INK_D),
+  rule('.msg-chip','background','Activity chip — fill','#ffffff','#37322a'),
+  rule('.msg-chip .ic','color','Activity chip — glyph', LAB3_L, LAB3_D),
+  rule('.msg-chip.done .ic','color','Activity chip — glyph when done', GREEN, GREEN),
+  rule('.msg-chip.done > span','color','Activity chip — text when done', LAB3_L, LAB3_D),
+  rule('.msg-chip.gone','color','Activity chip — no longer in this list', LAB4_L, LAB4_D),
+  rule('.conv-composer','background','Composer — ground','rgba(238,234,226,.78)','rgba(22,20,15,.78)'),
+  rule('.conv-composer-row','background','Composer — field fill', ELEV_L, ELEV_D),
+  rule('.conv-composer textarea','color','Composer — text', INK_L, INK_D),
+  rule('.conv-composer-go','background','Send — fill', TINT_L, TINT_D),
+  rule('.conv-composer-go','color','Send — glyph', WHITE, WHITE),
+]},
+
+/* ⚠️ CHROME ONLY. The basemap is CARTO's raster tiles and the pins are
+   drawn into canvases by map.js; neither is a colour this file can set.
+   What is here is everything that floats on top of the globe. */
+{ g:'Map — floating chrome',
+  note:'The basemap itself is CARTO raster tiles and is not ours to tune. These are the controls over it.',
+  items:[
+  rule('.map-filter','background','Filter pill — ground','rgba(238,234,226,.78)','rgba(22,20,15,.78)'),
+  rule('.map-filter button','color','Filter — text', LAB2_L, LAB2_D),
+  rule('.map-filter button.active','background','Filter — selected fill', TINT_L, TINT_D),
+  rule('.map-filter button.active','color','Filter — selected text', WHITE, WHITE),
+  rule('.map-count','background','Place count — ground','rgba(238,234,226,.78)','rgba(22,20,15,.78)'),
+  rule('.map-count','color','Place count — text', LAB2_L, LAB2_D),
+  rule('.map-count .ic','color','Place count — pin', TINT_L, TINT_D),
+  rule('.map-fab','background','Round button — fill','rgba(238,234,226,.78)','rgba(22,20,15,.78)'),
+  rule('.map-fab','color','Round button — glyph', TINT_L, TINT_D),
+]},
+
+{ g:'Settings rows', items:[
+  rule('.section-header','color','Section header', LAB3_L, LAB3_D),
+  rule('.group','background','Grouped card — fill', ELEV_L, ELEV_D),
+  rule('.row','background','Row — fill', ELEV_L, ELEV_D),
+  rule('.row-title','color','Row — title', INK_L, INK_D),
+  rule('.row-value','color','Row — trailing value', LAB3_L, LAB3_D),
+  rule('.row-chevron','color','Row — chevron', LAB3_L, LAB3_D),
+  rule('.row.destructive .row-title, .row.destructive','color','Row — destructive','#a8443c','#e0736a'),
+  rule('.li-slate','background','Settings tile — slate', SLATE, SLATE),
+]},
+
+{ g:'Signed out', items:[
+  rule('.auth-page','background','Screen ground','#eeeae2','#16140f'),
+  rule('.auth-eyebrow','color','Brand eyebrow', TINT_L, TINT_D),
+  rule('.auth-title','color','Title', INK_L, INK_D),
+  rule('.auth-sub','color','Subtitle', LAB2_L, LAB2_D),
+  rule('.auth-fields','background','Field card — fill', ELEV_L, ELEV_D),
+  rule('.auth-fields input','background','Field — fill', ELEV_L, ELEV_D),
+  rule('.auth-fields input','color','Field — text', INK_L, INK_D),
+  rule('.auth-error','color','Error text','#a8443c','#e0736a'),
+  rule('.auth-invite','background','Invite note — fill','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.auth-invite','color','Invite note — text', INK_L, INK_D),
+  rule('.auth-toggle','color','“Don’t have an account?”', LAB2_L, LAB2_D),
+  rule('.auth-toggle button','color','“Create one”', TINT_L, TINT_D),
+  rule('.auth-forgot button','color','“Forgot password?”', LAB2_L, LAB2_D),
+]},
+
+{ g:'Activity sheet — completed', items:[
+  rule('.ad-title.centered','color','Title', INK_L, INK_D),
+  rule('.ad-datebtn','background','Date button — fill','rgba(95,125,58,.18)','rgba(95,125,58,.18)'),
+  rule('.ad-datebtn','color','Date button — text', MOSS, MOSS),
+  rule('.ad-locbadge','background','Place badge — fill','rgba(140,63,104,.14)','rgba(140,63,104,.14)'),
+  rule('.ad-locbadge','color','Place badge — text', PLUM, PLUM),
+  rule('.ad-photo-more','background','“+N” tile — fill', FILL3_L, FILL3_D),
+  rule('.ad-photo-more','color','“+N” tile — text', LAB2_L, LAB2_D),
+  rule('.ad-section-label','color','Section label', TINT_L, TINT_D),
+  rule('.ad-count','color','Section label — count', LAB3_L, LAB3_D),
+  rule('.ad-note.prose','background','“How it went” — fill', ELEV_L, ELEV_D),
+  rule('.ad-note.prose','color','“How it went” — text', INK_L, INK_D),
+  rule('.ad-links','background','Links card — fill', ELEV_L, ELEV_D),
+  rule('.ad-link','color','Link row — text', TINT_L, TINT_D),
+]},
+
+{ g:'Activity sheet — the dock', items:[
+  rule('.ad-dock','background','Dock — ground','#f7f4ee','#1c1a15'),
+  rule('.ad-dock-disc','background','Round button — fill', FILL3_L, FILL3_D),
+  rule('.ad-dock-disc','color','Round button — glyph', LAB2_L, LAB2_D),
+  rule('.ad-dock-disc.red','background','Delete — fill','rgba(168,68,60,.12)','rgba(224,115,106,.16)'),
+  rule('.ad-dock-disc.red','color','Delete — glyph','#a8443c','#e0736a'),
+  rule('.btn-green','background','“Mark accomplished” — fill', GREEN, GREEN),
+  rule('.btn-green','color','“Mark accomplished” — text', WHITE, WHITE),
+  rule('.ad-navbar','background','Sub-page bar — ground','#f7f4ee','#1c1a15'),
+  rule('.ad-back','color','Sub-page — Back', TINT_L, TINT_D),
+  rule('.ad-navtitle','color','Sub-page — title', INK_L, INK_D),
+]},
+
+{ g:'The notes log', items:[
+  rule('.ad-notes-pane','background','Log — ground','#f7f4ee','#1c1a15'),
+  rule('.note-row','background','Entry — fill', ELEV_L, ELEV_D),
+  rule('.note-who','color','Entry — author', LAB2_L, LAB2_D),
+  rule('.note-who.gone','color','Entry — deleted author', LAB4_L, LAB4_D),
+  rule('.note-when','color','Entry — timestamp', LAB4_L, LAB4_D),
+  rule('.note-menu','color','Entry — ⋯ button', LAB4_L, LAB4_D),
+  rule('.note-body','color','Entry — text', INK_L, INK_D),
+  rule('.note-add','background','Composer — fill', ELEV_L, ELEV_D),
+  rule('.note-add textarea','color','Composer — text', INK_L, INK_D),
+  rule('.note-add-go','background','Composer — add fill', TINT_L, TINT_D),
+  rule('.note-add-go','color','Composer — add glyph', WHITE, WHITE),
+]},
+
+{ g:'Action sheet',
+  note:'A tone colours a label with a scale the rest of the app already draws, so the menu is not the one place that scale goes missing.',
+  items:[
+  rule('.as-group','background','Card — fill','#ffffff','#37322a'),
+  rule('.as-item','color','Item — label', INK_L, INK_D),
+  rule('.as-item.cancel','color','Cancel — label', TINT_L, TINT_D),
+  rule('.as-item.destructive','color','Destructive — label','#a8443c','#e0736a'),
+  rule('.as-heading','color','Heading — message', LAB3_L, LAB3_D),
+  rule('.as-heading strong','color','Heading — title', INK_L, INK_D),
+  rule('.as-check','color','Selected tick', TINT_L, TINT_D),
+  rule('.as-t-easy','color','Tone — easy', GREEN, GREEN),
+  rule('.as-t-medium','color','Tone — medium', VIOLET, VIOLET),
+  rule('.as-t-hard','color','Tone — hard', PRIHI, PRIHI),
+]},
+
+{ g:'Lightbox, alert, calendar, toast', items:[
+  rule('.lightbox','background','Lightbox — ground','#000000','#000000'),
+  rule('.lb-close','color','Lightbox — close', WHITE, WHITE),
+  rule('.lb-nav','color','Lightbox — arrows', WHITE, WHITE),
+  rule('.lb-counter','color','Lightbox — counter','rgba(255,255,255,.72)','rgba(255,255,255,.72)'),
+  rule('.pr-card','background','Alert — card','#ffffff','#37322a'),
+  rule('.pr-title','color','Alert — title', INK_L, INK_D),
+  rule('.pr-body textarea','background','Alert — field', FILL3_L, FILL3_D),
+  rule('.pr-actions button','color','Alert — buttons', TINT_L, TINT_D),
+  rule('.cal-card','background','Calendar — card','#ffffff','#37322a'),
+  rule('.cal-title','color','Calendar — title', INK_L, INK_D),
+  rule('.cal-dow','color','Calendar — weekday letters', LAB3_L, LAB3_D),
+  rule('.cal-day','color','Calendar — day', INK_L, INK_D),
+  rule('.cal-day.is-muted','color','Calendar — other month', LAB3_L, LAB3_D),
+  rule('.cal-day.is-sel','background','Calendar — selected fill', TINT_L, TINT_D),
+  rule('.cal-day.is-sel','color','Calendar — selected text', WHITE, WHITE),
+  rule('.toast','background','Toast — fill','rgba(34,30,24,.92)','rgba(58,52,42,.95)'),
+  rule('.toast','color','Toast — text', WHITE, WHITE),
+]},
+
+{ g:'The other sheets', items:[
+  rule('.cover-pick','background','New list — cover well', FILL3_L, FILL3_D),
+  rule('.cover-pick-empty','color','New list — cover prompt', LAB3_L, LAB3_D),
+  rule('.lp-sub','color','List picker — subtitle', LAB3_L, LAB3_D),
+  rule('.lp-row','background','List picker — row', ELEV_L, ELEV_D),
+  rule('.lp-name','color','List picker — name', INK_L, INK_D),
+  rule('.lp-row.current .lp-check','color','List picker — tick', TINT_L, TINT_D),
+  rule('.dupe-lead','color','Duplicate — lead', LAB2_L, LAB2_D),
+  rule('.dupe-score','background','Duplicate — score fill', FILL3_L, FILL3_D),
+  rule('.dupe-score','color','Duplicate — score text', LAB2_L, LAB2_D),
+  rule('.dupe-score.strong','background','Duplicate — strong score fill','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.dupe-score.strong','color','Duplicate — strong score text', TINT_L, TINT_D),
+  rule('.dupe-name','color','Duplicate — name', INK_L, INK_D),
+  rule('.pl-title','color','Place — name', INK_L, INK_D),
+  rule('.pl-count','color','Place — count', LAB3_L, LAB3_D),
+  rule('.pl-when','color','Place — completed date', LAB3_L, LAB3_D),
+  rule('.shr-lead','color','Share — lead', LAB2_L, LAB2_D),
+  rule('.shr-people-head','color','Share — roster head', LAB3_L, LAB3_D),
+  rule('.shr-role','color','Share — role', LAB3_L, LAB3_D),
+  rule('.shr-remove','color','Share — remove', LAB3_L, LAB3_D),
+  rule('.shr-note','color','Share — footnote', LAB3_L, LAB3_D),
+  rule('.row-sub','color','Roster row — handle', LAB3_L, LAB3_D),
+  rule('.join-card','background','Invite — card fill','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.join-name','color','Invite — list name', INK_L, INK_D),
+  rule('.join-count','color','Invite — activity count', LAB3_L, LAB3_D),
+  rule('.join-code-input','color','Invite — typed code', INK_L, INK_D),
+  rule('.report-lead','color','Report — lead', LAB2_L, LAB2_D),
+  rule('.report-reason','color','Report — reason', INK_L, INK_D),
+  rule('.report-radio','border-color','Report — radio ring', LAB3_L, LAB3_D),
+  rule('.report-note','color','Report — 24-hour note', LAB3_L, LAB3_D),
+  rule('.del-acct-summary','color','Delete account — summary', LAB2_L, LAB2_D),
+  rule('.del-acct-error','color','Delete account — error','#a8443c','#e0736a'),
+  rule('.fg-hint','color','Field hint', LAB3_L, LAB3_D),
+  rule('.btn-sm','color','Small tinted button', TINT_L, TINT_D),
+]},
+
+{ g:'Banner — over the photo',
+  note:'All hardcoded white in the app, because a photo is behind it. Editable per mode all the same.',
+  items:[
+  raw(rule('.det-banner-img','filter','Photo filter','brightness(.8) saturate(.92)','brightness(.8) saturate(.92)')),
+  raw(rule('.det-banner-scrim','background','Photo wash (gradient)',
+    'linear-gradient(to top, rgba(20,16,10,.88) 0%, rgba(20,16,10,.4) 44%, rgba(20,16,10,.05) 76%, transparent 100%), linear-gradient(to bottom, rgba(156,90,46,.10), rgba(74,83,64,.16))',
+    'linear-gradient(to top, rgba(20,16,10,.88) 0%, rgba(20,16,10,.4) 44%, rgba(20,16,10,.05) 76%, transparent 100%), linear-gradient(to bottom, rgba(156,90,46,.10), rgba(74,83,64,.16))')),
+  rule('.det-banner-body','color','Banner — title', WHITE, WHITE),
+  rule('.det-banner-eyebrow','color','Banner — eyebrow','rgba(255,255,255,.72)','rgba(255,255,255,.72)'),
+  rule('.det-banner-desc','color','Banner — description','rgba(255,255,255,.82)','rgba(255,255,255,.82)'),
+  rule('.det-progress .progress','background','Banner — progress track','rgba(255,255,255,.26)','rgba(255,255,255,.26)'),
+  rule('.det-progress .progress-fill','background','Banner — progress fill', WHITE, WHITE),
+  rule('.det-progress-label','color','Banner — progress count','rgba(255,255,255,.92)','rgba(255,255,255,.92)'),
+]},
+
+{ g:'Glyphs on a tinted disc',
+  note:'The white inside the ⋯ button, the FAB, the composer arrow — hardcoded #fff in the app.',
+  items:[
+  rule('.navbtn.disc','color','⋯ button — glyph', WHITE, WHITE),
+  rule('.navbtn.disc','background','⋯ button — fill', TINT_L, TINT_D),
+  rule('.fab','color','FAB — glyph', WHITE, WHITE),
+  rule('.fab','background','FAB — fill', TINT_L, TINT_D),
+  rule('.composer-go','color','Composer arrow — glyph', WHITE, WHITE),
+  rule('.composer-go','background','Composer arrow — fill', TINT_L, TINT_D),
+  rule('.row-leading','color','Settings tile — glyph', WHITE, WHITE),
+  rule('.li-blue','background','Settings tile — blue', TINT_L, TINT_D),
+  rule('.li-green','background','Settings tile — green', GREEN, GREEN),
+  rule('.li-orange','background','Settings tile — orange','#b8752f','#d99a4e'),
+  rule('.li-purple','background','Settings tile — purple', PURPLE_L, PURPLE_D),
+  rule('.li-gray','background','Settings tile — gray','#8a8375','#8a8375'),
+  rule('.li-red','background','Settings tile — red','#a8443c','#e0736a'),
+]},
+
+{ g:'Rows & list chrome', items:[
+  rule('.act-group','background','Row card — fill', ELEV_L, ELEV_D),
+  rule('.act-row','background','Row — fill', ELEV_L, ELEV_D),
+  rule('.act-name','color','Row — activity name', INK_L, INK_D),
+  rule('.act-row.done .act-name','color','Row — name when done', LAB3_L, LAB3_D),
+  rule('.act-meta','color','Row — meta line', LAB3_L, LAB3_D),
+  rule('.act-check','color','Row — check circle', LAB3_L, LAB3_D),
+  rule('.act-row.done .act-check','color','Row — check when done', GREEN, GREEN),
+  rule('.act-chevron','color','Row — chevron', LAB4_L, LAB4_D),
+  rule('.composer','background','Composer — fill', ELEV_L, ELEV_D),
+  rule('.composer-icon','color','Composer — plus', TINT_L, TINT_D),
+  rule('.seg','background','Segments — track', FILL3_L, FILL3_D),
+  rule('.seg button','color','Segments — text', LAB2_L, LAB2_D),
+  rule('.seg button.active','background','Segments — selected fill', ELEV_L, ELEV_D),
+  rule('.seg button.active','color','Segments — selected text', INK_L, INK_D),
+  rule('.searchfield','background','Search field — fill', FILL3_L, FILL3_D),
+  rule('.searchfield','color','Search field — glyph & text', LAB2_L, LAB2_D),
+  rule('.tab','color','Tab bar — inactive', LAB2_L, LAB2_D),
+  rule('.tab.active','color','Tab bar — active', TINT_L, TINT_D),
+  rule('.navbar-title','color','Nav bar — title', INK_L, INK_D),
+  rule('.navbtn','color','Nav bar — text button', TINT_L, TINT_D),
+  rule('.sheet-title','color','Sheet bar — title', INK_L, INK_D),
+  rule('.sheet-grabber','background','Sheet — grab handle', LAB4_L, LAB4_D),
+]},
+
+{ g:'Buttons', items:[
+  rule('.btn-filled','background','Filled — fill', TINT_L, TINT_D),
+  rule('.btn-filled','color','Filled — text', WHITE, WHITE),
+  rule('.btn-tinted','background','Tinted — fill','rgba(156,90,46,.13)','rgba(217,143,92,.18)'),
+  rule('.btn-tinted','color','Tinted — text', TINT_L, TINT_D),
+  rule('.btn-destructive','background','Destructive — fill','rgba(168,68,60,.12)','rgba(224,115,106,.16)'),
+  rule('.btn-destructive','color','Destructive — text','#a8443c','#e0736a'),
+]},
+
+{ g:'Shadows', items:[
+  raw(rule(ROOT,'--shadow-sm','Shadow — small',
+    '0 1px 2px rgba(60,48,32,.06), 0 1px 1px rgba(60,48,32,.04)','0 1px 2px rgba(0,0,0,.4)',[])),
+  raw(rule(ROOT,'--shadow-md','Shadow — medium',
+    '0 4px 14px rgba(60,48,32,.10), 0 1px 3px rgba(60,48,32,.06)','0 4px 16px rgba(0,0,0,.5)',[])),
+  raw(rule(ROOT,'--shadow-lg','Shadow — large',
+    '0 12px 34px rgba(50,40,26,.18), 0 3px 10px rgba(50,40,26,.09)','0 12px 34px rgba(0,0,0,.6)',[])),
+  raw(rule(ROOT,'--shadow-xl','Shadow — sheet lift',
+    '0 -10px 44px rgba(44,36,24,.20)','0 -10px 44px rgba(0,0,0,.6)',[])),
+]},
+
+];
+
+const ALL = GROUPS.reduce((a,g) => a.concat(g.items), []);
+const BY_KEY = {}; ALL.forEach(it => { if(!BY_KEY[it.key]) BY_KEY[it.key] = it; });
+let mode = 'dark';
+const state = { light:{}, dark:{} };
+Object.keys(V).forEach(k => { state.light[k] = V[k].light; state.dark[k] = V[k].dark; });
+
+/* ==============================================================
+   COLOUR PARSING — hex ⇄ rgba, so one swatch plus one slider can
+   drive a translucent value without losing its alpha.
+   ============================================================== */
+function parseColor(v){
+  v = String(v).trim();
+  let m = v.match(/^#([0-9a-f]{6})$/i);
+  if(m) return { hex:'#'+m[1].toLowerCase(), a:null };
+  m = v.match(/^#([0-9a-f]{3})$/i);
+  if(m){ const s=m[1]; return { hex:'#'+s[0]+s[0]+s[1]+s[1]+s[2]+s[2], a:null }; }
+  m = v.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i);
+  if(m){
+    const h = n => Math.max(0, Math.min(255, Math.round(+n))).toString(16).padStart(2,'0');
+    return { hex:'#'+h(m[1])+h(m[2])+h(m[3]), a: m[4] === undefined ? 1 : +m[4] };
+  }
+  return null;
+}
+function buildColor(hex, a){
+  if(a === null || a === undefined) return hex;
+  const r = parseInt(hex.slice(1,3),16),
+        g = parseInt(hex.slice(3,5),16),
+        b = parseInt(hex.slice(5,7),16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' +
+         String(Math.round(a*100)/100).replace(/^0\./,'.') + ')';
+}
+
+/* ==============================================================
+   APPLYING
+
+   One late <style> block, which beats base.css's
+   `@media (prefers-color-scheme: dark)` on source order — a media
+   query adds no specificity, so the last equally-specific rule wins.
+   Inline styles on :root could not have reached the Orchard vars or
+   any of the rule overrides.
+
+   ⚠️ Rules are emitted in list order, so anything that has to come
+   after another (a narrower selector over a broader one) must be
+   listed after it in GROUPS.
+   ============================================================== */
+const sheet = document.createElement('style');
+document.head.appendChild(sheet);
+
+function cssFor(which, indent){
+  const pad = indent || '';
+  const vars = {}, rules = [];
+  ALL.forEach(it => {
+    const v = state[which][it.key];
+    if(it.kind === 'tok' || it.sel === ROOT){
+      (vars[it.sel] = vars[it.sel] || [])
+        .push('  ' + (it.kind === 'tok' ? it.key : it.prop) + ': ' + v + ';');
+    } else {
+      rules.push(pad + it.sel + ' { ' + it.prop + ': ' + v + '; }');
+    }
+  });
+  const out = Object.keys(vars).map(sel =>
+    pad + sel + ' {\n' + vars[sel].map(l => pad + l).join('\n') + '\n' + pad + '}');
+  return out.concat(rules).join('\n');
+}
+function apply(){
+  sheet.textContent = cssFor(mode);
+  document.documentElement.style.colorScheme = mode;
+}
+
+/* ==============================================================
+   THE PANEL
+   ============================================================== */
+const listEl  = document.getElementById('tokenList');
+const rowsFor = {};      /* key -> [row elements], so one value shown in
+                            two groups stays in step */
+const picked  = new Set();   /* keys ticked for the AI panel */
+/* Keys Reset and Apply must leave alone.
+   ⚠️ GLOBAL, not per mode, though Reset itself is per mode. A lock says
+   "I have tuned this control, do not bulk-overwrite it", which is a
+   statement about the control rather than about one of its two values —
+   and a per-mode set would silently change which rows read as locked
+   every time you flipped between light and dark. It never blocks YOUR
+   OWN edit of the field: the swatch, the slider and the value box all
+   still write. It blocks the two things that write in bulk. */
+const locked  = new Set();
+let held = null;             /* {value, label} — the copy/paste clipboard */
+
+function otherHTML(it){
+  const other = mode === 'dark' ? 'light' : 'dark';
+  const same  = state[other][it.key] === state[mode][it.key];
+  return '<span class="' + (same ? 'oth' : 'neq') + '">' +
+         (same ? ' · same in ' + other : ' · ' + other + ' ' + state[other][it.key]) + '</span>';
+}
+function where(it){ return it.kind === 'tok' ? it.key : it.sel + ' ' + it.prop; }
+
+/* Ask the BROWSER whether the value is usable, rather than guessing with
+   a regex — CSS.supports() is exactly this question and knows about
+   var(), color-mix() and every gradient syntax without being taught.
+   A custom property accepts almost anything, so a token row is tested
+   against `color` instead, which is what its value is always for. The
+   four :root raws (--ring, --shadow-*) cannot be checked this way and
+   are left alone. */
+function valueValid(it, v){
+  if(!v || !v.trim()) return false;
+  const prop = (it.kind === 'tok') ? 'color'
+             : (it.sel === ROOT)   ? null
+             : it.prop;
+  if(!prop) return true;
+  try { return CSS.supports(prop, v); } catch(e){ return true; }
+}
+function badCount(){
+  return ALL.filter(it => !valueValid(it, state[mode][it.key])).length;
+}
+
+function renderPanel(){
+  listEl.innerHTML = '';
+  Object.keys(rowsFor).forEach(k => delete rowsFor[k]);
+
+  GROUPS.forEach(gr => {
+    const box = document.createElement('div');
+    box.className = 'lab-group';
+
+    const h = document.createElement('h2');
+    h.textContent = gr.g;
+    const pick = document.createElement('span');
+    pick.className = 'pick'; pick.textContent = 'pick all';
+    pick.onclick = e => {
+      e.stopPropagation();
+      const on = gr.items.some(it => !picked.has(it.key));
+      gr.items.forEach(it => on ? picked.add(it.key) : picked.delete(it.key));
+      syncPicked();
+    };
+    h.appendChild(pick);
+    h.onclick = () => box.classList.toggle('shut');
+    box.appendChild(h);
+
+    if(gr.note){ const n = document.createElement('div'); n.className='note'; n.textContent = gr.note; box.appendChild(n); }
+    gr.items.forEach(it => {
+      const row = it.raw ? rawRow(it) : colorRow(it);
+      (rowsFor[it.key] = rowsFor[it.key] || []).push(row);
+      row.addEventListener('mouseenter', () => lightStage(it));
+      row.addEventListener('mouseleave', clearHover);
+      box.appendChild(row);
+    });
+    listEl.appendChild(box);
+  });
+  applyFilter();
+  syncPicked();
+}
+
+/* Every row carries: a tick for the AI panel, the swatch, copy/paste,
+   a typeable value, and — where the value has alpha — a slider AND a
+   number you can type into. The slider alone could not be landed on a
+   specific hundredth, which is the precision a translucent fill on a
+   near-black ground actually needs. */
+function colorRow(it){
+  const row = document.createElement('div');
+  row.className = 'tok';
+  row.dataset.key = it.key;
+
+  const l1 = document.createElement('div'); l1.className = 'tok-l1';
+  const l2 = document.createElement('div'); l2.className = 'tok-l2';
+  row.append(l1, l2);
+
+  const tick = document.createElement('input');
+  tick.type = 'checkbox'; tick.className = 'aicheck';
+  tick.title = 'Include when asking Claude';
+  tick.onchange = () => { tick.checked ? picked.add(it.key) : picked.delete(it.key); syncPicked(); };
+
+  const well = document.createElement('label');
+  well.className = 'sw';
+  const sw = document.createElement('input');
+  sw.type = 'color';
+  well.appendChild(sw);
+
+  const name = document.createElement('div');
+  name.className = 'tok-name';
+  const b = document.createElement('b'); b.textContent = it.label;
+  const code = document.createElement('code');
+  name.append(b, code);
+
+  const lock = lockButton(it, tick);
+
+  const btns = document.createElement('div');
+  btns.className = 'rowbtns';
+  const cp = document.createElement('button'); cp.className='rowbtn'; cp.textContent='copy';
+  cp.title = 'Hold this colour';
+  const pa = document.createElement('button'); pa.className='rowbtn'; pa.textContent='paste';
+  pa.title = 'Apply the held colour';
+  btns.append(cp, pa);
+
+  l1.append(tick, well, name, lock, btns);
+
+  const val = document.createElement('input');
+  val.className = 'val'; val.spellcheck = false;
+  l2.appendChild(val);
+
+  const rng = document.createElement('input');
+  rng.type='range'; rng.min=0; rng.max=1; rng.step=.01;
+  const an = document.createElement('input');
+  an.className = 'alpha-n'; an.type='text'; an.spellcheck=false;
+  l2.append(rng, an);
+
+  row._sync = () => {
+    const v = state[mode][it.key];
+    const c = parseColor(v);
+    sw.value = (c ? c.hex : '#000000');
+    well.style.setProperty('--v', v);
+    if(document.activeElement !== val) val.value = v;
+    const showA = !!(c && c.a !== null);
+    rng.style.display = showA ? '' : 'none';
+    an.style.display  = showA ? '' : 'none';
+    if(showA){
+      rng.value = c.a;
+      if(document.activeElement !== an) an.value = String(Math.round(c.a*100)/100).replace(/^0\./,'.');
+    }
+    code.innerHTML = where(it) + otherHTML(it);
+    row.dataset.find = (it.label + ' ' + it.key + ' ' + (it.sel||'')).toLowerCase();
+    row.classList.toggle('sel', picked.has(it.key));
+    row.classList.toggle('lockd', locked.has(it.key));
+    val.classList.toggle('bad', !valueValid(it, v));
+    tick.checked = picked.has(it.key);
+    lock._sync();
+  };
+  const commit = v => { setValue(it.key, v); };
+
+  sw.addEventListener('input', () => {
+    const c = parseColor(state[mode][it.key]);
+    commit(buildColor(sw.value, c ? c.a : null));
+  });
+  rng.addEventListener('input', () => {
+    const c = parseColor(state[mode][it.key]);
+    if(c) commit(buildColor(c.hex, +rng.value));
+  });
+  an.addEventListener('input', () => {
+    const a = parseFloat(an.value);
+    const c = parseColor(state[mode][it.key]);
+    if(c && !isNaN(a)) commit(buildColor(c.hex, Math.max(0, Math.min(1, a))));
+  });
+  /* The value field is the universal escape hatch: it takes hex, rgba,
+     or anything else CSS understands, which is also the simplest way
+     to move a colour from one control to another by hand. */
+  val.addEventListener('input', () => commit(val.value.trim()));
+  cp.onclick = () => setHeld(state[mode][it.key], it.label);
+  pa.onclick = () => { if(held) commit(held.value); };
+
+  row._sync();
+  return row;
+}
+
+function rawRow(it){
+  const row = document.createElement('div');
+  row.className = 'tok-raw';
+  row.dataset.key = it.key;
+
+  const l1 = document.createElement('div'); l1.className = 'tok-l1';
+  const l2 = document.createElement('div'); l2.className = 'tok-l2';
+  l2.style.paddingLeft = '0';
+  row.append(l1, l2);
+
+  const tick = document.createElement('input');
+  tick.type='checkbox'; tick.className='aicheck';
+  tick.onchange = () => { tick.checked ? picked.add(it.key) : picked.delete(it.key); syncPicked(); };
+
+  const name = document.createElement('div');
+  name.className = 'tok-name';
+  const b = document.createElement('b'); b.textContent = it.label;
+  const code = document.createElement('code');
+  name.append(b, code);
+
+  const lock = lockButton(it, tick);
+
+  const btns = document.createElement('div');
+  btns.className = 'rowbtns';
+  const cp = document.createElement('button'); cp.className='rowbtn'; cp.textContent='copy';
+  const pa = document.createElement('button'); pa.className='rowbtn'; pa.textContent='paste';
+  btns.append(cp, pa);
+
+  l1.append(tick, name, lock, btns);
+
+  const val = document.createElement('input');
+  val.className = 'val'; val.type='text'; val.spellcheck = false;
+  l2.appendChild(val);
+
+  row._sync = () => {
+    if(document.activeElement !== val) val.value = state[mode][it.key];
+    code.innerHTML = where(it) + otherHTML(it);
+    row.dataset.find = (it.label + ' ' + it.key + ' ' + (it.sel||'')).toLowerCase();
+    row.classList.toggle('sel', picked.has(it.key));
+    row.classList.toggle('lockd', locked.has(it.key));
+    val.classList.toggle('bad', !valueValid(it, state[mode][it.key]));
+    tick.checked = picked.has(it.key);
+    lock._sync();
+  };
+  val.addEventListener('input', () => setValue(it.key, val.value));
+  cp.onclick = () => setHeld(state[mode][it.key], it.label);
+  pa.onclick = () => { if(held) setValue(it.key, held.value); };
+
+  row._sync();
+  return row;
+}
+
+/* Locking UNTICKS the row and disables its tick, because "ask Claude to
+   choose this" and "never overwrite this" are contradictory instructions
+   and the contradiction is better made impossible than resolved later. */
+function lockButton(it, tick){
+  const b = document.createElement('button');
+  b.className = 'lockbtn';
+  b.title = 'Exempt this from Reset and from an applied answer';
+  b.onclick = () => {
+    if(locked.has(it.key)) locked.delete(it.key);
+    else { locked.add(it.key); picked.delete(it.key); }
+    /* The count by hand rather than syncPicked(), which would repaint
+       every row a second time — syncLockUI() already does that. */
+    aiCount.textContent = picked.size + ' picked';
+    syncLockUI();
+  };
+  b._sync = () => {
+    const on = locked.has(it.key);
+    b.textContent = on ? 'locked' : 'lock';
+    tick.disabled = on;
+  };
+  return b;
+}
+
+const lockLine = document.getElementById('lockLine'),
+      lockCount = document.getElementById('lockCount');
+function syncLockUI(){
+  lockLine.hidden = locked.size === 0;
+  lockCount.textContent = locked.size + (locked.size === 1 ? ' control locked' : ' controls locked');
+  syncAllRows();
+}
+document.getElementById('unlockAll').onclick = () => { locked.clear(); syncLockUI(); };
+
+/* The one writer. Every control goes through it, so a value shown in
+   two groups cannot drift and nothing has to remember to repaint. */
+function setValue(key, v){
+  state[mode][key] = v;
+  (rowsFor[key]||[]).forEach(r => r._sync());
+  apply();
+}
+function syncAllRows(){ Object.keys(rowsFor).forEach(k => rowsFor[k].forEach(r => r._sync())); }
+
+/* ---- the held colour ---- */
+const heldBox = document.getElementById('heldBox'),
+      heldChip = document.getElementById('heldChip'),
+      heldVal = document.getElementById('heldVal'),
+      heldFrom = document.getElementById('heldFrom');
+function setHeld(value, label){
+  held = { value, label };
+  heldBox.classList.remove('is-empty');
+  heldChip.style.setProperty('--v', value);
+  heldVal.textContent = value;
+  heldFrom.textContent = 'from ' + label;
+}
+
+/* ==============================================================
+   HOVER AND CLICK LINKING, BOTH WAYS
+
+   Every control declares the selectors it visibly affects. One index
+   is built from those, keyed by ELEMENT, so the stage can answer the
+   reverse question — "what colours am I looking at?" — without
+   re-running every selector on every mouse move.
+
+   Hover is transient (blue). A CLICK pins (amber) and scrolls the
+   panel to the rows, so you can go and edit them without having to
+   keep the pointer still.
+   ============================================================== */
+const elLinks = new Map();     /* element -> Set(control key) */
+let hoverEls = [], hoverRows = [], pinEls = [], pinRows = [];
+
+function targetEls(sel){
+  return sel === '.phone'
+    ? document.querySelectorAll('.phone')
+    : document.querySelectorAll('.phone ' + sel);
+}
+function buildIndex(){
+  elLinks.clear();
+  ALL.forEach(it => it.targets.forEach(sel => {
+    let els; try { els = targetEls(sel); } catch(e){ console.warn('bad target', sel); return; }
+    els.forEach(el => {
+      if(!elLinks.has(el)) elLinks.set(el, new Set());
+      elLinks.get(el).add(it.key);
+    });
+  }));
+}
+function clearHover(){
+  hoverEls.forEach(el => el.classList.remove('hot-el'));
+  hoverRows.forEach(r => r.classList.remove('hot'));
+  hoverEls = []; hoverRows = [];
+}
+function clearPin(){
+  pinEls.forEach(el => el.classList.remove('pin-el'));
+  pinRows.forEach(r => r.classList.remove('pin'));
+  pinEls = []; pinRows = [];
+}
+function lightStage(it){
+  clearHover();
+  it.targets.forEach(sel => {
+    let els; try { els = targetEls(sel); } catch(e){ return; }
+    els.forEach(el => { el.classList.add('hot-el'); hoverEls.push(el); });
+  });
+}
+function rowsForKeys(keys){
+  const out = [];
+  keys.forEach(k => (rowsFor[k]||[]).forEach(r => out.push(r)));
+  return out;
+}
+/* ⚠️ HOVER HIGHLIGHTS AND NEVER SCROLLS. It used to scroll the first
+   matching row into view, which made the panel unusable: you would
+   hover something on screen, see its row, and then — on the way to that
+   row with the pointer — cross half a dozen other demo elements, each
+   of which scrolled the list somewhere else, so the row you were
+   reaching for was never where you last saw it. Moving the list is the
+   CLICK's job (see the stage click handler), which is a deliberate act
+   and happens once. */
+function lightRows(keys){
+  clearHover();
+  rowsForKeys(keys).filter(r => !r.classList.contains('gone'))
+    .forEach(r => { r.classList.add('hot'); hoverRows.push(r); });
+}
+
+/* Walks up from whatever is under the cursor until it reaches an
+   element something is registered against, takes everything registered
+   there, and STOPS.
+
+   ⚠️ It stops rather than collecting the whole chain, and that is the
+   difference between useful and noise. Every element on a sheet is
+   inside .modal and .modal-overlay, so a chain walk answered "sheet
+   ground, scrim, and the two you actually wanted" for every hover on
+   two of the screens. Stopping at the first hit still gives you both
+   controls for one element — a chip's fill and its text are registered
+   against the same node — and the container is one hover away, on its
+   own padding.
+
+   .phone is the fallback and never a hit, or "App background" would
+   light up on every mouse move. */
+function keysUnder(target){
+  let el = target, phone = null;
+  while(el && el !== document.body){
+    if(el.classList && el.classList.contains('phone')){ phone = el; break; }
+    const s = elLinks.get(el);
+    if(s && s.size) return Array.from(s);
+    el = el.parentElement;
+  }
+  const s = phone && elLinks.get(phone);
+  return s ? Array.from(s) : [];
+}
+
+const stage = document.getElementById('stage');
+stage.addEventListener('mouseover', e => {
+  const keys = keysUnder(e.target);
+  if(keys.length) lightRows(keys); else clearHover();
+});
+stage.addEventListener('mouseleave', clearHover);
+
+/* Click to go there. Opens the group if it was collapsed, clears the
+   filter if it is hiding the row (otherwise the jump lands on nothing
+   and reads as broken), pins both ends, and centres the first row. */
+stage.addEventListener('click', e => {
+  const keys = keysUnder(e.target);
+  if(!keys.length) return;
+  e.preventDefault();
+  clearPin();
+
+  if(rowsForKeys(keys).every(r => r.classList.contains('gone'))){
+    findBox.value = ''; applyFilter();
+  }
+  const rows = rowsForKeys(keys).filter(r => !r.classList.contains('gone'));
+  rows.forEach(r => {
+    const gr = r.closest('.lab-group');
+    if(gr) gr.classList.remove('shut');
+    r.classList.add('pin'); pinRows.push(r);
+  });
+  keys.forEach(k => {
+    const it = BY_KEY[k];
+    if(!it) return;
+    it.targets.forEach(sel => {
+      let els; try { els = targetEls(sel); } catch(err){ return; }
+      els.forEach(el => { el.classList.add('pin-el'); pinEls.push(el); });
+    });
+  });
+  /* Scroll to the NARROWEST control, not the first one. Clicking "How
+     it went" matches its own two rules AND --bg-elevated, --label and
+     --field-edge, and those tokens sit at the top of the list — so
+     landing on them scrolled nowhere and looked like the click had
+     done nothing. A rule names one element; a token names a hundred,
+     and it is the rule you clicked for. */
+  const goTo = rows.find(r => { const it = BY_KEY[r.dataset.key]; return it && it.kind === 'rule'; })
+             || rows[0];
+  /* Instant, not smooth. The list is ~13,000px tall, so a smooth scroll
+     animates through the whole of it to reach a row you have already
+     decided you want; the amber pin is what says where you landed. */
+  if(goTo) goTo.scrollIntoView({ block:'center' });
+});
+
+/* ==============================================================
+   ASK CLAUDE
+
+   Two paths and the first needs nothing set up. Both send the same
+   thing: the whole current palette as context, the rows you ticked as
+   the things to change, and whatever you wrote about what you like.
+
+   The answer is a flat JSON object keyed by the control's own key, so
+   applying it is one loop and an unknown key is simply ignored rather
+   than silently writing somewhere wrong.
+   ============================================================== */
+const aiBox = document.getElementById('aiBox'),
+      aiCount = document.getElementById('aiCount'),
+      aiCtx = document.getElementById('aiCtx'),
+      aiIn = document.getElementById('aiIn'),
+      aiKey = document.getElementById('aiKey'),
+      aiStatus = document.getElementById('aiStatus'),
+      aiUndo = document.getElementById('aiUndo');
+let undoSnapshot = null;
+
+document.getElementById('aiToggle').onclick = () => aiBox.classList.toggle('shut');
+
+function syncPicked(){
+  aiCount.textContent = picked.size + ' picked';
+  syncAllRows();
+}
+document.getElementById('aiClearSel').onclick = () => { picked.clear(); syncPicked(); };
+
+/* The key is stored in this browser only, and only if you type one. */
+try { aiKey.value = localStorage.getItem('themelab_key') || ''; } catch(e){}
+aiKey.addEventListener('change', () => {
+  try { localStorage.setItem('themelab_key', aiKey.value.trim()); } catch(e){}
+});
+
+const DESIGN_BRIEF =
+"The app is \"Someday We'll Die\", a mobile bucket-list app. Its design language: " +
+"iOS structure with its own voice — warm parchment grounds (never neutral grey), an " +
+"olive/terracotta palette, a reading serif for display type, a mono for small-caps labels. " +
+"Dark mode is a warm near-black (#16140f), never pure black, because pure black makes the " +
+"olive and terracotta look muddy. --tint (terracotta) means \"tappable\"; --green (olive) " +
+"means completed; --red is destructive only. Priority owns its own three-colour scale " +
+"(--pri-high terracotta / --violet / --slate) and deliberately excludes red, orange and " +
+"yellow, which belong to the deadline badges beside it. The four \"Orchard\" hues " +
+"(--c-target moss, --c-remind gold, --c-where plum, --c-link blue) identify a card by hue " +
+"before it is read.";
+
+function aiPrompt(){
+  const keys = Array.from(picked);
+  const other = mode === 'dark' ? 'light' : 'dark';
+  const palette = ALL.map(it => '  ' + where(it) + ' = ' + state[mode][it.key]).join('\n');
+  const wanted = keys.map(k => {
+    const it = BY_KEY[k];
+    return '  "' + k + '"   // ' + it.label + ', currently ' + state[mode][k] +
+           (it.targets.length ? ', used on ' + it.targets.join(', ') : '');
+  }).join('\n');
+
+  return DESIGN_BRIEF + '\n\n' +
+'You are choosing colours for the ' + mode.toUpperCase() + ' palette. (The ' + other +
+' palette is edited separately and you should ignore it.)\n\n' +
+'WHAT THE DESIGNER WANTS:\n' + (aiCtx.value.trim() || '(nothing said — use your judgement)') + '\n\n' +
+'THE FULL CURRENT ' + mode.toUpperCase() + ' PALETTE, for context. Do not change these ' +
+'unless they are also listed below:\n' + palette + '\n\n' +
+'CHANGE ONLY THESE, and return every one of them:\n' + wanted + '\n\n' +
+'RULES:\n' +
+'- Reply with ONLY a JSON object. No prose, no code fence, no explanation.\n' +
+'- Each key is exactly the quoted string above. Each value is a CSS colour: "#rrggbb" or ' +
+'"rgba(r,g,b,a)". Keep alpha where the current value has alpha — a translucent fill must ' +
+'stay translucent.\n' +
+'- Anything whose current value is a gradient, shadow, filter or color-mix() must come back ' +
+'in that same form.\n' +
+'- Contrast matters more than prettiness: body text needs to be readable on the ground ' +
+'behind it, and a label on a tinted card needs to be readable on that card.\n';
+}
+
+function currentSelectionOK(){
+  if(!picked.size){ aiStatus.className='status err'; aiStatus.textContent='Tick at least one row first.'; return false; }
+  return true;
+}
+
+document.getElementById('aiCopyPrompt').onclick = () => {
+  if(!currentSelectionOK()) return;
+  navigator.clipboard.writeText(aiPrompt()).then(
+    () => { aiStatus.className='status ok'; aiStatus.textContent='Prompt copied — paste it to Claude, then paste the JSON back below.'; },
+    () => { console.log(aiPrompt()); aiStatus.className='status err'; aiStatus.textContent='Clipboard blocked — the prompt is in the console.'; });
+};
+
+function applyAnswer(text){
+  let obj;
+  try {
+    /* Tolerates a ```json fence, which is the commonest way a pasted
+       answer arrives. */
+    const m = text.match(/\{[\s\S]*\}/);
+    obj = JSON.parse(m ? m[0] : text);
+  } catch(e){
+    aiStatus.className='status err'; aiStatus.textContent='That is not JSON: ' + e.message; return;
+  }
+  undoSnapshot = Object.assign({}, state[mode]);
+  aiUndo.disabled = false;
+  let n = 0, held = 0; const skipped = [];
+  Object.keys(obj).forEach(k => {
+    if(!(k in state[mode])){ skipped.push(k); return; }
+    /* Ticking a locked row is already impossible, but a model can return
+       a key nobody asked for. Same rule applies. */
+    if(locked.has(k)){ held++; return; }
+    state[mode][k] = String(obj[k]); n++;
+  });
+  syncAllRows(); apply();
+  aiStatus.className = n ? 'status ok' : 'status err';
+  aiStatus.textContent = 'Applied ' + n + ' value' + (n===1?'':'s') +
+    (held ? ' — kept ' + held + ' locked' : '') +
+    (skipped.length ? ' — ignored ' + skipped.length + ' unknown key' + (skipped.length===1?'':'s') : '');
+}
+document.getElementById('aiApply').onclick = () => applyAnswer(aiIn.value);
+aiUndo.onclick = () => {
+  if(!undoSnapshot) return;
+  state[mode] = undoSnapshot; undoSnapshot = null; aiUndo.disabled = true;
+  syncAllRows(); apply();
+  aiStatus.className='status ok'; aiStatus.textContent='Reverted.';
+};
+
+/* The direct call. Loads the official Anthropic SDK on demand — there
+   is no build step here, so it comes from a CDN as an ES module the
+   first time you press Generate, and only then. If that import fails
+   the copy-the-prompt path above is unaffected and is what to use. */
+let sdkPromise = null;
+function loadSDK(){
+  if(!sdkPromise) sdkPromise = import('https://esm.sh/@anthropic-ai/sdk@0.72.0');
+  return sdkPromise;
+}
+document.getElementById('aiSend').onclick = async () => {
+  if(!currentSelectionOK()) return;
+  const key = aiKey.value.trim();
+  if(!key){
+    aiStatus.className='status err';
+    aiStatus.textContent='No API key. Use “Copy prompt” instead — it needs nothing set up.';
+    return;
+  }
+  aiStatus.className='status'; aiStatus.textContent='Asking Claude…';
+  try {
+    const mod = await loadSDK();
+    const Anthropic = mod.default || mod.Anthropic;
+    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+    const res = await client.messages.create({
+      model: 'claude-opus-5',
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      messages: [{ role: 'user', content: aiPrompt() }],
+    });
+    if(res.stop_reason === 'refusal'){
+      aiStatus.className='status err'; aiStatus.textContent='Claude declined that request.'; return;
+    }
+    const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    aiIn.value = text.trim();
+    applyAnswer(text);
+  } catch(err){
+    aiStatus.className='status err';
+    aiStatus.textContent = 'Failed: ' + (err && err.message ? err.message : String(err)) +
+      ' — “Copy prompt” always works.';
+    console.error(err);
+  }
+};
+
+/* ==============================================================
+   FILTER, MODE, RESET, EXPORT
+   ============================================================== */
+/* ⚠️ HIDING A FRAME MUST NOT HIDE ITS CONTROLS. The hover and click
+   index is built from elements that are in the DOM; display:none keeps
+   them there, so the links survive — but a hidden element measures 0
+   and cannot be pointed at, which is why the click handler falls back
+   to clearing the filter rather than to nothing. Everything still
+   exports either way. */
+/* Counted, never typed: the label went stale the first time a frame
+   was added. */
+(function(){
+  const n = k => document.querySelectorAll(
+    k === 'all' ? '.frame' : '.frame[data-kind="' + k + '"]').length;
+  const screens = document.querySelectorAll('.frame:not([data-kind])').length;
+  document.querySelectorAll('#kindBar [data-kind]').forEach(b => {
+    const k = b.dataset.kind;
+    b.textContent = b.textContent + ' ' + (k === 'screen' ? screens : n(k));
+  });
+})();
+
+document.getElementById('kindBar').addEventListener('click', e => {
+  const b = e.target.closest('[data-kind]');
+  if(!b) return;
+  const want = b.dataset.kind;
+  document.querySelectorAll('#kindBar [data-kind]').forEach(x =>
+    x.classList.toggle('on', x === b));
+  document.querySelectorAll('.frame').forEach(f => {
+    const kind = f.dataset.kind || 'screen';
+    f.style.display = (want === 'all' || kind === want) ? '' : 'none';
+  });
+});
+
+const findBox = document.getElementById('findBox');
+function applyFilter(){
+  const q = findBox.value.trim().toLowerCase();
+  listEl.querySelectorAll('.lab-group').forEach(gr => {
+    const groupHit = gr.querySelector('h2').textContent.toLowerCase().indexOf(q) !== -1;
+    let shown = 0;
+    gr.querySelectorAll('[data-find]').forEach(r => {
+      const hit = !q || groupHit || r.dataset.find.indexOf(q) !== -1;
+      r.classList.toggle('gone', !hit);
+      if(hit) shown++;
+    });
+    gr.classList.toggle('gone', shown === 0);
+    if(q) gr.classList.remove('shut');
+  });
+}
+findBox.addEventListener('input', applyFilter);
+
+const bDark = document.getElementById('modeDark'),
+      bLight = document.getElementById('modeLight');
+function setMode(m){
+  mode = m;
+  bDark.classList.toggle('on', m === 'dark');
+  bLight.classList.toggle('on', m === 'light');
+  undoSnapshot = null; aiUndo.disabled = true;
+  renderPanel();
+  apply();
+}
+bDark.onclick  = () => { location.hash = 'dark';  setMode('dark');  };
+bLight.onclick = () => { location.hash = 'light'; setMode('light'); };
+
+document.getElementById('resetBtn').onclick = () => {
+  let n = 0;
+  Object.keys(V).forEach(k => {
+    if(locked.has(k)) return;
+    state[mode][k] = V[k][mode]; n++;
+  });
+  syncAllRows(); apply();
+  if(locked.size){
+    aiStatus.className = 'status ok';
+    aiStatus.textContent = 'Reset ' + n + ' — kept ' + locked.size + ' locked.';
+  }
+};
+
+/* Shaped so each block can be pasted over the one it came from. */
+document.getElementById('copyBtn').onclick = () => {
+  const out =
+'/* ============================================================\n' +
+'   Generated by theme-lab.html. Paste each block over the one it\n' +
+'   names. Rule overrides go at the END of the file they belong to,\n' +
+'   or an equally specific rule already there will win.\n' +
+'   ============================================================ */\n\n' +
+'/* ---- LIGHT ---- */\n' + cssFor('light') + '\n\n' +
+'/* ---- DARK ---- */\n@media (prefers-color-scheme: dark) {\n' +
+  cssFor('dark','  ') + '\n}\n';
+
+  /* ⚠️ SAY SO IF ANYTHING IN IT IS BROKEN. A value the browser cannot
+     parse is dropped when the CSS is pasted into the app, so that one
+     element keeps its old colour while everything around it changes —
+     and the row responsible is usually scrolled off screen by then.
+     This shipped once: `9e1a60`, typed without its #, silently left the
+     Where card's chevron behind. */
+  const bad = badCount();
+  const done = () => {
+    const b = document.getElementById('copyBtn');
+    b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy CSS', 1400);
+    if(bad){
+      aiStatus.className = 'status err';
+      aiStatus.textContent = '⚠ ' + bad + ' value' + (bad===1?' is':'s are') +
+        ' not valid CSS and will be dropped — filter for the red boxes.';
+    }
+  };
+  /* navigator.clipboard is undefined outside a secure context, and
+     reading it would THROW before .then() could catch anything — the
+     same file:// trap that gates crypto.randomUUID. See CLAUDE.md. */
+  const fallback = () => {
+    console.log(out);
+    const ta = document.createElement('textarea');
+    ta.value = out;
+    ta.style.cssText = 'position:fixed;inset:10% 10%;z-index:99999;font:11px ui-monospace,Menlo,monospace;padding:12px';
+    document.body.appendChild(ta);
+    ta.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch(e){}
+    if(copied){ ta.remove(); done(); }
+    else {
+      aiStatus.className = 'status err';
+      aiStatus.textContent = 'Clipboard blocked — press ⌘C, then Escape. Also in the console.';
+      ta.addEventListener('keydown', e => { if(e.key === 'Escape') ta.remove(); });
+    }
+  };
+  try {
+    navigator.clipboard.writeText(out).then(done, fallback);
+  } catch(e){ fallback(); }
+};
+
+/* ==============================================================
+   PAINT — the app's own glyphs, and a still copy of the collection
+   screen behind each sheet so the scrim has something to sit on.
+   ============================================================== */
+document.querySelectorAll('[data-icon]').forEach(el => {
+  el.innerHTML = icon(el.dataset.icon, el.dataset.cls || '') + el.innerHTML;
+});
+const src = document.getElementById('srcDetailPage');
+document.querySelectorAll('.backdrop').forEach(b => b.appendChild(src.cloneNode(true)));
+
+/* ==============================================================
+   SEEDING FROM css/theme.css
+
+   ⚠️ THE SEEDS ARE WHATEVER IS ON DISK, NOT base.css's defaults.
+   Without this the bench opened on the app's original palette every
+   time, so a session's work had to be redone from scratch to change
+   one colour — and Reset meant "throw away everything you have ever
+   tuned" rather than "back to the file".
+
+   It PARSES the file rather than reading computed styles, and that is
+   the whole reason it is worth the code: getComputedStyle() answers in
+   resolved values, so `color-mix(in srgb, var(--fc) 10%, …)` comes
+   back as a flat rgb() and a hex comes back as rgb() too — the
+   authored form, which is what has to be written back out, is gone.
+   The CSSOM serialises hexes the same way. A text parse keeps every
+   value byte-identical to what is in the file.
+
+   It also seeds V, not only `state`, so RESET means "back to
+   theme.css". That is the meaning somebody pressing it actually wants
+   once the file exists.
+
+   Everything degrades: no file, a 404, a file:// origin where fetch
+   cannot read a sibling, or a file holding nothing but its header
+   comment all fall through to the built-in seeds, and the line under
+   the buttons says which happened.
+   ============================================================== */
+const seedLine = document.getElementById('seedLine');
+
+/* The exact (selector, property) pair each control writes, so parsing
+   is the inverse of cssFor() by construction rather than by a second
+   set of rules that could drift from it. ⚠️ A :root raw such as --ring
+   is written INSIDE the :root block but keyed ':root | --ring', which
+   is why this maps rather than reconstructing keys from the file. */
+const WRITES = {};
+ALL.forEach(it => {
+  const sel  = it.sel.replace(/\s+/g, ' ').trim();
+  const prop = (it.kind === 'tok') ? it.key : it.prop;
+  WRITES[sel + '|' + prop] = it.key;
+});
+
+function themeSplitDark(t){
+  t = t.replace(/\/\*[\s\S]*?\*\//g, '');
+  const i = t.search(/@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{/);
+  if(i === -1) return { light:t, dark:'' };
+  const open = t.indexOf('{', i);
+  let depth = 0, j = open;
+  for(; j < t.length; j++){
+    if(t[j] === '{') depth++;
+    else if(t[j] === '}' && !--depth) break;
+  }
+  return { light: t.slice(0, i) + t.slice(j + 1), dark: t.slice(open + 1, j) };
+}
+function themeParse(t){
+  const out = {}, re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while((m = re.exec(t))){
+    const sel = m[1].replace(/\s+/g, ' ').trim();
+    m[2].split(';').forEach(d => {
+      const c = d.indexOf(':');
+      if(c < 0) return;
+      const prop = d.slice(0, c).trim(), val = d.slice(c + 1).trim();
+      if(!prop || !val) return;
+      const key = WRITES[sel + '|' + prop];
+      if(key) out[key] = val;
+    });
+  }
+  return out;
+}
+
+async function loadThemeSeeds(){
+  let text;
+  try {
+    const r = await fetch('css/theme.css', { cache:'no-store' });
+    if(!r.ok){ seedLine.textContent = 'No css/theme.css — seeded from base.css defaults.'; return; }
+    text = await r.text();
+  } catch(e){
+    seedLine.textContent = 'Could not read css/theme.css (serve over http) — seeded from base.css defaults.';
+    return;
+  }
+  const halves = themeSplitDark(text);
+  const found = { light: themeParse(halves.light), dark: themeParse(halves.dark) };
+  let n = 0;
+  ['light','dark'].forEach(which => {
+    Object.keys(found[which]).forEach(k => {
+      if(!(k in state[which])) return;
+      V[k][which] = found[which][k];
+      state[which][k] = found[which][k];
+      n++;
+    });
+  });
+  if(!n){ seedLine.textContent = 'css/theme.css holds no values yet — seeded from base.css defaults.'; return; }
+  seedLine.className = 'seedline live';
+  seedLine.textContent = 'Seeded from css/theme.css — ' + n + ' values. Reset returns to that file.';
+  renderPanel();
+  apply();
+}
+
+if(location.hash === '#light') mode = 'light';
+setMode(mode);
+syncLockUI();
+buildIndex();
+/* Painted from the built-in seeds first, then re-seeded — a local file
+   resolves in a millisecond, and rendering behind the fetch would mean
+   a blank bench if it ever hung. */
+loadThemeSeeds();
+</script>
+<script>setTimeout(async function(){
+  var L=[];
+  var text = await (await fetch('css/theme.css',{cache:'no-store'})).text();
+  var halves = themeSplitDark(text);
+  var file = { light: themeParse(halves.light), dark: themeParse(halves.dark) };
+  L.push('file declarations mapped:  light='+Object.keys(file.light).length+
+         '  dark='+Object.keys(file.dark).length);
+
+  ['light','dark'].forEach(function(w){
+    var bad=[];
+    Object.keys(file[w]).forEach(function(k){
+      if(String(state[w][k]) !== String(file[w][k]))
+        bad.push('   '+k+'\n       file: '+file[w][k]+'\n       lab : '+state[w][k]);
+    });
+    L.push(w.toUpperCase()+' mismatches between file and lab: '+bad.length);
+    bad.slice(0,12).forEach(function(b){ L.push(b); });
+  });
+
+  /* Does the file's light half differ from base.css at all? If a value
+     you changed is identical to the default, there was nothing to see. */
+  var moved=[];
+  ALL.forEach(function(it){
+    var f=file.light[it.key];
+    if(f!==undefined && String(f)!==String(V[it.key].light)) moved.push(it.label);
+  });
+  L.push('');
+  L.push('light values in the file that differ from base.css defaults: '+moved.length);
+
+  /* And the round trip: export now, re-parse, compare. */
+  var out = '/* x */\n' + cssFor('light') + '\n@media (prefers-color-scheme: dark) {\n' + cssFor('dark','  ') + '\n}\n';
+  var rt = themeSplitDark(out);
+  var back = { light: themeParse(rt.light), dark: themeParse(rt.dark) };
+  var lost=[], wrong=[];
+  ['light','dark'].forEach(function(w){
+    ALL.forEach(function(it){
+      if(!(it.key in back[w])) lost.push(w+' '+it.key);
+      else if(String(back[w][it.key])!==String(state[w][it.key])) wrong.push(w+' '+it.key);
+    });
+  });
+  L.push('');
+  L.push('ROUND TRIP  export->parse:  lost='+lost.length+'  altered='+wrong.length+
+         '  (light='+Object.keys(back.light).length+' dark='+Object.keys(back.dark).length+')');
+  lost.slice(0,8).forEach(function(x){ L.push('   lost '+x); });
+  wrong.slice(0,8).forEach(function(x){ L.push('   altered '+x); });
+
+  var o=document.createElement('pre');
+  o.style.cssText='position:fixed;inset:0;z-index:99999;background:#000;color:#0f0;font:11.5px monospace;padding:10px;margin:0;overflow:auto';
+  o.textContent=L.join('\n');
+  document.body.appendChild(o);
+},2600);
+</script>
+</body>
+</html>

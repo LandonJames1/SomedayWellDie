@@ -45,6 +45,7 @@
 
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { apnsConfigured, sendApns } from '../_shared/apns.ts';
 
 /* Called from the browser, unlike send-reminders which is called by
    cron — so it needs CORS, including an answer to the preflight. */
@@ -179,13 +180,17 @@ Deno.serve(async (req) => {
   }
   if (preview.length > PREVIEW_MAX) preview = preview.slice(0, PREVIEW_MAX - 1) + '…';
 
-  const payload = JSON.stringify({
+  /* Built once, rendered for both transports below — the same split
+     send-reminders makes, and for the same reason: two renderings of
+     one object cannot disagree about what the notification says. */
+  const note = {
     kind: 'message',
     title: `${senderName} · ${listName}`,
     body: preview,
     collectionId: msg.collection_id,
     messageId: msg.id,
-  });
+  };
+  const payload = JSON.stringify(note);
 
   webpush.setVapidDetails(
     Deno.env.get('VAPID_SUBJECT') ?? 'mailto:noreply@example.com',
@@ -195,15 +200,46 @@ Deno.serve(async (req) => {
 
   const { data: subs } = await admin
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, user_id')
+    .select('endpoint, p256dh, auth, user_id, platform')
     .in('user_id', [...audience]);
 
   if (!subs?.length) return json({ sent: 0, note: 'no registered devices' });
 
   let sent = 0;
+  /* Native rows with no APNS_* secrets configured. Counted rather than
+     thrown, so a project running Web Push only still delivers. */
+  let apnsSkipped = 0;
   const stale: string[] = [];
 
   for (const sub of subs) {
+    /* ---- The native app ----
+       An iOS row holds an APNs device token in `endpoint` and has no
+       encryption keys, so webpush cannot address it at all. */
+    if (sub.platform === 'ios') {
+      if (!apnsConfigured()) { apnsSkipped++; continue; }
+      const res = await sendApns(sub.endpoint, {
+        title: note.title,
+        body: note.body,
+        /* One conversation, one group in Notification Center — so a
+           back-and-forth in a shared list is a thread rather than
+           twenty separate banners. */
+        threadId: `conv:${msg.collection_id}`,
+        /* No `badge`: an absolute count would need this function to ask
+           what each recipient's unread total is, which is a query per
+           person on a path the sender is waiting on. Omitting it leaves
+           the badge untouched, and updateMessagesBadge() overwrites it
+           with the truth the next time that person opens the app. */
+        data: {
+          kind: 'message',
+          collectionId: note.collectionId,
+          messageId: note.messageId,
+        },
+      });
+      if (res.ok) sent++;
+      else if (res.prune) stale.push(sub.endpoint);
+      else console.error('apns failed', sub.endpoint, res.status, res.reason);
+      continue;
+    }
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -223,5 +259,5 @@ Deno.serve(async (req) => {
     await admin.from('push_subscriptions').delete().in('endpoint', stale);
   }
 
-  return json({ recipients: audience.size, sent, pruned: stale.length });
+  return json({ recipients: audience.size, sent, pruned: stale.length, apnsSkipped });
 });

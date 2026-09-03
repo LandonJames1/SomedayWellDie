@@ -11,6 +11,12 @@ SUPABASE_URL=https://xxdmendegyxlkikejvps.supabase.co
 # service_role key (the long one marked "secret" -- NOT anon):
 SUPABASE_SERVICE_KEY=
 
+# ---- Anthropic ----
+# Only tools/difficulty-rate.py uses this, to rate un-rated activities.
+# console.anthropic.com -> API keys. May also be set as an environment
+# variable instead (ANTHROPIC_API_KEY), which is where it usually lives.
+ANTHROPIC_API_KEY=
+
 # ---- Cloudflare R2 ----
 # Account ID: on the R2 overview page, right-hand side
 R2_ACCOUNT_ID=

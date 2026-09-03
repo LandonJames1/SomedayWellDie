@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v130';
+const CACHE_VERSION = 'v168';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -37,18 +37,21 @@ const SHELL_ASSETS = [
   './css/notes.css',
   './css/moderation.css',
   './css/pwa.css',
+  './css/theme.css',
   './css/responsive.css',
   './js/config.js',
   './js/state.js',
   './js/utils.js',
   './js/fuzzy.js',
   './js/exif.js',
+  './js/haptics.js',
   './js/icons.js',
   './js/offline.js',
   './js/api.js',
   './js/auth.js',
   './js/nav.js',
   './js/router.js',
+  './js/deeplink.js',
   './js/modals.js',
   './js/gestures.js',
   './js/links.js',
@@ -60,6 +63,7 @@ const SHELL_ASSETS = [
   './js/home.js',
   './js/upnext.js',
   './js/done.js',
+  './js/nativepush.js',
   './js/reminders.js',
   './js/smartlists.js',
   './js/collections.js',
@@ -290,15 +294,69 @@ async function staleWhileRevalidate(request, cacheName) {
 }
 
 /* Serve from cache, only hit the network on a miss. Used for immutable
-   vendor bundles, fonts, map tiles and remote photos. */
+   vendor bundles, fonts, map tiles and remote photos.
+
+   ⚠️ AN OPAQUE ENTRY MAY ONLY BE SERVED TO A no-cors REQUEST, and
+   `cache.match()` does not know that — it matches on URL and ignores
+   request mode. That is a real bug with a loud symptom, and this is
+   how it happened:
+
+     - A cover photo on the Lists tab loads through a plain <img>, which
+       is a `no-cors` request. R2 sends no CORS headers, so the response
+       is OPAQUE, and it was cached here as opaque.
+     - The map then wants the same photo for a pin. ensurePhotoIcon()
+       sets crossOrigin='anonymous' — it has to, or the canvas is
+       tainted and cannot be read back — which makes it a `cors`
+       request.
+     - This function handed it the cached OPAQUE response, and the
+       browser rejected it: "an 'opaque' response was used for a request
+       whose type is not no-cors", once per photo, plus a failed image.
+
+   So an opaque hit is ignored for anything but a no-cors request, and
+   an opaque response is only STORED for the request mode that can use
+   it. The cost is one extra network request for the CORS case; the
+   alternative is a response the browser refuses to hand over. */
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-  if (cached) return cached;
-  const res = await fetch(request);
-  /* Opaque cross-origin responses (type 'opaque') still cache usefully. */
-  if (res && (res.ok || res.type === 'opaque')) cache.put(request, res.clone());
-  return res;
+  const opaqueMismatch = cached && cached.type === 'opaque' && request.mode !== 'no-cors';
+  if (cached && !opaqueMismatch) return cached;
+  /* ⚠️ fetch() REJECTS on a network or CORS failure, and this runs
+     inside event.respondWith() — so an unhandled rejection here surfaced
+     as `Uncaught (in promise) TypeError: Failed to fetch` with the
+     service worker's own line number, which points investigation at the
+     cache rather than at the host that refused. Answer with a network
+     error instead: the <img> that asked gets its onerror and the map
+     falls back to a plain dot, which is the degradation it already
+     has. */
+  /* ⚠️ A STALE OPAQUE ENTRY IS DELETED, NOT JUST SKIPPED. Left in place
+     it is re-checked and re-skipped on every single load, and — worse —
+     it keeps the URL looking cached while never being usable. */
+  if (opaqueMismatch) cache.delete(request);
+  try {
+    const res = await fetch(request);
+    if (res && res.ok) cache.put(request, res.clone());
+    else if (res && res.type === 'opaque' && request.mode === 'no-cors') cache.put(request, res.clone());
+    return res;
+  } catch (e) {
+    /* ⚠️ RETRY ONCE PAST THE HTTP CACHE. A cross-origin response fetched
+       before the host had a CORS policy is stored by the browser's own
+       HTTP cache WITHOUT the Access-Control-Allow-Origin header, and it
+       keeps being replayed from there — so adding the policy on the host
+       appears to change nothing, for as long as that entry lives. The
+       bucket sends long cache lifetimes (the keys are immutable), so
+       "for as long" can be a very long time.
+       `cache: 'reload'` forces a fresh trip, which is the only way the
+       new header can be seen. One retry, on the failure path only, so a
+       genuinely offline load still costs a single request. */
+    try {
+      const res = await fetch(new Request(request, { cache: 'reload' }));
+      if (res && res.ok) cache.put(request, res.clone());
+      return res;
+    } catch (e2) {
+      return Response.error();
+    }
+  }
 }
 
 self.addEventListener('fetch', event => {
