@@ -662,6 +662,7 @@ async function openComp(id,source){
   compListsBefore=[...targetListIds];
 
   $('compName').value=a.name;
+  growCompNameField();
   /* Defaults to the stored date, or today for anything completed
      before the app recorded one. */
   $('compDate').value=a.completedDate||todayISO();
@@ -685,8 +686,11 @@ async function openComp(id,source){
   /* Said twice on purpose, in the two places somebody looks: the header
      names the sheet, the dock button names what pressing it does. */
   $('compSheetTitle').textContent=compNew?'Mark as Accomplished':'Edit';
-  $('compSaveBtn').textContent=compNew?'Done':'Save';
+  updateCompSaveButton();
   openModal('compSheet');
+  /* ⚠️ Again, on screen: scrollHeight is 0 while the overlay is hidden,
+     so the call above cannot size a name that wraps. */
+  growCompNameField();
 }
 
 /* ==============================================================
@@ -712,6 +716,7 @@ async function openCompDraft(prefillName){
   compListsBefore=[];
 
   $('compName').value=prefillName||'';
+  growCompNameField();
   $('compDate').value=todayISO();
   $('compDate').max=todayISO();
   $('compLoc').value='';$('compLocLat').value='';$('compLocLng').value='';
@@ -722,8 +727,9 @@ async function openCompDraft(prefillName){
 
   compShowPane('main');
   $('compSheetTitle').textContent='Mark as Accomplished';
-  $('compSaveBtn').textContent='Add';
+  updateCompSaveButton();
   openModal('compSheet');
+  growCompNameField();
   /* After the sheet has finished sliding in, as everywhere else — a
      field focused mid-animation drags the keyboard up against a sheet
      that is still moving. */
@@ -733,7 +739,7 @@ async function openCompDraft(prefillName){
 /* Shares targetListIds with the activity sheet: the two are never open
    at once, and sharing it means listFieldsFor() works unchanged. */
 async function renderCompListRow(){
-  const row=$('compListCard');
+  const row=$('compListBtn');
   if(!row)return;
 
   const lists=await fetchCollections();
@@ -749,18 +755,19 @@ async function renderCompListRow(){
      gave, and the one they wanted is one tap away. The row reads
      "Choose" and confirmComplete() refuses until it is answered. */
 
-  $('compListLabel').textContent='List';
-  renderActListValue(lists,'compListName');
+  /* "Choose List" rather than "Choose": the eyebrow has no label beside
+     it any more — it IS the value — so on its own a bare verb names
+     nothing. Same argument the new-activity sheet's eyebrow makes. */
+  renderActListValue(lists,'compListName','Choose List');
 
-  /* On the button, not the group: the group also holds the label, and
-     tapping a label should do nothing. Same as renderActListPicker(). */
-  $('compListBtn').onclick=()=>openListPicker({
+  row.onclick=()=>openListPicker({
     title:'Add to List',
     currentId:targetListId,
     onPick:picked=>{
       setTargetLists([picked]);
       if(!targetListIds.length) setTargetLists([lists[0].id]);
-      renderActListValue(lists,'compListName');
+      renderActListValue(lists,'compListName','Choose List');
+      updateCompSaveButton();
     },
   });
 }
@@ -785,11 +792,82 @@ async function renderCompListRow(){
    step with the tiles.
    ============================================================== */
 function updateMediaRequirement(){
-  const hint=$('compMediaHint');
   renderCompMediaCard();
-  /* Only while it is unmet — a rule restated over a grid that already
-     satisfies it is nagging. */
-  if(hint) hint.hidden=!(compNew&&!upMedia.length);
+  updateCompSaveButton();
+}
+
+/* ==============================================================
+   WHAT STILL BLOCKS THE SAVE
+
+   The same machinery NEW_REQUIRED drives on the new-activity sheet,
+   and for the same reason: a requirement discovered by pressing the
+   button you thought would finish is a dead end, not a rule. It
+   replaces the paragraph that used to sit under the media card —
+   see the two non-negotiable rules at the top of CLAUDE.md.
+
+   ⚠️ THE ORDER IS READING ORDER, not the order the old guards
+   happened to check in: the button names the FIRST outstanding field,
+   so an order that did not match the layout would send somebody down
+   the sheet past two blank ones to a third.
+
+   `el` is a getter because the table is built at parse time, before
+   any of the sheet's markup has been touched. `when` is what makes
+   one table serve three modes — media is asked for on the way in
+   only, and a place only on a draft, exactly as confirmComplete()
+   enforces. Anything with no `when` is asked for always.
+   ============================================================== */
+const COMP_REQUIRED=[
+  {key:'list', label:'Pick a list',
+   el:()=>$('compListBtn'),
+   when:()=>compDraft,
+   filled:()=>targetListIds.length>0},
+  {key:'name', label:'Name it', focus:true,
+   el:()=>$('compName'),
+   filled:()=>!!($('compName')||{}).value?.trim()},
+  {key:'date', label:'Set a date',
+   el:()=>$('compDateRow'),
+   filled:()=>!!($('compDate')||{}).value},
+  {key:'where',label:'Add a place', focusId:'compLoc',
+   el:()=>$('compPlaceRow'),
+   when:()=>compDraft,
+   filled:()=>!!($('compLoc')||{}).value?.trim()},
+  /* An upload still in flight is a different answer from none — the
+     user has already done the thing being asked for — so it counts as
+     filled and confirmComplete() holds them with its own message. */
+  {key:'media',label:'Add a photo or video',
+   el:()=>$('compMediaSec'),
+   when:()=>compNew,
+   filled:()=>upMedia.length>0||_mediaPending},
+];
+
+function compRequired(){ return COMP_REQUIRED.filter(f=>!f.when||f.when()); }
+function firstMissingComp(){ return compRequired().find(f=>!f.filled())||null; }
+
+/* The rail marks what is required IN THIS MODE, so it is painted rather
+   than written into the markup: a place is asked for on a draft and not
+   on an edit, and a rail on a field nothing is waiting for is a lie.
+   The plate carries the list AND the name, so it is railed if either
+   is being asked for. */
+function paintCompRails(){
+  const on=new Set(compRequired().map(f=>f.key));
+  const set=(id,yes)=>{const el=$(id); if(el) el.classList.toggle('ad-req',yes);};
+  set('compDateRow', on.has('date'));
+  set('compPlaceRow',on.has('where'));
+  set('compMediaSec',on.has('media'));
+  const plate=document.querySelector('#compPaneMain .ad-plate');
+  if(plate) plate.classList.toggle('ad-req',on.has('name')||on.has('list'));
+}
+
+/* The dock button carries the answer, because it is the control the
+   user is already reaching for. Never `disabled`: a disabled button
+   cannot be pressed, and pressing it is how you ask WHICH field. */
+function updateCompSaveButton(){
+  const btn=$('compSaveBtn');
+  if(!btn)return;
+  const miss=firstMissingComp();
+  btn.textContent=miss?miss.label:(compDraft?'Add':compNew?'Done':'Save');
+  btn.classList.toggle('is-blocked',!!miss);
+  paintCompRails();
 }
 
 /* ==============================================================
@@ -841,6 +919,32 @@ function compShowPane(which){
   if(body) body.scrollTop=0;
 }
 
+/* The same auto-grow the other two sheets' names use — .ad-title wraps,
+   and a <textarea> left at one row would scroll a three-line name. Kept
+   separate from growNameField() because that one also drives the
+   new-activity sheet's required-field button. */
+function growCompNameField(){
+  const el=$('compName');
+  if(!el)return;
+  el.style.height='auto';
+  el.style.height=el.scrollHeight+'px';
+  /* This is the name field's `input` handler, so it is also where the
+     dock button learns the name has been typed. */
+  updateCompSaveButton();
+}
+
+/* ⚠️ THE X GOES BACK, IT DOES NOT DROP YOU ON THE PAGE BEHIND.
+
+   Registering a return rather than calling openActDetail() here keeps
+   one path out of this sheet: openCompFrom() may already have
+   registered exactly this, in which case leave it alone or the sheet
+   opens twice. A draft has no activity to go back to. */
+function compCancel(){
+  if(compId&&!compDraft&&!sheetHasReturn('compSheet'))
+    onSheetClose('compSheet',()=>openActDetail(compId));
+  closeModal('compSheet');
+}
+
 /* The whole row opens the picker: on desktop the native calendar glyph
    is the only part of a date input a click opens it from, and that
    glyph is hidden here because the row already leads with one. */
@@ -879,21 +983,39 @@ function openCompFrom(id){
   return openComp(id);
 }
 
+/* ⚠️ SHAKE, NOT NUDGE, and that is the one place this departs from the
+   new-activity sheet. There the button says what is missing before it
+   is ever pressed, so the pointer is a +/-2px nudge about a sheet where
+   nothing has gone wrong. Here the user asked to mark something
+   accomplished and was refused — see shakeEl() vs nudgeEl() in
+   utils.js. It scrolls first and shakes 160ms later, or on a short
+   phone the movement happens off-screen and the button appears dead. */
+function shakeMissingComp(miss){
+  const el=miss.el();
+  if(!el)return;
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+  setTimeout(()=>{
+    shakeEl(el);
+    /* Only the typed fields take focus: opening the keyboard for a
+       control whose answer is a picker would cover the picker. */
+    if(miss.focus) el.focus();
+    else if(miss.focusId) ($(miss.focusId)||{focus(){}}).focus();
+  },160);
+}
+
 async function confirmComplete(){
   if(!compId&&!compDraft)return;
+  /* ⚠️ ONE TABLE ANSWERS THIS, exactly as NEW_REQUIRED does on the
+     other sheet: the button's label, the shake and the save all have to
+     agree about what is outstanding and in what order. */
+  const miss=firstMissingComp();
+  if(miss){ shakeMissingComp(miss); return; }
   const name=$('compName').value.trim();
-  if(!name){shakeEl($('compName'));$('compName').focus();return;}
-  /* At least one photo or video, on the way in only — see
-     updateMediaRequirement() for why the edit pass is exempt. An upload
-     still running is a different answer from none: the user has already
-     done the thing being asked for. */
-  if(compNew&&!upMedia.length){
-    if(_mediaPending){ showToast('Still adding that — one moment.'); return; }
-    const sec=$('compMediaSec');
-    shakeEl(sec);
-    sec.scrollIntoView({block:'center',behavior:'smooth'});
-    showToast('Add a photo or video to mark this accomplished.');
-    return;
+  /* An upload still running counts as filled above, so it lands here —
+     the user has already done the thing being asked for and the only
+     honest answer is to wait. */
+  if(compNew&&!upMedia.length&&_mediaPending){
+    showToast('Still adding that — one moment.'); return;
   }
   /* A draft is a brand-new activity, so it meets the location
      requirement like every other add. An edit of something already

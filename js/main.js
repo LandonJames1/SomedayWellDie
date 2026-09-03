@@ -21,7 +21,11 @@ function paintStaticIcons(){
   tab('tabMe','summit','summit-fill','You');
 
   set('coverZoneIcon',icon('photo','ic-lg'));
-  set('compListChevron',icon('chevron-right'));
+  /* The completion sheet is the detail sheet's shape too, so its list
+     eyebrow takes the same .ic-eyebrow chevron the other two do. */
+  set('compListChevron',icon('chevron-right','ic-eyebrow'));
+  set('compWhereIcon',icon('pin'));
+  set('compDateIcon',icon('calendar'));
 
   set('lbCloseBtn',icon('x'));
   set('calPrev',icon('chevron-left'));

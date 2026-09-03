@@ -498,7 +498,7 @@
        plate, chips and Where card — see the note on #actSheet in
        index.html — so it needs the same four hues. Defining them twice
        is how they would come to disagree. */
-    #actDetailBody, #actSheetBody {
+    #actDetailBody, #actSheetBody, #compPaneMain {
       --c-target: #5f7d3a;   /* moss   */
       --c-remind: #a07a1f;   /* gold   */
       --c-where:  #8c3f68;   /* plum   */
@@ -1041,6 +1041,18 @@
     .ad-place.c-link .ad-place-v,
     .ad-place.c-link .ad-place-chev { color: var(--c-link); }
 
+    /* The target's moss, for the completion sheet's Date row — the same
+       four hues, so a card is identified by what it holds wherever it is
+       drawn. There is no .c-target on the two activity sheets: the
+       target lives in the plate there. */
+    .ad-place.c-target {
+      background: color-mix(in srgb, var(--c-target) 14%, transparent);
+    }
+    .ad-place.c-target .ad-place-disc { background: var(--c-target); }
+    .ad-place.c-target .ad-place-k,
+    .ad-place.c-target .ad-place-chev { color: var(--c-target); }
+    .ad-place.c-target .ad-place-v    { color: var(--label); }
+
     /* ── the location, edited in place ──
        The plum wash comes off while the field is live. That colour
        identifies the row at rest; under a caret it reads as a tinted
@@ -1136,7 +1148,7 @@
        a disabled button cannot be pressed, and pressing it is how you
        ask WHICH field — which is what nudges the one that is missing.
        It has to look unavailable and stay live. */
-    #actSaveBtn.is-blocked {
+    #actSaveBtn.is-blocked, #compSaveBtn.is-blocked {
       background: var(--fill-3); color: var(--label-3);
       box-shadow: var(--ring);
     }

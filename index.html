@@ -1005,7 +1005,7 @@
            from a completed activity entirely: they are all about what to
            do next, and there is no next.
 
-           It is the same editable .fg-hero field in all three of this
+           It is the same editable name field in all three of this
            sheet's modes — completing something, editing something
            already done, and logging something that never existed as a
            plan. It was briefly a static heading while completing, on the
@@ -1013,38 +1013,66 @@
            the moment you tick something off is exactly when you notice
            the name is wrong, and having to save, reopen and edit to fix
            it was worse than the box being there. -->
-      <div class="fg fg-hero" id="compNameField">
-        <label>Activity</label>
-        <input id="compName" placeholder="What did you do?" maxlength="100"
-               autocapitalize="sentences" enterkeyhint="done" />
-      </div>
-
-      <!-- Same shape as the activity sheet's own fields: a mono label
-           over an elevated input. Date and list share one line, as the
-           activity sheet's target/list pair does; when the list half
-           hides itself the date spans the line. -->
-      <div class="fg-pair">
-        <div class="fg fg-tint fg-c-target">
-          <label>Date</label>
-          <input type="date" id="compDate" />
-        </div>
-        <div class="fg" id="compListCard" style="display:none">
-          <label id="compListLabel">List</label>
-          <button type="button" class="picker-btn" id="compListBtn">
-            <span class="picker-btn-value" id="compListName">Choose</span>
-            <span class="picker-btn-chevron" id="compListChevron"></span>
+      <!-- THE PLATE, the detail sheet's own: the list as an eyebrow over
+           the name, at the same sizes and in the same order, so the two
+           sheets read as one screen. The accomplished date deliberately
+           does NOT ride up here — it is the record this sheet is making,
+           not a caption on the title, and it keeps its own field below. -->
+      <div class="ad-plate ad-req">
+        <div class="ad-plate-main">
+          <!-- Hidden by renderCompListRow() when there are no lists to
+               choose between. -->
+          <button class="t-eyebrow ad-eyebrow-btn" id="compListBtn" type="button"
+                  style="display:none">
+            <span id="compListName">Choose</span><span id="compListChevron"></span>
           </button>
+          <!-- A <textarea> carrying .ad-title-edit for the same reason the
+               other two sheets' names are one: a name wraps, and an input
+               would put a three-line name on one scrolling line. -->
+          <textarea class="ad-title ad-title-edit" id="compName" rows="1" maxlength="100"
+                    placeholder="What did you do?" spellcheck="false"
+                    autocapitalize="sentences" enterkeyhint="done"
+                    oninput="growCompNameField()"
+                    onkeydown="onNameFieldKey(event)"></textarea>
         </div>
       </div>
 
-      <div class="fg fg-tint fg-c-where">
-        <label>Location</label>
-        <div class="loc-wrap">
-          <input id="compLoc" placeholder="Add a place" maxlength="200" autocomplete="off"
-                 oninput="locSearch(this,'compLocResults')" onfocus="locSearch(this,'compLocResults')" />
-          <input type="hidden" id="compLocLat" /><input type="hidden" id="compLocLng" />
-          <div class="loc-results" id="compLocResults"></div>
-        </div>
+      <!-- The date is a card like the two below it, in the target's own
+           moss — it stays OUT of the plate deliberately (see the note on
+           this sheet in CLAUDE.md) but it is the same shape as every
+           other row here rather than a lone .fg among them. The whole
+           row opens the picker: on desktop the native calendar glyph is
+           the only part of a date input a click opens it from, and that
+           glyph is suppressed because the row already leads with one. -->
+      <div class="ad-place c-target ad-req" id="compDateRow" role="button" tabindex="0"
+           onclick="openCompDatePicker()" onkeydown="onRowKey(event)">
+        <span class="ad-place-disc" id="compDateIcon"></span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Date</span>
+          <input class="ad-place-v comp-date-in" type="date" id="compDate"
+                 aria-label="Date completed" oninput="updateCompSaveButton()"
+                 onclick="event.stopPropagation()" />
+        </span>
+      </div>
+
+      <!-- The detail sheet's Where card exactly, with the field live from
+           the start rather than swapping in on a tap — the same
+           difference the new-activity sheet makes, and for the same
+           reason: there is no resting value to display on a sheet you
+           are filling in. -->
+      <div class="ad-place c-where" id="compPlaceRow">
+        <span class="ad-place-disc" id="compWhereIcon"></span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Where</span>
+          <span class="loc-wrap ad-place-edit">
+            <input id="compLoc" type="text" placeholder="Add a place" maxlength="200"
+                   autocomplete="off" aria-label="Location"
+                   oninput="updateCompSaveButton();locSearch(this,'compLocResults')"
+                   onfocus="locSearch(this,'compLocResults')" />
+            <input type="hidden" id="compLocLat" /><input type="hidden" id="compLocLng" />
+            <div class="loc-results" id="compLocResults"></div>
+          </span>
+        </span>
       </div>
       <div class="loc-suggest comp-suggest" id="compLocSuggest" hidden></div>
 
@@ -1070,25 +1098,16 @@
 
            With nothing attached yet there is no page worth showing, so
            the card opens the picker directly — see openCompMedia(). -->
-      <div class="fg">
-        <label>Media</label>
-        <div class="comp-media-card" id="compMediaSec" role="button" tabindex="0"
-             onclick="openCompMedia()">
-          <div class="comp-media-body">
-            <div class="comp-media-v" id="compMediaSummary">None</div>
-          </div>
-          <span class="comp-media-thumb" id="compMediaThumb"></span>
-          <span class="comp-media-chev" id="compMediaChev"></span>
-        </div>
+      <div class="ad-place c-link" id="compMediaSec" role="button" tabindex="0"
+           onclick="openCompMedia()" onkeydown="onRowKey(event)">
+        <span class="ad-place-disc comp-media-thumb" id="compMediaThumb"></span>
+        <span class="ad-place-body">
+          <span class="ad-place-k">Media</span>
+          <span class="ad-place-v" id="compMediaSummary">None</span>
+        </span>
+        <span class="ad-place-chev" id="compMediaChev"></span>
       </div>
       <input type="file" id="photoInput" multiple accept="image/*,video/*" hidden onchange="handleMedia(event)" />
-      <!-- Said here rather than only in the toast on Done: a
-           requirement discovered by pressing the button you thought
-           would finish is a dead end, not a rule. -->
-      <div class="comp-req-hint" id="compMediaHint" hidden>
-        Add at least one photo or video to mark this accomplished.
-      </div>
-
       <!-- Set in the serif, because that is what it will be read back in
            (.ad-note.prose on the activity sheet) and because it is the
            one thing on this sheet the user writes rather than picks. -->
@@ -1125,11 +1144,11 @@
     <div class="ad-dock" id="compSheetDock">
       <div class="ad-dock-view" id="compDockMain">
         <button class="ad-dock-disc" id="compCancelBtn" type="button"
-                aria-label="Cancel" onclick="closeModal('compSheet')"></button>
+                aria-label="Cancel" onclick="compCancel()"></button>
         <!-- The label is the mode: Done, Save or Add. Set by openComp()
              and openCompDraft(); shaken by requireLocation() and
              disabled while the write is in flight, both by id. -->
-        <button class="btn btn-filled btn-block" id="compSaveBtn"
+        <button class="btn btn-green btn-block" id="compSaveBtn"
                 onclick="confirmComplete()">Done</button>
       </div>
       <div class="ad-dock-view" id="compDockMedia" hidden>

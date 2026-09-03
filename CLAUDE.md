@@ -4017,9 +4017,9 @@ Loaded in this order; **order matters**.
 | `auth.css` | The signed-out screen — no nav bar, no tab bar, its own centring. Plus `.auth-invite`, the tinted note shown when an invite link was opened while signed out; `.auth-notice`, the same shape for a confirmation link that could not be honoured, but carrying its own way out (a resend button) because "that link expired" with no way to get another is the same dead end the link was; `.auth-check`, the quieter waiting-for-confirmation panel — nothing has gone wrong there, and the title above is already carrying the message — and `.auth-forgot`, quieter still than the `.auth-toggle` beneath it (creating an account is one of the two things this screen is for; recovering one is what you reach for when neither worked) while keeping the same 44px target, since it is pressed by somebody already having a bad time. |
 | `home.css` | The dashboard: the greeting, the SVG progress ring, the context-free quick-add composer (`.home-composer-wrap` owns the gutters so `.home-suggest`, its results dropdown, can position against the field), the Up Next list, and the two `.shelf` grids (recently accomplished, your lists). |
 | `collections.css` | The Lists tab: `.smart-row`/`.smart-btn` — the three derived difficulty lists as a button strip above everything else (see **Three lists nobody edits**) — `.coll-card` photo cards, the "New List" tile, and the now-unused `.coll-card-auto`. |
-| `detail.css` | A collection's screen (**and both activity sheets** — the `.ad-*` blocks are shared, see the note on `#actSheet` in `index.html`): `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. **The `.ad-*` blocks are shared with the NEW-ACTIVITY sheet** — the plate, the chips and the Where card are one set of rules drawn on both, which is why the four Orchard hues are declared on `#actDetailBody, #actSheetBody` together; the handful of differences an empty sheet has live in a block of their own at the end of the file. **`.ad-dock`/`.ad-dock-view`/`.ad-dock-disc` and `.ad-navbar`/`.ad-back`/`.ad-navtitle` are now used by THREE sheets** — the activity sheet, the new-activity sheet and the COMPLETION sheet, none of which has a `.sheet-bar` any more. They are generic sheet furniture despite the `ad-` prefix; change one and check all three. |
+| `detail.css` | A collection's screen (**and both activity sheets** — the `.ad-*` blocks are shared, see the note on `#actSheet` in `index.html`): `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. **The `.ad-*` blocks are shared with the NEW-ACTIVITY sheet** — the plate, the chips and the Where card are one set of rules drawn on both, which is why the four Orchard hues are declared on `#actDetailBody, #actSheetBody, #compPaneMain` together — the **completion** sheet draws the plate, the Where card and (as its Media row) the Links card too, so all three sheets now share these blocks; the handful of differences an empty sheet has live in a block of their own at the end of the file. **`.ad-dock`/`.ad-dock-view`/`.ad-dock-disc` and `.ad-navbar`/`.ad-back`/`.ad-navtitle` are now used by THREE sheets** — the activity sheet, the new-activity sheet and the COMPLETION sheet, none of which has a `.sheet-bar` any more. They are generic sheet furniture despite the `ad-` prefix; change one and check all three. |
 | `me.css` | The Me tab: the stats card, the progress card, the identity row. |
-| `modals.css` | The three presentation styles — `.modal`/`.sheet-*` bottom sheets, `.action-sheet`, `.lightbox` — plus the form controls that live inside a sheet: `.fg` and its `.fg-hero` (the field a sheet is *about* — now only the completion sheet's name, since the new-activity sheet's is the detail sheet's own `.ad-title-edit`) and `.fg-pair` (two short choices on one line), `.picker-btn` (a value that opens a picker, sized to match a `<select>` beside it), `.chip-field`, `.photo-*`, the completion sheet's own `.comp-*` (`.comp-card`/`.comp-row` — inset grouped rows whose overflow must stay visible for the location dropdown — `.comp-sec`, `.comp-note`), the list picker's `.lp-*`, and `.toast`. There are no disclosure styles here any more — `.more-toggle`/`.more-fields` went with the completion sheet's last collapsed section. |
+| `modals.css` | The three presentation styles — `.modal`/`.sheet-*` bottom sheets, `.action-sheet`, `.lightbox` — plus the form controls that live inside a sheet: `.fg` and its `.fg-hero` (the field a sheet is *about* — **now unused**: both activity sheets and the completion sheet set their name in the detail sheet's own `.ad-title-edit`) and `.fg-pair` (two short choices on one line), `.picker-btn` (a value that opens a picker, sized to match a `<select>` beside it), `.chip-field`, `.photo-*`, what is left of the completion sheet's own `.comp-*` (`.comp-sec`, `.comp-note`, `.comp-date-in` (the native date input stripped bare inside its card) and `.comp-media-thumb`, the square cover inside its Links-shaped Media row — its plate, its Where card and that row are all `.ad-*` from `detail.css` now, which is why `#compPaneMain` is in that file's Orchard-hue declaration), the list picker's `.lp-*`, and `.toast`. There are no disclosure styles here any more — `.more-toggle`/`.more-fields` went with the completion sheet's last collapsed section. |
 | `map.css` | Map containers (the full-bleed `.page-map` and the inset detail map), the CSS sky gradient behind the globe, the floating `.map-filter`/`.map-count`/`.map-fab` chrome, `.map-pin`/`.map-cluster` markers, MapLibre's own controls restyled, the `.loc-*` autocomplete dropdown, `.loc-suggest-*` — the "from your photo" chip, deliberately a tinted *offer* rather than a filled control, since it must not read as though the field is already answered — `.loc-guess-*`, which is the opposite case and therefore shaped differently: a quiet caption marking a field the app has already filled in from the activity's name, with an ✕ that takes it back out — and `.pl-*`, the place sheet (everything at one point on the map), whose rows are `.act-row` from `detail.css` unchanged so only its container and header are new. |
 | `dupes.css` | `.dupe-*` — the "you may already have this" sheet. Deliberately quiet: no red, no alert iconography, an ordinary tinted confirm. It interrupts the fastest path in the app, so it has to read as a question. |
 | `sharing.css` | `.shr-people-*`/`.shr-avatar`/`.shr-role` and `.join-*` — the invite sheet's roster and the accept-an-invite card — plus `.shr-code-head`/`.shr-code` (the invite as something that can be read off one screen and typed into another) and `.join-code-input`. It also **defines** `.shr-lead`/`.shr-url`/`.shr-note`, which used to live in the deleted `import.css` and which the invite and accept-an-invite cards are now the only users of. |
@@ -4079,7 +4079,7 @@ Loaded in this order; **order matters**.
 | `smartlists.js` | **The three derived lists — Easy, Medium, Hard.** `SMART_PREFIX`/`SMART_LISTS`, `isSmartList`/`smartTier`, `smartCollection`/`smartCollections` (the synthetic collection `fetchCollection()` hands back for a sentinel id), `smartActivitiesFor` (the query that *is* the list), `smartRowHTML` (the three buttons at the top of the Lists tab) and `openSmartListMenu`. Loads before `collections.js` and `detail.js`, which both draw them. **They are deliberately absent from `fetchCollections()`** — that is what makes them impossible to add to. See **Three lists nobody edits**. |
 | `collections.js` | `renderCollections()` (the Lists tab) plus the collection CRUD: `openNewList`, `openEditList`, `renderCoverPreview`, `clearCover`, `handleCoverUpload`, `saveList`, `delList`. `delList` deletes the collection's activities first — there is no DB cascade — in one statement, since an activity belongs to exactly one list. |
 | `detail.js` | One collection. Rendering is **deliberately split in two**: `renderDetail()` builds the banner and the controls, `renderActivitiesList()` rebuilds only the list. Search and filter call the second, so the search field never loses focus mid-typing. Also `activityRowHTML`/`activityCardHTML`, `sortButtonHTML()` (the sort control beside the filter), and the quick-add composer helpers (`composerHTML`, `onComposerKey`, `focusComposer`). |
-| `activities.js` | The whole activity flow. **Creating always goes through a sheet** — `quickAddActivity()` only takes the composer's text and hands it to **`startNewActivity()`**, the plan-or-record chooser, which opens either `openNewActivity(name)` or **`openCompDraft(name)`** (see **Adding something you already did**, plus `setCompNameShape`/`renderCompListRow`/`commitCompDraft`). Nothing here inserts an activity directly except `commitSaveActivity()` and `commitCompDraft()`, which are those two sheets' own Saves. `toggleComplete(id, isDone)` is the one-tap completion (see the note below). Then **the new-activity sheet, which only ever CREATES** — `openNewActivity`, `saveActivity`/`commitSaveActivity`, `delActivity`, the name field's `growNameField`/`onNameFieldKey`, and the staged editors that make it the detail sheet's twin: `setTargetChoice`/`openNewTargetMenu`/`readTargetDate`, `setPriorityChoice`/`openNewPriorityMenu`, `setDifficultyChoice`/`openNewDifficultyMenu`, `setRemindField`. Each is the only writer of its hidden input and repaints its own control. Plus **`NEW_REQUIRED`/`firstMissingRequired`/`updateNewSaveButton`/`nudgeMissingField`** — the four fields that block the save, the Add button that names the first one outstanding and the nudge that points at it (see **Saying what is still required**). Its three pages are `newSheetPane`/`NEW_PANES` (Cancel/Add ride the dock, the header is a title only, and a sub-page swaps it for its own `.ad-navbar`), the staged links page `openNewLinks`/`renderNewLinks`/`newLinkSummary`/`addNewLink`/`removeNewLink`/`onNewLinkKey` — editing `aLinks`, the array `saveActivity()` is about to send, so there is nothing to commit — and the first-note page `openNewNotes`/`renderNewNoteCard`, over the same `#aNotes` field `notes.js` already flushes. Plus `renderActListPicker()`/`renderActListValue()`/`setTargetLists()` and the `targetListIds` global (an array capped at one id, with `targetListId` as its alias) — the list eyebrow that lets an activity be filed from outside any collection, hidden when there is no choice to make. **`openEditAct`/`openEditActFrom` are GONE**, and with them `editingActId`, `addLegacyDateOption` and the `.seg-pri` chooser. Also **`revealNewActivity()`** — where an add lands: the list it was filed in, with the activity's own sheet open on top (see **The two-speed activity flow**). Also **`patchActivity`** and the in-place editors around it — the name (**`startTitleEdit`/`growTitleEdit`/`onTitleEditKey`/`cancelTitleEdit`/`commitTitleEdit`**), the location (**`startPlaceEdit`/`onPlaceEditKey`/`endPlaceEdit`/`cancelPlaceEdit`/`commitPlaceEdit`**), **`openActivityListPicker`**, **`openPriorityMenu`**, **`openDifficultyMenu`/`setActivityDifficulty`**, the target sheet (**`openTargetSheet`/`onTargetSheetChange`/`saveTargetSheet`/`clearTargetSheet`**) and **`onRowKey`** — every field on a pending activity's detail sheet is changed by tapping it there, and there is no longer an Edit form to open instead (see **Editing a pending activity in place** and **Correcting a rating**). Also `openComp`/`openCompletedDate`/`confirmComplete` — the one completion sheet, every field on it — and `updateMediaRequirement()`, which is why that sheet will not save a *new* completion with no photo or video (see **The two-speed activity flow**) — and `openActDetail`/`actDetailHeadHTML`/`repaintActDetailHead`/`adShowPane` which build the activity sheet and swap its details / notes / links pages. Plus `openCollectionMenu` (the ⋯ action sheet, which holds the view switcher and everything the old five-button hero row spelled out; a derived difficulty list gets `openSmartListMenu()` in `smartlists.js` instead), `setFilter`, `setView`, and `openSortMenu`/`setSort`. |
+| `activities.js` | The whole activity flow. **Creating always goes through a sheet** — `quickAddActivity()` only takes the composer's text and hands it to **`startNewActivity()`**, the plan-or-record chooser, which opens either `openNewActivity(name)` or **`openCompDraft(name)`** (see **Adding something you already did**, plus `setCompNameShape`/`renderCompListRow`/`commitCompDraft`). Nothing here inserts an activity directly except `commitSaveActivity()` and `commitCompDraft()`, which are those two sheets' own Saves. `toggleComplete(id, isDone)` is the one-tap completion (see the note below). Then **the new-activity sheet, which only ever CREATES** — `openNewActivity`, `saveActivity`/`commitSaveActivity`, `delActivity`, the name field's `growNameField`/`onNameFieldKey`, and the staged editors that make it the detail sheet's twin: `setTargetChoice`/`openNewTargetMenu`/`readTargetDate`, `setPriorityChoice`/`openNewPriorityMenu`, `setDifficultyChoice`/`openNewDifficultyMenu`, `setRemindField`. Each is the only writer of its hidden input and repaints its own control. Plus **`NEW_REQUIRED`/`firstMissingRequired`/`updateNewSaveButton`/`nudgeMissingField`** — the four fields that block the save, the Add button that names the first one outstanding and the nudge that points at it (see **Saying what is still required**). Its three pages are `newSheetPane`/`NEW_PANES` (Cancel/Add ride the dock, the header is a title only, and a sub-page swaps it for its own `.ad-navbar`), the staged links page `openNewLinks`/`renderNewLinks`/`newLinkSummary`/`addNewLink`/`removeNewLink`/`onNewLinkKey` — editing `aLinks`, the array `saveActivity()` is about to send, so there is nothing to commit — and the first-note page `openNewNotes`/`renderNewNoteCard`, over the same `#aNotes` field `notes.js` already flushes. Plus `renderActListPicker()`/`renderActListValue()`/`setTargetLists()` and the `targetListIds` global (an array capped at one id, with `targetListId` as its alias) — the list eyebrow that lets an activity be filed from outside any collection, hidden when there is no choice to make. **`openEditAct`/`openEditActFrom` are GONE**, and with them `editingActId`, `addLegacyDateOption` and the `.seg-pri` chooser. Also **`revealNewActivity()`** — where an add lands: the list it was filed in, with the activity's own sheet open on top (see **The two-speed activity flow**). Also **`patchActivity`** and the in-place editors around it — the name (**`startTitleEdit`/`growTitleEdit`/`onTitleEditKey`/`cancelTitleEdit`/`commitTitleEdit`**), the location (**`startPlaceEdit`/`onPlaceEditKey`/`endPlaceEdit`/`cancelPlaceEdit`/`commitPlaceEdit`**), **`openActivityListPicker`**, **`openPriorityMenu`**, **`openDifficultyMenu`/`setActivityDifficulty`**, the target sheet (**`openTargetSheet`/`onTargetSheetChange`/`saveTargetSheet`/`clearTargetSheet`**) and **`onRowKey`** — every field on a pending activity's detail sheet is changed by tapping it there, and there is no longer an Edit form to open instead (see **Editing a pending activity in place** and **Correcting a rating**). Also `openComp`/`openCompletedDate`/`confirmComplete`/**`compCancel`** (the X, which returns to the activity's own sheet rather than dropping you on the page behind it) /**`growCompNameField`** — the one completion sheet, every field on it — and **`COMP_REQUIRED`/`compRequired`/`firstMissingComp`/`paintCompRails`/`updateCompSaveButton`/`shakeMissingComp`** plus `updateMediaRequirement()` — the red rails, the dock button that names the first outstanding field and the shake, which together are why that sheet will not save a *new* completion with no photo or video (see **The two-speed activity flow**) — and `openActDetail`/`actDetailHeadHTML`/`repaintActDetailHead`/`adShowPane` which build the activity sheet and swap its details / notes / links pages. Plus `openCollectionMenu` (the ⋯ action sheet, which holds the view switcher and everything the old five-button hero row spelled out; a derived difficulty list gets `openSmartListMenu()` in `smartlists.js` instead), `setFilter`, `setView`, and `openSortMenu`/`setSort`. |
 | `me.js` | `renderMe()` (stats), `renderMeIdentity()`, **Home** — `homePlace`/`loadHomePlace`/`saveHomePlace`/`resetHomePlace`/`renderMeHome`/`openHomeSheet`/`saveHomeSheet`/`clearHomePlace` and the `bl_home:<uid>` localStorage mirror (see **Home**), plus **`updateHomeActivities`/`clearHomeActivityFlags`** — the cascade that moves everything set to Home when the home address changes (see **Moving house**) — **the difficulty profile** — `difficultyProfile`/`loadDifficultyProfile`/`resetDifficultyProfile`/`openDiffProfileSheet`/`saveDiffProfileSheet` (see **Rating for one person, not an average one**) — **the profile photo** — `avatarsReady`/`myAvatarUrl`/`openAvatarMenu`/`pickAvatar`/`handleAvatarFile`/`removeAvatar`/`saveAvatarUrl` (see **A face on the account**) — `openDeleteAccount`/`onDeleteAccountInput`/`deleteAccount` (see **Deleting an account**), `loadUserProfile()` (reads the `Users` row once per session into `userProfile` — **and creates it when missing**, via `createUserProfile`/`profileSeed`/`USERNAME_RE`; see **Signing up**), `confirmSignOut()`. The tab's one App row, Add to Home Screen, is wired to `pwaShowInstallHelp()` in `pwa.js`. *Share links into the app* and *Join a shared list* both used to sit beside it; the first went with the Shortcut tier (see **Sharing a link in**) and the second lives on the Lists tab, which is the screen the missing list was supposed to be on. |
 | `nativepush.js` | **APNs — push for the iOS shell.** `nativePush`/`nativePushAvailable`/`nativePushState`/`refreshNativePushState`, `saveNativeToken`, `initNativePush` (the registration, foreground and tap listeners), `requestNativePush` (the user pressing the row) / `registerNativePush` (the silent re-register at sign-in, which must never prompt) and `unregisterNativePush`. Exists because WKWebView gives the `capacitor://` scheme neither a service worker nor a Notification API, so every line of `reminders.js` that reaches for `PushManager` is dead in the shipping app. Loads before `reminders.js`, which branches to it. See **Push is APNs here, not Web Push**. |
 | `messages.js` | **A conversation per shared list, and the hub over them.** `probeMessages`/`messagesReady`/`resetMessagesProbe`/`applyMessagesAvailability` (the tab is hidden until the migration is run), the hub cache (`fetchConversations`/`refreshConversations`/`invalidateConversations`/`cachedConversations`/`unreadTotal`/`updateMessagesBadge`/**`setAppIconBadge`** (the same count on the home-screen app icon, via `navigator.setAppBadge`; the worker keeps its own copy in a `bucketlist-badge` cache entry and increments it on a push, the page overwrites it with the truth)) and its screen (`renderMessages`/`convRowHTML`), then one conversation — `openConversation`/`renderConversation`/`leaveConversation`, `loadMessages`/`loadOlderMessages`/`paintConversation`/`msgRowHTML`/`scrollConversationToEnd`, `sendMessage` (through `dbInsert`, so it queues offline), the `@` picker (`mentionQuery`/`updateMentionSuggest`/`pickMention`/`renderPendingMentions`/`removePendingMention`), `openMessageMenu`/`deleteMessage` (soft), the sender's photo (`loadConversationAvatars`/`avatarsFor`/`msgAvatarHTML`/`invalidateAvatars` — see **A face on the account**), read state (`markConversationRead`), realtime (`subscribeConversation`/`unsubscribeConversation`/`onRealtimeMessage`), `syncComposerToKeyboard`, the push pair `notifyMessageSent`/`loadConversationMute`/`toggleConversationMute`, the notification landing (`readPushLanding` at boot, `handlePushLanding` from `showApp`, and the `serviceWorker` message listener), and `resetMessagesState` — called by `resetAccountState()`. Plus the naming helpers `msgSenderLabel`/`msgSenderGone`/`msgIsMine` and the time ones `msgClock`/`msgWhenShort`/`msgDayLabel`, which `notes.js` also uses. See **Messages**. |
@@ -4269,15 +4269,15 @@ functions look redundant:
   inside the activity sheet. The moment you tick something off is the moment
   you have the photos, so they belong in the same place.
 
-  **The name is an editable `.fg-hero` field in all three modes** —
-  completing something, editing something already done, and logging
-  something that never existed as a plan. It was briefly a static heading
-  while completing, on the grounds that the name was a fact the user had
-  already written; that was wrong in practice. The moment you tick something
-  off is exactly when you notice the name is wrong, and having to save,
-  reopen and edit to fix it was worse than the box being there. (The
-  `.sheet-subject` style that heading used is gone with it — don't
-  reintroduce it here without reading this paragraph.)
+  **The name is editable in all three modes** — completing something,
+  editing something already done, and logging something that never
+  existed as a plan. It was briefly a static heading while completing, on
+  the grounds that the name was a fact the user had already written; that
+  was wrong in practice. The moment you tick something off is exactly when
+  you notice the name is wrong, and having to save, reopen and edit to fix
+  it was worse than the box being there. (The `.sheet-subject` style that
+  heading used is gone with it — don't reintroduce it here without reading
+  this paragraph.)
 
   **⚠️ NO BUTTONS IN ITS HEADER EITHER — the actions are in a dock, like
   both activity sheets'.** An `.ad-dock` under the body with one
@@ -4296,61 +4296,119 @@ functions look redundant:
   "one header at a time" rule the new-activity sheet follows, and it is
   what the old two-bar swap was doing by other means.
 
-  **Below the name it is three blocks, not four fields.** It was four
-  identically-shaped `.fg` blocks in a column — same mono label, same 46px
-  box, same 22px gap — so nothing said which part was the record of what
-  happened and which was the story you tell about it, and the two one-word
-  answers were as visually loud as the photos. Now:
+  **⚠️ IT IS THE ACTIVITY SHEET'S SHAPE TOO, and the parts are literally
+  that sheet's classes rather than lookalikes.** It was a column of
+  identically-shaped `.fg` blocks — same mono label, same 46px box — so
+  nothing said which part was the record of what happened and which was
+  the story you tell about it, and the same three ideas were drawn two
+  different ways depending on which sheet you were standing on. Now:
 
-  - **`.comp-card`** — Date and Where as inset grouped rows, icon and mono
-    label on the left, value on the right, split by a hairline inset past
-    the icon column. Worth ~80px. **Its overflow stays `visible`**: the
-    location dropdown hangs out of the bottom of it, so the rows carry no
-    background of their own and nothing needs clipping to the corner radius.
-    `.loc-wrap` is the *whole row*, not the input, or `.loc-results` would
-    drop at the width of the value rather than the width of the card. The
-    date input's native calendar glyph is suppressed, since the row already
-    leads with one.
-  - **The card's rows are Date, Where and List**, all three on every mode.
-    The **Date** row opens the picker from anywhere on the row
-    (`openCompDatePicker()` calls `showPicker()`): the native calendar glyph
-    is suppressed because the row leads with one, and on desktop that glyph
-    is the only part of a date input a click opens the picker from. The
-    **List** row is a move — `confirmComplete()` writes the list columns only
-    when the set actually changed (`compListsBefore`), because with the
-    an untouched edit must not rewrite `collection_id` at all. It matters
-    most on a *completed* activity: the
-    activity sheet hides "Edit details" once something is done, so this is
-    the only way to refile one.
-  - **`.comp-sec`** — a mono head with its action on the same line, then the
-    content. The Add pill moved onto the photos head: it stays the small pill
-    the media section above requires, and gives up the line of its own that
-    it had no content to justify.
-  - **`.comp-note`** — "How it went" set in the **serif**, because that is
-    the face it is read back in (`.ad-note.prose`) and it is the one thing on
-    the sheet the user writes rather than picks. The placeholder stays sans.
+  - **The plate** (`.ad-plate`) — the list as an eyebrow (`#compListBtn`,
+    painted by `renderCompListRow()`) over the name, which is the same
+    `.ad-title.ad-title-edit` textarea the other two sheets use, grown
+    by **`growCompNameField()`**. ⚠️ **That is called TWICE per open**,
+    before and after `openModal()`: `scrollHeight` is 0 while the overlay
+    is hidden, so the first call cannot size a name that wraps.
+    ⚠️ **And it carries NO BOX until it is focused**
+    (`#compPaneMain .ad-title-edit`). The new-activity sheet's name is
+    live *and* boxed from the start because that sheet is a form you have
+    come to fill in; this one is usually already answered — you are
+    ticking something off — and a field-shaped outline around a name
+    nobody is editing reads as an error on the largest thing on screen.
+  - **⚠️ THE DATE DELIBERATELY DOES NOT RIDE UP THERE.** The detail
+    sheet's plate carries the *target* beside the title as a caption on
+    the plan; the accomplished date is the record this sheet is making,
+    so it stays below the plate — but as `.ad-place.c-target`, a card
+    like the two under it rather than a lone `.fg` among them. The moss
+    is the target's own hue, and `.c-target` exists on `.ad-place` for
+    this one row (the two activity sheets keep their target in the
+    plate). The whole row opens the picker (`openCompDatePicker()` calls
+    `showPicker()`); `.comp-date-in` strips the native input's fill,
+    border and calendar glyph, because the row already leads with one.
 
-  **At least one photo or video is required to mark something
-  accomplished.** A completion with nothing attached is a date, and the media
-  is also what gives the activity a cover, a grid card and a map pin — so the
-  one moment the user certainly has it is the one moment to ask. Three parts,
-  and the third is the one that keeps it from being a wall:
+  - **Location is `.ad-place.c-where`**, the detail sheet's Where card
+    verbatim, with the field live from the start rather than swapping in
+    on a tap — the same difference the new-activity sheet makes, and for
+    the same reason. `.loc-wrap` sits inside `.ad-place-body`; the ROW is
+    the positioned ancestor the dropdown measures against, which is what
+    stops every suggestion truncating.
+  - **Media is `.ad-place.c-link`**, the Links card, keeping only its
+    cover square: `.comp-media-thumb` is **geometry only** (42px, 10px
+    radius), so the fill and the glyph are the Links disc's own. A photo
+    cropped into a circle reads as an avatar, and this is the activity's
+    cover. `renderCompMediaCard()` writes the summary and the chevron —
+    `+` when empty, since `openCompMedia()` opens the picker directly
+    rather than an empty page.
+  - **`.comp-sec` / `.comp-note`** — "How it went" set in the **serif**,
+    because that is the face it is read back in (`.ad-note.prose`) and it
+    is the one thing on the sheet the user writes rather than picks. The
+    placeholder stays sans. It is the last block and **the only one that
+    is not a card**, so `#compPaneMain .comp-sec` gives it the top margin
+    a card's own would have provided — flush, it read as a caption on the
+    Media row above it — and its head indents to 17px to line up with the
+    labels inside those cards.
 
-  - `confirmComplete()` refuses to save when `compNew && !upMedia.length`,
-    shaking and scrolling to `#compMediaSec`. An upload still in flight
-    (`_mediaPending`) gets its own message — the user has already done the
-    thing being asked for.
-  - **The rule applies on the way in only.** `compNew` gates all of it, so an
-    activity completed before the rule existed, or one whose media was
-    removed afterwards, can still be edited and saved. Enforcing it on the
-    edit pass would strand those rows — their owner could not fix a date or a
-    note without first finding a photo of something they did years ago.
-  - `updateMediaRequirement()` (`activities.js`) swaps the section's
-    qualifier between *optional* and *required* and shows `#compMediaHint`
-    while the rule is unmet. It is called from **`renderThumbs()`**, which
-    every change to `upMedia` ends in, so the hint cannot drift out of step
-    with the tiles. A requirement discovered by pressing the button you
-    thought would finish is a dead end, not a rule.
+  Spacing between them is two lines in `modals.css` (`#compPaneMain
+  .ad-plate` / `#compPaneMain .ad-place`), because `.ad-place`'s own 8px
+  is measured against a card above it, not against a `.fg`. And the four
+  Orchard hues are declared on `#compPaneMain` alongside `#actDetailBody,
+  #actSheetBody` in `detail.css` — leave it out and both cards render
+  untinted.
+
+  **⚠️ WHAT BLOCKS THE SAVE IS ONE TABLE, `COMP_REQUIRED`**, the same
+  machinery `NEW_REQUIRED` drives on the new-activity sheet and for the
+  same reason: *a requirement discovered by pressing the button you
+  thought would finish is a dead end, not a rule*. There is no paragraph
+  under the media card any more — `.comp-req-hint` and `#compMediaHint`
+  are gone — because a sentence explaining a control is the thing the
+  two non-negotiable rules at the top of this file forbid. Three things
+  read the table, in its order:
+
+  - **a red rail** (`.ad-req`) down the left edge of each required card;
+  - **the dock button**, which *names* the first one outstanding —
+    `Pick a list` → `Name it` → `Set a date` → `Add a place` →
+    `Add a photo or video` → `Done`/`Save`/`Add`;
+  - **a shake**, on the one that is missing, when it is pressed anyway.
+
+  Things to keep:
+
+  - **⚠️ THE ORDER IS READING ORDER**, not the order the old hand-rolled
+    guards checked in. The button names the *first* unanswered field, so
+    an order that did not match the layout would send somebody down the
+    sheet past two blank ones to a third.
+  - **⚠️ `when` IS WHAT MAKES ONE TABLE SERVE THREE MODES.** Media is
+    asked for on the way in only (`compNew`) and a place only on a draft
+    (`compDraft`) — exactly what `confirmComplete()` enforces, and the
+    reason both exemptions exist is unchanged: enforcing a new rule on
+    the edit pass strands every row written before it, whose owner then
+    cannot fix a date without first finding a photo of something they did
+    years ago.
+  - **⚠️ THE RAILS ARE PAINTED, NOT WRITTEN INTO THE MARKUP.**
+    `paintCompRails()` toggles `.ad-req` from that same `when`, because a
+    rail on a field nothing is waiting for is a lie. The plate is railed
+    if *either* the list or the name is being asked for — it holds both.
+  - **⚠️ SHAKE HERE, NUDGE THERE**, and the two must not be swapped.
+    `shakeMissingComp()` uses `shakeEl()` (±6px, *refused*) because the
+    user asked to mark something accomplished and was turned down; the
+    new-activity sheet uses `nudgeEl()` (±2px, *that one, there*) because
+    its button had already said what was missing. Both scroll first and
+    move 160ms later, or on a short phone the movement happens off-screen
+    and the button appears dead.
+  - **The button is never `disabled`.** A disabled button cannot be
+    pressed, and pressing it is how you ask *which* field.
+    `#compSaveBtn.is-blocked` shares its look with `#actSaveBtn`'s.
+  - **⚠️ SETTING `.value` FIRES NO `input` EVENT**, so
+    `updateCompSaveButton()` is called from every writer: the name field's
+    own handler (`growCompNameField()`), the date and location inputs, the
+    list picker's `onPick`, `updateMediaRequirement()` — which every change
+    to `upMedia` already ends in — and both openers, before `openModal()`,
+    so the dock is honest before the sheet has finished sliding in.
+  - **An upload still in flight counts as filled**, and
+    `confirmComplete()` holds it with its own toast. The user has already
+    done the thing being asked for.
+  - **The button is `.btn-green`**, the same green as *Mark accomplished*
+    on the activity sheet — it is the same act, reached from the other
+    side.
 
   It is satisfiable offline: photos fall back to inline base64 without the
   storage bucket or a connection. **Video is not** — it is refused offline —
@@ -4565,6 +4623,16 @@ There is no fourth entry point. The Search screen's "add what you typed"
   everything the old Edit form offered (target date, priority, reminder) is
   about what to do next, and a finished thing has no next. So the name and the location live here too, not only the photos and
   notes.
+
+  **⚠️ THE X GOES BACK TO THE ACTIVITY SHEET, IT DOES NOT DROP YOU ON THE
+  PAGE BEHIND.** `compCancel()` registers `openActDetail(compId)` on the
+  sheet-return registry and then closes, rather than calling it directly —
+  so the one path out is `afterSheetClosed()`, exactly as everything else
+  here uses. It checks `sheetHasReturn('compSheet')` first, because
+  `openCompFrom()` may already have registered the same thing and the
+  sheet would otherwise open twice; a **draft** has no activity to go back
+  to and is skipped. Save is untouched and still returns only when
+  `openCompFrom()` armed it.
 
   It is opened by `openCompFrom()`, which registers a return *before* opening —
   so Save, Cancel, the scrim, Escape and a swipe down all land back on the

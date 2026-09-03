@@ -373,14 +373,54 @@
     enough to scroll for no content. */
     #compSheet .fg { margin-bottom: 11px; }
     #compSheet .fg-pair { margin-bottom: 11px; }
-    #compSheet .fg-hero { margin-bottom: 14px; }
+    /* The plate and the three .ad-place cards carry their own gutters,
+       so only the gaps between them are set here. .ad-plate has no
+       bottom margin of its own. */
+    #compPaneMain .ad-plate { margin-bottom: 11px; }
+    #compPaneMain .ad-place { margin-top: 11px; }
+
+    /* ⚠️ NO BOX UNTIL IT IS BEING EDITED. The new-activity sheet's name
+       is live from the start and carries the raised box permanently,
+       because that sheet is a form you have come to fill in. This one is
+       usually already answered — you are ticking something off — so a
+       field-shaped outline around a name nobody is editing reads as an
+       error state on the largest thing on the sheet. It appears on
+       focus, which is the only moment it means anything. */
+    #compPaneMain .ad-title-edit {
+      background: none; box-shadow: none;
+    }
+    #compPaneMain .ad-title-edit:focus {
+      background: var(--bg-elevated); box-shadow: var(--ring);
+    }
+    #compPaneMain .ad-title-edit::placeholder { color: var(--label-3); }
+
+    /* ⚠️ THE DATE IS AN <input> WEARING .ad-place-v, so it needs the
+       chrome taken off it: a native date input carries its own fill,
+       border and calendar glyph, and the row already leads with one. */
+    .comp-date-in {
+      width: 100%; font-family: inherit;
+      /* 16px minimum or iOS zooms the page on focus and does not zoom
+         back — the same floor .ad-place-edit input takes. */
+      font-size: max(16px, 15.5px);
+      background: none; border: 0; padding: 0;
+      -webkit-appearance: none; appearance: none;
+    }
+    .comp-date-in:focus { outline: none; }
+    .comp-date-in::-webkit-calendar-picker-indicator { display: none; }
+    .comp-date-in::-webkit-date-and-time-value { text-align: left; }
+
+    /* "How it went" is the last block and the only one that is not a
+       card, so it needs the air a card's own margin would have given it.
+       It was flush under the Media row, which read as that row's
+       caption. The label indents to 17px to line up with the labels
+       inside the cards above it. */
+    #compPaneMain .comp-sec { margin-top: 20px; margin-bottom: 4px; }
+    #compPaneMain .comp-sec-head { min-height: 0; margin: 0 0 6px 17px; }
     #compSheet .fg > label { margin-bottom: 4px; }
     /* "How it went" is one of the column's blocks and has to sit in it
        like the rest: the same 4px under its label and the same 11px to
        the block above. The head's 38px min-height dated from when the
        Add pill rode on it. */
-    #compSheet .comp-sec { margin-bottom: 11px; }
-    #compSheet .comp-sec-head { min-height: 0; margin-bottom: 4px; }
 
 /*  ============================================================
     COMPLETION SHEET
@@ -478,18 +518,6 @@
     .comp-sec-label .req {
       text-transform: none; letter-spacing: -.002em; color: var(--red);
     }
-    /* .sheet-body has no horizontal padding of its own — every block
-       inside one insets itself — so this had none and ran to both edges
-       of the glass. */
-    .comp-req-hint {
-      /* Loose below, tight above: it is a caption on the media block it
-         follows, and with an even gap on both sides it read as the
-         label for "How it went" underneath. */
-      margin: 0 var(--gx-r) 16px var(--gx-l);
-      font-size: 13px; line-height: 1.38;
-      color: var(--label-2);
-    }
-    .comp-req-hint[hidden] { display: none; }
     .comp-sec .photo-previews { margin-top: 0; }
     /* The photo-location offer sits directly on the sheet body rather
        than inside a .fg, so unlike .loc-guess it has to inset itself. */
@@ -1191,42 +1219,21 @@
       width: auto; height: auto; aspect-ratio: 1;
     }
 
-    /* The Links card's container, not a card of its own: same elevated
-       ground and radius .chip-field uses, so the two read alike. */
-    /* In the Links card's blue (.ad-place.c-link on the pending sheet),
-       at the same 14% mix, so the two read as the same control. */
-    .comp-media-card {
-      --c-link: #3a6ea8;
-      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-      margin: 0; padding: 10px 12px; min-height: 62px;
-      border: none; border-radius: var(--r-row);
-      background: color-mix(in srgb, var(--c-link) 14%, transparent);
-      /* Its own hue at ring strength, as .fg-tint does — a tinted fill
-         alone has no edge, and on the dark ground that reads as a patch
-         rather than a control. */
-      box-shadow: 0 0 0 .5px color-mix(in srgb, var(--c-link) 34%, transparent);
-      cursor: pointer;
-    }
-    .comp-media-card:active { background: color-mix(in srgb, var(--c-link) 24%, transparent); }
-    .comp-media-thumb {
-      width: 42px; height: 42px; flex: none; border-radius: 10px; overflow: hidden;
-      display: flex; align-items: center; justify-content: center;
-      background: color-mix(in srgb, var(--c-link) 18%, transparent);
-      color: var(--c-link);
+    /* ⚠️ THE COVER SQUARE, NOT THE ROUND DISC.
+
+       The Media row IS .ad-place.c-link now — the activity sheet's Links
+       card, one name in the app for one shape — and the one thing it
+       keeps of its own is the cover preview: a photo cropped into a
+       circle reads as an avatar, and this is the activity's cover.
+       It is GEOMETRY ONLY: the fill and the glyph colour are the Links
+       disc's own, so an empty row is the same blue square-with-a-camera
+       the Links row is a blue circle-with-a-link. The selector carries
+       .ad-place.c-link so it is not outranked by the disc rule it is
+       narrowing. */
+    .ad-place.c-link .comp-media-thumb {
+      width: 42px; height: 42px; border-radius: 10px; overflow: hidden;
     }
     .comp-media-thumb .media-tile,
     .comp-media-thumb img, .comp-media-thumb video {
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
-    .comp-media-thumb .ic { width: 18px; height: 18px; }
-    .comp-media-body { min-width: 0; margin-right: auto; }
-    .comp-media-k {
-      font: 600 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
-      color: var(--c-link); display: block; margin-bottom: 4px;
-    }
-    .comp-media-v {
-      font: 400 15px/1.25 var(--sans); color: var(--label);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .comp-media-chev { color: var(--c-link); opacity: .7; }
-    .comp-media-chev .ic { width: 16px; height: 16px; }
