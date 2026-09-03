@@ -262,8 +262,10 @@ function updateNavbar(){
     title.textContent='Your Lists';
     fabFn=openNewList;fabLabel='New list';
   } else if(curPage==='upnext'||curPage==='done'){
+    /* No back button, as on Settings: the bar carries nothing else, so
+       it sat alone on top of the large title. The Home tab, the swipe
+       and the browser's own Back all land where it did. */
     title.textContent=curPage==='upnext'?'Up Next':'Accomplished';
-    left.innerHTML=`<button class="navbtn back" onclick="nav('home')">${icon('chevron-left')}<span>Home</span></button>`;
   } else if(curPage==='detail'){
     /* The label has to name where Back will actually land. A collection
        can be opened from the Messages tab as well as from Lists (the
@@ -295,8 +297,12 @@ function updateNavbar(){
        button in the app uses, and it does not scroll away. */
     right.innerHTML=`<button class="navbtn disc ghost" onclick="nav('settings')" aria-label="Settings">${icon('sliders')}</button>`;
   } else if(curPage==='settings'){
+    /* No back button. It is the one pushed screen whose bar carries
+       nothing else, so the button sat alone on top of the large title
+       and its eyebrow. The way back is the You tab, the swipe, and the
+       browser's own Back — all three land on `me`, which is what the
+       button did. */
     title.textContent='Settings';
-    left.innerHTML=`<button class="navbtn back" onclick="nav('me')">${icon('chevron-left')}<span>You</span></button>`;
   }
   setFab(fabFn,fabLabel);
   applyNavCondense();

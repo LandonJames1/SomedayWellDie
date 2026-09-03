@@ -4172,6 +4172,20 @@ functions look redundant:
     difficulty menus share their labels and `tone`s. Two copies of a
     band list is how the two sheets would come to offer different
     answers.
+  - **⚠️ THE NAME'S BOX IS ON FOCUS ONLY**, and so is the completion
+    sheet's — `.ad-title-edit:focus` in `detail.css`, one rule for all
+    three sheets. Both of those fields are live from the start, so a
+    permanent field-shaped outline put an error-looking box around the
+    largest thing on the screen before anybody had touched it. The
+    detail sheet is unaffected either way: its field is hidden until
+    `startTitleEdit()` unhides *and* focuses it.
+  - **⚠️ AND THE NAME IS NOT FOCUSED WHEN THE SHEET OPENS.** Almost
+    every route in has already supplied it — both composers and the
+    plan-or-record chooser prefill it — so raising the keyboard covered
+    the four fields that *are* outstanding with the one that is not.
+    `growNameField()` still runs on that timer, because `scrollHeight`
+    is 0 while the overlay is hidden and a wrapped name would open at
+    one line.
   - **Two fields differ from the detail sheet, and both are because the
     sheet is empty.** The name is a live `<textarea>` from the start
     rather than tap-to-edit (it is what you came here to write), and so
@@ -4309,12 +4323,10 @@ functions look redundant:
     by **`growCompNameField()`**. ⚠️ **That is called TWICE per open**,
     before and after `openModal()`: `scrollHeight` is 0 while the overlay
     is hidden, so the first call cannot size a name that wraps.
-    ⚠️ **And it carries NO BOX until it is focused**
-    (`#compPaneMain .ad-title-edit`). The new-activity sheet's name is
-    live *and* boxed from the start because that sheet is a form you have
-    come to fill in; this one is usually already answered — you are
-    ticking something off — and a field-shaped outline around a name
-    nobody is editing reads as an error on the largest thing on screen.
+    ⚠️ **And it carries no box until it is focused** —
+    `.ad-title-edit:focus` in `detail.css`, one rule serving all three
+    sheets, so a name nobody is editing is not wearing a field-shaped
+    outline. See the same note under **The two-speed activity flow**.
   - **⚠️ THE DATE DELIBERATELY DOES NOT RIDE UP THERE.** The detail
     sheet's plate carries the *target* beside the title as a caption on
     the plan; the accomplished date is the record this sheet is making,

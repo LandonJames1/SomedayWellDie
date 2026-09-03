@@ -1241,7 +1241,13 @@ async function openNewActivity(prefillName){
      not awaited: the sheet is usable while the answer is in flight,
      and the fill lands in an empty field if it lands at all. */
   if(prefillName) maybeGuessLocation();
-  setTimeout(()=>{$('aName').focus();growNameField();},320);
+  /* ⚠️ THE NAME IS NOT FOCUSED ON OPEN. Almost every route in has
+     already supplied it — both composers and the plan-or-record chooser
+     prefill it — so raising the keyboard covered the four fields that
+     are actually outstanding with a field that is already answered.
+     The height still has to be measured once the sheet is on screen:
+     scrollHeight is 0 while the overlay is hidden. */
+  setTimeout(growNameField,320);
 }
 
 /* ---- the name -----------------------------------------------------

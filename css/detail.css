@@ -605,18 +605,32 @@
       border: 0; resize: none; overflow: hidden;
       color: inherit; -webkit-appearance: none; appearance: none;
     }
-    /* The same raised surface and hairline the Where row takes while it
-       is being edited, so "this is a field now" reads identically
-       wherever it happens on this sheet. Not a coloured border: red or
-       terracotta around the largest thing on the sheet reads as an
-       error, and this is an ordinary edit. */
+    /* ⚠️ THE BOX APPEARS ON FOCUS AND ONLY ON FOCUS, on all three
+       sheets. The same raised surface and hairline the Where row takes
+       while it is being edited, so "this is a field now" reads
+       identically wherever it happens — and an outline around a name
+       nobody is editing reads as an error state on the largest thing
+       on screen, which is exactly what the two sheets whose field is
+       live from the start looked like. Not a coloured border for the
+       same reason: red or terracotta there reads as a refusal, and this
+       is an ordinary edit.
+
+       The detail sheet is unaffected either way — its field is hidden
+       until startTitleEdit() unhides AND focuses it. */
     .ad-title-edit {
-      background: var(--bg-elevated);
-      box-shadow: var(--ring);
+      /* ⚠️ `background: none` IS LOAD-BEARING, not a tidy-up. A textarea
+         with no background of its own falls back to the UA's `field`
+         colour, which is WHITE -- so dropping the elevated fill from
+         here left a white slab behind the title instead of nothing. */
+      background: none; box-shadow: none;
       border-radius: 10px;
       caret-color: var(--tint);
     }
-    .ad-title-edit:focus { outline: none; }
+    .ad-title-edit:focus {
+      outline: none;
+      background: var(--bg-elevated);
+      box-shadow: var(--ring);
+    }
 
     /* ⚠️ EVERY ONE OF THESE SETS display, WHICH OUTRANKS THE BROWSER'S
        OWN [hidden] RULE -- so without this the static value and the
@@ -738,18 +752,25 @@
       border: 0; resize: none; overflow: hidden;
       color: inherit; -webkit-appearance: none; appearance: none;
     }
-    /* The same raised surface and hairline the Where row takes while it
-       is being edited, so "this is a field now" reads identically
-       wherever it happens on this sheet. Not a coloured border: red or
-       terracotta around the largest thing on the sheet reads as an
-       error, and this is an ordinary edit. */
+    /* ⚠️ THE BOX APPEARS ON FOCUS AND ONLY ON FOCUS -- see the identical
+       rule earlier in this file, which this one is the second copy of.
+       An outline around a name nobody is editing reads as an error state
+       on the largest thing on the sheet, which is what both sheets whose
+       field is live from the start looked like. */
     .ad-title-edit {
-      background: var(--bg-elevated);
-      box-shadow: var(--ring);
+      /* ⚠️ `background: none` IS LOAD-BEARING, not a tidy-up. A textarea
+         with no background of its own falls back to the UA's `field`
+         colour, which is WHITE -- so dropping the elevated fill from
+         here left a white slab behind the title instead of nothing. */
+      background: none; box-shadow: none;
       border-radius: 10px;
       caret-color: var(--tint);
     }
-    .ad-title-edit:focus { outline: none; }
+    .ad-title-edit:focus {
+      outline: none;
+      background: var(--bg-elevated);
+      box-shadow: var(--ring);
+    }
 
     /* ⚠️ EVERY ONE OF THESE SETS display, WHICH OUTRANKS THE BROWSER'S
        OWN [hidden] RULE -- so without this the static value and the
@@ -1155,9 +1176,9 @@
 
     /* ⚠️ THE NAME FIELD IS LIVE FROM THE START, so it never takes the
        .ad-title-btn/[hidden] swap the detail sheet's rename does — and
-       it therefore needs its own placeholder colour. It keeps the
-       serif face and the raised box, so the sheet's subject looks the
-       same before it is filled in as it will a moment after. */
+       it therefore needs its own placeholder colour. It keeps the serif
+       face; the raised box is on :focus only, like every other
+       .ad-title-edit -- see the note on that rule. */
     #aName::placeholder { color: var(--label-3); }
     /* ⚠️ THE PLACEHOLDER HAS TO FIT ON ONE LINE, and that is why it is
        four words. A textarea's scrollHeight counts its CONTENT, not its

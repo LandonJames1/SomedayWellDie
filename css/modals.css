@@ -379,19 +379,11 @@
     #compPaneMain .ad-plate { margin-bottom: 11px; }
     #compPaneMain .ad-place { margin-top: 11px; }
 
-    /* ⚠️ NO BOX UNTIL IT IS BEING EDITED. The new-activity sheet's name
-       is live from the start and carries the raised box permanently,
-       because that sheet is a form you have come to fill in. This one is
-       usually already answered — you are ticking something off — so a
-       field-shaped outline around a name nobody is editing reads as an
-       error state on the largest thing on the sheet. It appears on
-       focus, which is the only moment it means anything. */
-    #compPaneMain .ad-title-edit {
-      background: none; box-shadow: none;
-    }
-    #compPaneMain .ad-title-edit:focus {
-      background: var(--bg-elevated); box-shadow: var(--ring);
-    }
+    /* The box-on-focus rule is .ad-title-edit's own now — see the note
+       there. All this sheet needs of its own is the placeholder colour,
+       for the same reason #aName does: the field is live from the start,
+       so it never takes the button/[hidden] swap the detail sheet's
+       rename does. */
     #compPaneMain .ad-title-edit::placeholder { color: var(--label-3); }
 
     /* ⚠️ THE DATE IS AN <input> WEARING .ad-place-v, so it needs the

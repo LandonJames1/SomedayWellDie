@@ -171,10 +171,14 @@
          the end of the content rather than pushing it. */
       padding-bottom: calc(var(--chrome-bottom) + 88px);
     }
-    /* Pushed screens carry a back button, which sits in the nav bar
+    /* Pushed screens that CARRY A BACK BUTTON, which sits in the nav bar
        between --nav-inset and --nav-inset + 44. So their content has to
        clear the taller of "the shared page gap" and "the bottom of that
-       button", or the title runs underneath it. On a device with a
+       button", or the title runs underneath it. ⚠️ It is applied per
+       screen in index.html rather than to every pushed screen: Up Next,
+       Accomplished and Settings have no back button, and the extra
+       offset made them sit visibly lower than every other page for a
+       control that is not there. On a device with a
        notch the two are the same number; in a browser tab, where
        --safe-top is 0, the floor is what keeps the chevron off the
        heading. */
