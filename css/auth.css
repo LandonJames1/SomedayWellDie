@@ -132,3 +132,51 @@
       line-height: 1.45;
       text-align: center;
     }
+
+/* ==============================================================
+   SIGN IN WITH APPLE
+
+   Native only: #authApple is display:none in the markup and shown
+   by renderAppleButton(). A browser never sees any of this.
+
+   ⚠️ THE BUTTON IS BLACK-ON-WHITE / WHITE-ON-BLACK BY APPLE'S
+   RULE, not by the app's palette — their guidelines fix the fill,
+   the mark and the wording, and a terracotta "Sign in with Apple"
+   is a rejection. It is the one control in the app deliberately
+   outside the design language, which is also why it sits below the
+   divider rather than beside the app's own button.
+   ============================================================== */
+    .auth-or {
+      display: flex; align-items: center; gap: 12px;
+      margin: 18px 0 14px;
+      color: var(--label-3);
+      font-family: var(--mono);
+      font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    }
+    .auth-or::before, .auth-or::after {
+      content: ""; flex: 1; height: 1px; background: var(--separator);
+    }
+
+    .auth-apple-btn {
+      width: 100%;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 48px;
+      border-radius: 12px;
+      background: #000; color: #fff;
+      font-family: var(--sans);
+      font-size: 17px; font-weight: 600;
+      letter-spacing: -.01em;
+    }
+    .auth-apple-btn svg {
+      width: 18px; height: 18px;
+      /* The mark sits optically high against the cap height. */
+      margin-top: -2px;
+    }
+    .auth-apple-btn:disabled { opacity: .5; }
+
+    /* On the near-black ground a black button disappears, so the pair
+       inverts — which is Apple's own black/white variant, not a colour
+       of ours. */
+    @media (prefers-color-scheme: dark) {
+      .auth-apple-btn { background: #fff; color: #000; }
+    }

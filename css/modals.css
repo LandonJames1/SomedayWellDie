@@ -620,6 +620,15 @@
        see the no-help-text rule in CLAUDE.md. */
     .as-heading strong:not(:only-child) { margin-bottom: 5px; }
 
+    /* ⚠️ DARK MODE SWAPS THE TWO TONES. --fill-4 is a LIGHT warm overlay
+       in both modes, so on the dark ground it made the header lighter
+       than the options it heads -- the recess reading as a raise. A dark
+       overlay puts the header below the row colour again. */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .as-heading { background: rgba(0,0,0,.22); }
+    }
+    :root[data-theme="dark"] .as-heading { background: rgba(0,0,0,.22); }
+
     /* ── the value being chosen carries its own colour ──
        Priority and difficulty are both scales the app draws in colour
        everywhere else: priority on every row's rail, its capsule and its

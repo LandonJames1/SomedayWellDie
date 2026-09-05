@@ -103,3 +103,50 @@
     /* Nothing to install once it is installed. */
     html.standalone .install-bar,
     html.standalone .ios-install { display: none !important; }
+
+/* ==============================================================
+   THE LOCK SCREEN
+
+   Native only — js/applock.js raises it. It lives here rather than
+   in a file of its own for the same reason the offline banner and
+   the install bar do: it is chrome that covers the app rather than
+   a screen inside it.
+
+   ⚠️ z-index 400 puts it above EVERYTHING — the action sheet (260),
+   the prompt (270) and the lightbox included. It has to cover
+   whatever happened to be open when the app went to the
+   background, and a sheet drawn over the cover would defeat it
+   entirely.
+   ============================================================== */
+    .lock-screen {
+      position: fixed;
+      /* Stated outright rather than inset:0, the same reason
+         .modal-overlay is — a box that resolves against a viewport
+         the keyboard moves is a box that moves. */
+      left: 0; right: 0; top: 0;
+      height: 100dvh; bottom: auto;
+      z-index: 400;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 0 var(--gx-l) 0 var(--gx-r);
+      background: var(--bg);
+    }
+    .lock-screen.open { display: flex; }
+
+    .lock-inner {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 14px;
+      width: 100%; max-width: 320px;
+      text-align: center;
+    }
+    .lock-mark {
+      width: 76px; height: 76px;
+      border-radius: 18px;
+      box-shadow: var(--shadow-md);
+    }
+    .lock-title {
+      font-family: var(--serif);
+      font-size: 23px; font-weight: 500;
+      color: var(--label);
+    }
+    .lock-btn { width: 100%; margin-top: 6px; }

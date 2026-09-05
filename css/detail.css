@@ -1165,6 +1165,20 @@
       pointer-events: none;
     }
 
+    /* The key for the rail above. One line, immediately under the
+       sheet title and immediately above the first required card, so the
+       mark is explained where it is first seen. */
+    .req-key {
+      display: flex; align-items: center; gap: 7px;
+      margin: 0 var(--gx-r) 8px var(--gx-l);
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--label-3);
+    }
+    .req-key i {
+      display: block; width: 3px; height: 11px; border-radius: 2px;
+      background: var(--red); flex-shrink: 0;
+    }
+
     /* ⚠️ THE ADD BUTTON WHILE SOMETHING IS OUTSTANDING. Not `disabled`:
        a disabled button cannot be pressed, and pressing it is how you
        ask WHICH field — which is what nudges the one that is missing.

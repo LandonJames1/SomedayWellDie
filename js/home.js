@@ -28,6 +28,13 @@ async function renderHome(){
   renderHomeProgress(lists,acts);
   renderHomeUpNext(acts,lists);
   renderHomeRecent(acts,lists);
+  /* The home screen widget draws Up Next and the progress ring from
+     exactly these two arrays -- see js/widget.js. Un-awaited: it is a
+     native bridge call and nothing on screen waits for it. */
+  publishWidget(acts,lists);
+  /* And the phone's own search index — same arrays, same reason. See
+     js/spotlight.js. */
+  publishSpotlight(acts,lists);
 }
 
 /* ---- Header ----

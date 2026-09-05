@@ -134,6 +134,21 @@
 
       <div class="auth-error" id="authError"></div>
       <button class="btn btn-filled auth-submit" id="authBtn" onclick="handleAuth()">Sign In</button>
+
+      <!-- Native only. Hidden here and shown by renderAppleButton() when
+           the AppleAuth plugin exists, so a browser sees exactly the
+           screen it always did. Apple's own guidance is that the button
+           carries their mark and their wording; the glyph is inline
+           because it is Apple's, not one of ours from icons.js. -->
+      <div class="auth-apple" id="authApple" style="display:none">
+        <div class="auth-or"><span>or</span></div>
+        <button class="btn auth-apple-btn" id="authAppleBtn" onclick="signInWithApple()">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M11.18 8.5c.02-1.6 1.31-2.37 1.37-2.41-.75-1.1-1.91-1.25-2.32-1.27-.99-.1-1.93.58-2.43.58-.5 0-1.27-.57-2.09-.55-1.07.02-2.06.62-2.61 1.58-1.11 1.93-.28 4.78.8 6.34.53.76 1.16 1.62 1.98 1.59.79-.03 1.09-.51 2.05-.51.95 0 1.23.51 2.07.5.86-.02 1.4-.78 1.92-1.55.61-.89.86-1.75.87-1.79-.02-.01-1.67-.64-1.69-2.54zM9.62 3.79c.43-.53.73-1.26.65-1.99-.63.03-1.39.42-1.84.94-.4.47-.76 1.22-.66 1.94.7.05 1.42-.36 1.85-.89z"/>
+          </svg>
+          <span>Sign in with Apple</span>
+        </button>
+      </div>
       <!-- Sign-in only: applyAuthMode() hides it in Create Account mode,
            where there is no password to have forgotten yet. -->
       <div class="auth-forgot" id="authForgot">
@@ -150,9 +165,9 @@
            between somebody and the app they already decided to try. -->
       <p class="auth-agree" id="authAgree" style="display:none">
         By creating an account you agree to the
-        <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a>
+        <a href="legal/terms.html">Terms of Use</a>
         and
-        <a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+        <a href="legal/privacy.html">Privacy Policy</a>.
         There is no tolerance for abusive content or behaviour.
       </p>
     </div>
@@ -387,6 +402,28 @@
 
   <div class="section-header">Preferences</div>
   <div class="group">
+    <!-- Light / Dark / System. The palette's dark half is one media
+         block per stylesheet and the switch rewrites its condition
+         rather than duplicating it -- see APPEARANCE in theme.js.
+         Hidden by renderThemeRow() if there was nothing to rewrite. -->
+    <button class="row tappable has-leading" id="meThemeRow" onclick="openThemeMenu()">
+      <span class="row-leading li-gray" id="meThemeIcon"></span>
+      <span class="row-body"><span class="row-title">Appearance</span></span>
+      <span class="row-trailing">
+        <span class="row-value" id="meThemeValue"></span>
+        <span class="row-chevron" id="meThemeChevron"></span>
+      </span>
+    </button>
+    <!-- Native only, hidden by renderAppLockRow() otherwise. A door,
+         not encryption — see the header of applock.js. -->
+    <button class="row tappable has-leading" id="meLockRow" style="display:none" onclick="openAppLockMenu()">
+      <span class="row-leading li-red" id="meLockIcon"></span>
+      <span class="row-body"><span class="row-title">Lock the App</span></span>
+      <span class="row-trailing">
+        <span class="row-value" id="meLockValue"></span>
+        <span class="row-chevron" id="meLockChevron"></span>
+      </span>
+    </button>
     <button class="row tappable has-leading" id="meNotifyRow" style="display:none">
       <span class="row-leading li-orange" id="meNotifyIcon"></span>
       <span class="row-body"><span class="row-title">Reminder alerts</span></span>
@@ -443,12 +480,12 @@
 
   <div class="section-header">Legal</div>
   <div class="group">
-    <a class="row tappable has-leading" href="legal/privacy.html" target="_blank" rel="noopener">
+    <a class="row tappable has-leading" href="legal/privacy.html">
       <span class="row-leading li-blue" id="mePrivacyIcon"></span>
       <span class="row-body"><span class="row-title">Privacy Policy</span></span>
       <span class="row-chevron" id="mePrivacyChevron"></span>
     </a>
-    <a class="row tappable has-leading" href="legal/terms.html" target="_blank" rel="noopener">
+    <a class="row tappable has-leading" href="legal/terms.html">
       <span class="row-leading li-green" id="meTermsIcon"></span>
       <span class="row-body"><span class="row-title">Terms of Use</span></span>
       <span class="row-chevron" id="meTermsChevron"></span>
@@ -579,6 +616,8 @@
     </div>
     <div class="sheet-body" id="actSheetBody">
      <div class="ad-pane active" id="aPaneMain">
+
+      <div class="req-key"><i></i>= required field</div>
 
       <!-- The plate: which list, the name, the target date. Same three
            controls in the same three places as the detail sheet, so the
@@ -999,6 +1038,8 @@
     </div>
     <div class="sheet-body">
      <div class="comp-pane active" id="compPaneMain">
+
+      <div class="req-key"><i></i>= required field</div>
       <!-- Once something is done this sheet is the only way to edit it,
            so the name lives here rather than in the activity sheet — see
            openActDetail(). Target date, priority and reminders are gone
@@ -1153,7 +1194,7 @@
       </div>
       <div class="ad-dock-view" id="compDockMedia" hidden>
         <button class="btn btn-filled btn-block" id="compMediaAdd"
-                onclick="$('photoInput').click()">Add a photo or video</button>
+                onclick="pickMedia()">Add a photo or video</button>
       </div>
     </div>
   </div>
@@ -1445,15 +1486,39 @@
   </div>
 </div>
 
+<!-- ===================================================================
+     THE LOCK SCREEN
+
+     Native only, and raised by applock.js. It is LAST in the body
+     and z-indexed above every sheet, because it has to cover whatever
+     happened to be open when the app went to the background — an
+     activity's photos as readily as the Lists tab.
+
+     There is deliberately no way past it drawn here: the only control
+     is Unlock, and the app underneath has setBodyScrollLock() on it.
+     =================================================================== -->
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-inner">
+    <img class="lock-mark" src="icons/icon-192.png" alt="" />
+    <div class="lock-title">Someday We&rsquo;ll Die</div>
+    <button class="btn btn-filled lock-btn" onclick="tryUnlock()">
+      Unlock with <span id="lockKind">Face ID</span>
+    </button>
+  </div>
+</div>
+
 <!-- ===== Scripts — order matters =====
      These are plain (non-module) scripts so they share one global scope,
      which is what lets the inline onclick="..." handlers above find them.
      Rough dependency order: config -> state -> helpers -> screens -> boot. -->
 
 <!-- Foundation.
-     fuzzy before dupes and search, which both build on it; offline
-     before api, which reads through its snapshot when the network
-     cannot answer. -->
+     theme FIRST and before every other script: it corrects the palette
+     by rewriting a media query, and doing that a tick later would paint
+     the wrong half of it and swap. fuzzy before dupes and search, which
+     both build on it; offline before api, which reads through its
+     snapshot when the network cannot answer. -->
+<script src="js/theme.js"></script>
 <script src="js/config.js"></script>
 <script src="js/state.js"></script>
 <script src="js/utils.js"></script>
@@ -1492,6 +1557,16 @@
 <script src="js/sharing.js"></script>
 <script src="js/moderation.js"></script>
 <script src="js/home.js"></script>
+<!-- Native-only, and a silent no-op in a browser: it posts what Home
+     just drew to the home screen widget. See widget.js. -->
+<script src="js/widget.js"></script>
+<script src="js/spotlight.js"></script>
+<script src="js/nativemedia.js"></script>
+<script src="js/appleauth.js"></script>
+<script src="js/applock.js"></script>
+<script src="js/nativemap.js"></script>
+<!-- Native-only: what the share extension left for us. -->
+<script src="js/shareinbox.js"></script>
 <script src="js/upnext.js"></script>
 <script src="js/done.js"></script>
 <!-- APNs. Before reminders.js, which asks it whether native push is

@@ -834,6 +834,15 @@ function boundsOf(acts){
 let globalMapState={};
 
 async function renderGlobalMap(){
+  /* ⚠️ THE ONE NATIVE BRANCH, and it returns before anything below it
+     runs — so MapLibre is never fetched, no WebGL context is created
+     and the floating chrome is never built. A browser falls straight
+     through to the map this app has always drawn. See nativemap.js. */
+  if(typeof nativeMapAvailable==='function'&&nativeMapAvailable()){
+    openNativeMap();
+    return;
+  }
+
   const mapEl=$('globalMapContainer');
 
   $('globalMapBar').innerHTML=`

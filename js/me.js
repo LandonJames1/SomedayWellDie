@@ -38,6 +38,8 @@ async function renderMe(){
    Everything it touches -- notifications, Home, About you, Safety, the
    install row -- is below. */
 function renderSettings(){
+  renderThemeRow();
+  renderAppLockRow();
   renderMeNotifications();
   renderMeHome();
   renderMeSafety();

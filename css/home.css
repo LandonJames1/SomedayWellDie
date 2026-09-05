@@ -136,7 +136,11 @@
     .home-suggest-item:not(:last-child) { border-bottom: .5px solid var(--separator); }
     .home-suggest-item:active { background: var(--fill-4); }
     .home-suggest-item > .ic { width: 19px; height: 19px; flex-shrink: 0; color: var(--label-3); }
-    .home-suggest-item.done > .ic { color: var(--green); }
+    /* The same #6c8853 theme.css pins .act-row.done .act-check to, not
+       var(--green) -- the two differ, and a completed row in the search
+       dropdown was a different green from the same row in a list. */
+    .home-suggest-item.done > .ic { color: #6c8853; }
+    .home-suggest-meta .badge.b-done { color: #6c8853; }
     .home-suggest-body { min-width: 0; flex: 1; }
     .home-suggest-name {
       display: block;

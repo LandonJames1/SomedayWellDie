@@ -36,6 +36,11 @@
      per-user, and separating them is not worth one cheap query.
    ============================================================== */
 function resetAccountState(){
+  /* The widget outlives the app process, so it has to be told. */
+  clearWidget();
+  /* And the Spotlight index, which is the more important of the two:
+     it is reachable from the home screen without opening the app. */
+  clearSpotlight();
   cancelPendingStats();
   invalidateAll();
   /* Or the next account signs in inside the previous one's throttle
@@ -79,6 +84,8 @@ function resetAccountState(){
 function showAuth(){
   $('authPage').style.display='flex';
   $('appWrap').style.display='none';
+  /* Native only, and hidden otherwise — see js/appleauth.js. */
+  if(typeof renderAppleButton==='function') renderAppleButton();
   /* Someone who arrived on an invite link and has never had a session
      on this device is, overwhelmingly, someone being handed the app for
      the first time — that is what sharing is for. Opening on Sign In
@@ -401,9 +408,17 @@ async function showApp(){
      so the tab arrives with its unread count already on it. See
      js/messages.js. */
   probeMessages();
+  /* Whether this device has a passcode or Face ID to lock behind, and
+     — if the lock is on — the cover, before anything paints. See
+     js/applock.js. */
+  if(typeof probeAppLock==='function') probeAppLock();
   /* A message notification tapped while the app was closed lands here.
      See ARRIVING FROM A NOTIFICATION in js/messages.js. */
   handlePushLanding();
+  /* Something shared in from another app before there was anybody
+     signed in to open a sheet for. Same shape, same reason. See
+     js/shareinbox.js. */
+  if(typeof flushPendingShare==='function') flushPendingShare();
   /* An invite to a shared list is held the same way, and for the same
      reason: it can arrive while signed out. See js/sharing.js. */
   const hadPendingJoin=!!pendingJoin;
@@ -605,7 +620,12 @@ async function handleAuth(){
       currentUser=data.user;showApp();return;
     }
   }catch(err){
-    if(!err.handled) setAuthError(authErrorText(err,'Sign in failed.'));
+    /* Sign-in is deliberately vague; sign-up is not, and cannot be —
+       it has to be able to say a username is taken or the address is
+       already registered. See signInErrorText(). */
+    if(!err.handled) setAuthError(
+      authIsSignUp ? authErrorText(err,'Could not create that account.')
+                   : signInErrorText(err));
   }
   btn.disabled=false;
   btn.textContent=label;
@@ -833,6 +853,50 @@ function setAuthNotice(html,ok){
    different thing to be told, and it points at the only real fix,
    which is configuring custom SMTP.
    ============================================================== */
+/* ==============================================================
+   WHAT A FAILED SIGN-IN IS ALLOWED TO SAY
+
+   One sentence for every way it can fail, and that is the point.
+   Supabase already collapses a wrong password and an address with no
+   account into the same "Invalid login credentials", so the obvious
+   leak was closed — but two others were not, and both were surfaced
+   raw:
+
+     "Email not confirmed"  -> this address HAS an account here
+     "User is banned"       -> this address has an account, and we
+                               have acted on it
+
+   Either one turns the sign-in form into an oracle: type an address,
+   read the answer, learn whether that person has an account. That is
+   worth closing on its own terms, and it is also the answer to the
+   question people actually ask about a bucket-list app, which is who
+   else is on it.
+
+   ⚠️ THE COST IS REAL AND IS PAID FOR IN THE SECOND SENTENCE. Somebody
+   who never confirmed their address now gets the same message as
+   somebody who mistyped their password, and on its own that is a dead
+   end — they would sit there retyping a password that was correct all
+   along. So the confirmation hint is appended for EVERYONE who fails,
+   which is what keeps it from being a tell: it is on the screen
+   whether or not the address has an account. "Forgot password?" sits
+   directly under the button and covers the other half.
+
+   Rate limiting is the one thing still reported as itself. It says
+   nothing about whether the account exists — it is a fact about this
+   browser hammering the endpoint — and a user who is not told will
+   keep pressing, which is the behaviour the limit exists to stop. */
+function signInErrorText(err){
+  const code=String((err&&(err.code||err.error_code))||'').toLowerCase();
+  const low=String((err&&err.message)||'').toLowerCase();
+
+  if(code.includes('over_request_rate_limit')||low.includes('rate limit')||
+     low.includes('for security purposes')||low.includes('too many')){
+    return authErrorText(err,'Too many attempts just now. Give it a minute.');
+  }
+  return 'That email and password don\u2019t match an account. '+
+         'If you just signed up, use the confirmation link in your email first.';
+}
+
 function authErrorText(err,fallback){
   const code=String((err&&(err.code||err.error_code))||'').toLowerCase();
   const msg=String((err&&err.message)||'');
@@ -1071,7 +1135,16 @@ async function savePasswordReset(){
    ============================================================== */
 document.addEventListener('visibilitychange',()=>{
   if(!currentUser)return;
-  if(document.visibilityState!=='visible'){ sb.auth.stopAutoRefresh(); return; }
+  if(document.visibilityState!=='visible'){
+    sb.auth.stopAutoRefresh();
+    /* ⚠️ BEFORE the return, and before anything else: iOS takes the
+       multitasking snapshot as the app resigns active, so a cover
+       raised on the way back in has already been photographed showing
+       the last screen. See js/applock.js. */
+    if(typeof appLockOnHide==='function') appLockOnHide();
+    return;
+  }
+  if(typeof appLockOnShow==='function') appLockOnShow();
   sb.auth.startAutoRefresh();
   /* And the same question the boot asks, asked again. An installed PWA
      is rarely killed, so "the next launch" can be days away — and the
@@ -1138,9 +1211,59 @@ sb.auth.onAuthStateChange((event,session)=>{
 });
 
 async function handleSignOut(){
+  /* ---- Order matters, and it is the opposite of what it used to be ----
+
+     Everything that needs a WORKING session happens first, then the
+     server-side revoke, then the local teardown. It used to run the
+     other way round: resetAccountState() and offlineSignOut() went
+     first and `await sb.auth.signOut()` came last, unchecked.
+
+     Two things were wrong with that. A revoke issued after the caches
+     are gone is a request nobody is left to care about the result of;
+     and if it failed — the usual reason being no network — the device
+     went to the sign-in screen while every refresh token the account
+     holds stayed live on the server. The user pressed Sign Out, the app
+     agreed, and the account was still signed in everywhere including
+     the device in their hand, which would have resumed on the next
+     launch that found the stored session. */
+
   /* Unsent writes belong to the account that made them, so give the
-     queue one last chance to drain before the session goes. */
+     queue one last chance to drain while the session can still push. */
   await flushQueue();
+  /* Before the session goes: a shared device should stop receiving this
+     account's reminders. Deleting that row is an RLS-scoped write, so
+     it too needs the session to still be good. */
+  await unsubscribeFromPush();
+
+  /* ---- The revoke ----
+
+     scope:'global' is stated rather than relied on. It IS supabase-js
+     v2's default, and the tag in index.html is `@supabase/supabase-js@2`
+     — an unpinned major, so the default is something a future minor
+     could change underneath this app. What it buys is the thing a
+     sign-out is FOR: every refresh token the account holds, on every
+     device, is revoked server-side, so no other copy of the app can
+     renew. (It cannot revoke an access token already issued — those are
+     stateless signed JWTs — which is the residual window
+     ensureSessionLive() exists to close. See CLAUDE.md.)
+
+     A failure is almost always the network. The device still has to end
+     up signed out — a Sign Out button that refuses to work in a tunnel
+     is worse than one that half-works — so it falls back to a local
+     sign-out and SAYS SO, because "signed out here, still signed in
+     elsewhere" is a materially different outcome and silently rounding
+     it to success is how a shared-device sign-out becomes a lie. */
+  let revoked=true;
+  try{
+    const{error}=await sb.auth.signOut({scope:'global'});
+    if(error) throw error;
+  }catch(e){
+    revoked=false;
+    console.warn('[auth] global sign-out failed; revoking locally only',e);
+    try{ await sb.auth.signOut({scope:'local'}); }catch(_){}
+  }
+
+  sb.auth.stopAutoRefresh();
   /* Every per-account cache, the debounced recounts, the live maps and
      the navigation state. Shared with the two paths in
      onAuthStateChange, so a deliberate sign-out and a lapsed session
@@ -1151,11 +1274,6 @@ async function handleSignOut(){
      signing out of a shared device means it, and resetAccountState()
      deliberately keeps it for a session that merely lapsed. */
   await offlineSignOut();
-  /* Before the session goes: a shared device should stop receiving this
-     account's reminders. */
-  await unsubscribeFromPush();
-  sb.auth.stopAutoRefresh();
-  await sb.auth.signOut();
   currentUser=null;
   /* Drop the screen's URL too. A lapsed session deliberately keeps it —
      the same person signs back in and lands where they were — but an
@@ -1163,4 +1281,7 @@ async function handleSignOut(){
      account's collection sitting in the address bar. */
   routeClear();
   showAuth();
+  if(!revoked){
+    showToast('Signed out on this device. Your other devices are still signed in.');
+  }
 }

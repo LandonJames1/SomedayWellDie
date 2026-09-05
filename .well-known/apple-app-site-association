@@ -10,17 +10,17 @@
             "comment": "This file itself. Exclusions are matched in order and must come first."
           },
           {
-            "/": "/legal/*",
+            "/": "/SomedayWellDie/legal/*",
             "exclude": true,
             "comment": "privacy.html and terms.html are standalone documents with their own stylesheet, deliberately outside the app shell. They are opened from the sign-up screen and from the You tab, and they must render as pages in a browser rather than bouncing back into the app."
           },
           {
-            "/": "/",
-            "comment": "The app root."
+            "/": "/SomedayWellDie/",
+            "comment": "The app root. The app is served from a GitHub Pages PROJECT path, not a domain root, so every rule here is prefixed -- while THIS FILE still has to sit at the domain root, which is a different repo. See .well-known/README.md."
           },
           {
-            "/": "/index.html",
-            "comment": "Every link the app builds: ?join= invites, ?conv= and ?act= notification landings, and the #route hashes. Neither the query string nor the fragment is matched here — iOS matches on the path and then hands the app the whole URL, which is what js/deeplink.js reads."
+            "/": "/SomedayWellDie/index.html",
+            "comment": "Every link the app builds: ?join= invites, ?conv= and ?act= notification landings, and the #route hashes. Neither the query string nor the fragment is matched here -- iOS matches on the path and then hands the app the whole URL, which is what js/deeplink.js reads."
           }
         ]
       }

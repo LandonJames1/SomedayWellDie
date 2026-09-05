@@ -92,10 +92,21 @@ const ICON_PATHS = {
      recurring solid-dot accent, at the size the other glyphs use it,
      rather than the gear every other app draws. The handles sit at
      different points on their rails so it reads as adjustable. */
+  /* A padlock, with the shackle drawn open-ended so it reads at 16px.
+     The keyhole is the house's solid-dot accent. */
+  'lock':      '<rect x="4.2" y="10.4" width="15.6" height="10.2" rx="2.8"/>'+
+               '<path d="M7.8 10.4V7.6a4.2 4.2 0 0 1 8.4 0v2.8"/>'+
+               '<circle cx="12" cy="15.5" r="1.6" fill="currentColor" stroke="none"/>',
   'sliders':  '<path d="M4 7h4.2M11.8 7H20M4 12h9.2M16.8 12H20M4 17h2.2M9.8 17H20"/>'+
               '<circle cx="10" cy="7" r="2" fill="currentColor" stroke="none"/>'+
               '<circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>'+
               '<circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/>',
+  /* Appearance -- a disc with one half solid. The two halves ARE the
+     two palettes, which is the one metaphor a sun/moon pair cannot
+     make: this row's third answer is "whichever the phone says", and
+     a moon would state a value rather than the choice. */
+  'contrast':  '<circle cx="12" cy="12" r="8.8"/>'+
+               '<path d="M12 3.2a8.8 8.8 0 0 0 0 17.6z" fill="currentColor" stroke="none"/>',
 };
 
 /* Icons whose art is already solid and must not be given a stroke. */

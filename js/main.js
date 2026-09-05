@@ -60,6 +60,10 @@ function paintStaticIcons(){
   set('compMediaBackIcon',icon('chevron-left','ic-sm'));
   set('aLinksBackIcon',icon('chevron-left','ic-sm'));
   set('aNotesBackIcon',icon('chevron-left','ic-sm'));
+  set('meLockIcon',icon('lock'));
+  set('meLockChevron',icon('chevron-right'));
+  set('meThemeIcon',icon('contrast'));
+  set('meThemeChevron',icon('chevron-right'));
   set('meNotifyIcon',icon('clock'));
   set('meHomeIcon',icon('home'));
   set('meDiffIcon',icon('target'));

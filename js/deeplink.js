@@ -80,6 +80,28 @@ function handleDeepLink(rawUrl){
   let u;
   try{ u=new URL(rawUrl); }catch{ return; }
 
+  /* ---- Something shared into the app ----
+     The share extension leaves the payload in the App Group and opens
+     this URL, which carries nothing but "there is something waiting" —
+     see js/shareinbox.js for why it is not on the query string. First,
+     because it is the one branch identified by the scheme itself
+     rather than by a parameter. */
+  if(u.protocol==='somedaywelldie:'&&u.host==='share'){
+    if(typeof handleSharedInput==='function') handleSharedInput();
+    return;
+  }
+
+  /* ---- Something shared into the app ----
+     The share extension leaves the payload in the App Group and opens
+     this URL, which carries nothing but "there is something waiting" —
+     see js/shareinbox.js for why it is not on the query string. It is
+     first because it is the one branch identified by the scheme itself
+     rather than by a parameter. */
+  if(u.protocol==='somedaywelldie:'&&u.host==='share'){
+    if(typeof handleSharedInput==='function') handleSharedInput();
+    return;
+  }
+
   /* ---- An invite ----
      Straight onto the same shelf readPendingJoin() writes, so a link
      that arrives before sign-in survives exactly as a link opened in a

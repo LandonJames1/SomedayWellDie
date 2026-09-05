@@ -170,11 +170,26 @@ legal/                privacy.html + terms.html, the two documents App Store Con
                       bundled into www/. See **Universal Links** and .well-known/README.md.
 supabase/             Backend — schema.sql (reminders + reminder_deliveries), native-push.sql (an APNs
                       device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), storage.sql (the media bucket), cron.sql, functions/_shared/apns.ts (APNs delivery, shared by the two push functions — no imports, the JWT is signed with Web Crypto), and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
-css/                  One stylesheet per concern (see CSS file map)
+css/                  One stylesheet per concern (see CSS file map). Each dark palette lives in ONE
+                      top-level `@media (prefers-color-scheme: dark)` block per file (base, theme, map);
+                      js/theme.js switches appearance by rewriting those conditions — keep them top level.
 tools/                difficulty-rate.py — asks Claude to rate every un-rated activity and writes the
                       CSV the next one consumes (see **Rating the library you already have**);
                       difficulty-backfill.py — turns a CSV of ratings into one UPDATE (see backlog);
-                      media-backfill.py — the one-off that moved every photo to R2 (see **Media**)
+                      media-backfill.py — the one-off that moved every photo to R2 (see **Media**);
+                      demo-account.py — builds the App Review demo account, pre-confirmed and
+                      seeded, plus a second account to share a list and a conversation with
+                      (see **The demo account**); rls-probe.py — signs in as those two and tries
+                      to reach each other's rows, which is the ONLY test that catches the hole
+                      supabase/rls-lockdown.sql was written for (see **Proving RLS actually holds**).
+                      All four read tools/backfill-config.txt, which is gitignored, and all four
+                      are dry-run by default.
+ios/App/SomedayWidget/  The home screen widget (WidgetKit + SwiftUI). Owns no data: it reads the
+                      App Group that js/widget.js writes through WidgetBridge.swift.
+ios/App/ShareExtension/ "Share to Someday We'll Die" — stashes what was shared and hands off to
+                      the app; deliberately no compose UI. ⚠️ THE APP GROUP STRING APPEARS IN
+                      FIVE PLACES (three entitlements files, two Swift constants) and a
+                      mismatch is silent. See the comment in App.entitlements.
 cloudflare/           media-worker/worker.js — the Worker that authorizes uploads to R2 and serves
                       downloads. Pasted into the Cloudflare dashboard by hand; there is no deploy step
                       in this repo. See **Media**.
@@ -3191,6 +3206,145 @@ RLS policies on `Users` — without an INSERT policy the client-side fallback
 is simply refused — a unique index on `lower(username)`, and a backfill for
 the accounts already stranded. **Run it.**
 
+#### A failed sign-in says one thing
+
+`signInErrorText()` in `auth.js`, and it is the only thing the sign-in
+branch of `handleAuth()` is allowed to show.
+
+Supabase already collapses a wrong password and an address with no
+account into one `Invalid login credentials`, so the obvious leak was
+closed before this. **Two others were not, and both were surfaced
+raw**: `Email not confirmed` and `User is banned` each say *this
+address has an account here*. Either one turns the form into an
+oracle — type an address, read the answer, learn whether that person
+is on the app.
+
+**The cost is real and it is paid for in the second sentence.**
+Somebody who never confirmed now gets the same message as somebody who
+mistyped, which on its own is a dead end: they would sit there
+retyping a password that was right all along. So the message carries
+*"If you just signed up, use the confirmation link in your email
+first"* **for everyone who fails** — which is precisely what stops it
+being a tell, since it is on screen whether or not the address exists.
+*Forgot password?* sits under the button and covers the other half.
+
+Things to keep:
+
+- **Rate limiting is still reported as itself.** It says nothing about
+  whether the account exists — it is a fact about this browser — and a
+  user who is not told keeps pressing, which is the behaviour the
+  limit exists to stop. That branch defers to `authErrorText()`.
+- **Sign-UP is deliberately not vague, and cannot be.** It has to be
+  able to say a username is taken, and `handleAuth()` already answers
+  *"That email already has an account"* — which IS an enumeration
+  oracle and is a documented trade: without it the person is sent to
+  wait for an email that was never sent. If that trade is ever
+  revisited, the replacement is to show the check-your-email panel in
+  both cases and send nothing in one, which leaks nothing and strands
+  nobody.
+- **`authErrorText()` is untouched** and still serves the three resend
+  and reset paths, where the address has already been typed by its
+  owner and there is nothing left to disclose.
+
+#### Signing out has to reach the server
+
+`handleSignOut()` in `auth.js`. The order is the opposite of what it
+was, and the order is the whole fix.
+
+It used to call `resetAccountState()` and `offlineSignOut()` first and
+`await sb.auth.signOut()` last, unchecked. Two things wrong with that:
+a revoke issued after every cache is gone has nobody left to care about
+its result, and **when it failed — the usual reason being no network —
+the device went to the sign-in screen while every refresh token the
+account holds stayed live on the server.** The user pressed Sign Out,
+the app agreed, and the account was still signed in everywhere.
+
+So: everything needing a working session runs first (`flushQueue()`,
+then `unsubscribeFromPush()`, which is an RLS-scoped delete), then the
+revoke, then the teardown.
+
+- **`scope:'global'` is stated rather than relied on.** It *is*
+  supabase-js v2's default, but `index.html` loads
+  `@supabase/supabase-js@2` — an unpinned major — so the default is
+  something a minor release could move underneath this app.
+- **What it buys** is every refresh token on every device revoked, so
+  no other copy can renew. It cannot revoke an access token already
+  issued; that residual window is what `ensureSessionLive()` closes.
+  See **Being signed into an account that no longer exists**.
+- **A failure still signs the device out**, falling back to
+  `scope:'local'` — a Sign Out button that refuses to work in a tunnel
+  is worse than one that half-works — **and says so in a toast.**
+  "Signed out here, still signed in elsewhere" is a materially
+  different outcome, and silently rounding it to success is how a
+  shared-device sign-out becomes a lie.
+- **`signOutStaleSession()` still uses `scope:'local'` deliberately.**
+  That path runs when the server has already rejected the session, so
+  there is nothing to revoke and a global call would only 4xx.
+
+#### The demo account
+
+`tools/demo-account.py`. App Review cannot get into this app: it is
+entirely behind an auth wall and **email confirmation is on**, so a
+reviewer who signs up normally has to find a confirmation email in an
+inbox they do not have. That is the likeliest single cause of a 2.1
+rejection here, and it is not fixable from inside the app — only the
+Admin API can create a user with `email_confirm: true`.
+
+**It seeds two accounts, and the second one is not padding.** Report
+and Block are only ever offered on somebody *else's* message, and
+Leave only on a list you do not own — so an account with no shared list
+and no conversation makes the entire Guideline 1.2 surface unreachable,
+and a reviewer looking for it concludes it is absent. The shared list
+is therefore **owned by the friend**, with the review account as a
+member, and the friend speaks both first and last in the thread.
+
+Things to keep:
+
+- **Dry-run by default**, like `media-backfill.py`, and for a stronger
+  reason: this writes to the live project, because there is no separate
+  review environment.
+- **`--apply` rebuilds rather than patches.** Both accounts are deleted
+  and recreated, so the demo data is always exactly what the file says.
+  That matters on a resubmission months later — a reviewer who marked
+  something accomplished changed the account, and the next one should
+  not inherit it.
+- **The seed is shaped around what a reviewer opens**: located
+  activities in more than one place so the map has pins, a spread of
+  target dates so Up Next has each urgency band (including one
+  deliberately overdue), completed rows with photos so Accomplished is
+  not empty, and all three difficulty tiers so the three derived lists
+  are populated — they read as broken when empty.
+- **⚠️ The addresses default to `somedaywelldie.app`.** They never
+  receive mail, but the review address goes in App Store Connect and
+  reviewers occasionally try a password reset. Change them to a domain
+  you control.
+
+#### Proving RLS actually holds
+
+`tools/rls-probe.py`. **Reading `pg_policies` is one test and probing
+anonymously is not a test at all**, which is the lesson
+`supabase/rls-lockdown.sql` was written down for: this project shipped
+with a policy named `ALL` on each core table — `to authenticated …
+using (true)` — that OR'd over every correct `bl_*` policy and gave
+every signed-in user full access to everyone's rows, while granting
+nothing to a logged-out request. An unauthenticated probe came back
+empty and the project looked locked down.
+
+So this script signs in as the two demo accounts **with the
+publishable key out of `js/config.js`** — deliberately, since that is
+the credential an attacker actually has — and tries to reach across:
+read the other account's private collections and their activities,
+rename one, delete one, read the `Users` table as a directory, read
+foreign push tokens, read `content_reports`, `user_blocks` and
+`invite_claims`. It also asserts the *positive* case, that the shared
+list IS visible, so a policy that passes by refusing everything fails.
+
+- **Two of the checks are writes that are expected to be refused.** If
+  either succeeds the script says so loudly — and in that case
+  something was genuinely modified, which is the finding.
+- **Exit code 0 only if every check passes**, so it can gate a release.
+- It needs the demo accounts, so run `demo-account.py --apply` first.
+
 #### Resetting a password
 
 Until this existed a forgotten password was **total account loss** —
@@ -4038,6 +4192,7 @@ Loaded in this order; **order matters**.
 | File | Domain |
 | --- | --- |
 | `config.js` | `SUPABASE_URL`/`SUPABASE_KEY`, **`MEDIA_WORKER_URL`/`MEDIA_PUBLIC_BASE`** (the Cloudflare Worker that authorizes uploads, and the R2 bucket reads come from — empty falls back to Supabase Storage; see **Media**), **`HERE_API_KEY`** (place search; public by design, restrict it by origin in the HERE portal — empty falls back to Nominatim), the `sb` client (auth options spelled out rather than defaulted — note `detectSessionInUrl:false`, the one that is *not* a default: `auth.js` handles the email-confirmation landing itself), the `COVERS` array of default Unsplash covers, and `randCover(existingCovers)` (picks a cover the user isn't already using). |
+| `theme.js` | **Appearance — Light / Dark / System.** `THEME_KEY`/`THEME_MODES`/`THEME_LABELS`/`THEME_COND`, `themeMode`, `themeSwitchable`/`themeModeLabel`, `scanThemeRules`/`themeMetas`/`applyTheme`/`setThemeMode`/`initTheme`, and the control `renderThemeRow`/`openThemeMenu` (the Appearance row in Settings, painted by `renderSettings()`). **Loads FIRST**, ahead of `config.js`, and calls `initTheme()` at parse time — correcting the palette a tick later paints the wrong half of it and swaps. ⚠️ **It rewrites each dark block's `mediaText` rather than duplicating the palette**: `all` forces dark, `not all` forces light, the authored condition restores System. Only a **top-level** block whose whole condition is `(prefers-color-scheme: dark\|light)` is touched — forcing a nested one to `all` would make it apply at every width. That is what keeps `theme.css` safe to regenerate from `theme-lab.html`: a hand-written `:root[data-theme="dark"]` copy there would be destroyed by the next paste. The mode is **per device**, in `bl_theme`, and deliberately not cleared by `resetAccountState()`. No block found → the row hides. |
 | `state.js` | Every shared mutable global: `currentUser`, the navigation triple (`curTab`, `curPage`, `backTab`), `curListId`, **`curConvId`** (which conversation the conversation screen is showing — it *is* a collection id), `editingListId`, `completingId`, `curFilter`, **`curSort`** (see **Sorting a collection**), `curView`, `upMedia`, `coverPhoto`, `userProfile`, and the map handles. Other files declare their own feature-local globals next to their code (`aLinks`, `bulkEntries`, `actMap`, `lbPhotos`, `locTimer`). |
 | `utils.js` | `$` (getElementById), `esc` (HTML-escape — **use it on every interpolated value**, all rendering is template strings), **`uuidv4`/`isUuid`** (client-minted row ids — read the warning under **Working offline** before touching them), `cap`, `todayISO`, `fmtDate(s, withYear)` (omits the year when it's the current one, unless `withYear` — a completed date is a record you look back on, so it always carries its year), `dateInfo(a)` (turns a target date like "This Year" into a `{label, cls}` urgency badge), `shakeEl` and **`nudgeEl`** (a refusal and a pointer — see **Saying what is still required**; they are ±6px and ±2px and must not be swapped), `compress`, `confetti`, the priority pair `priClass`/`priTagHTML` (see **Showing priority**), **`ACT_SORTS`/`DEFAULT_ACT_SORT`/`normSortKey`/`sortActivities`** (see **Sorting a collection**), **`haversineMiles`/`distanceFromHome`/`fmtDistance`/`distanceReady`/`EARTH_MILES`** (how far an activity is from Home — see **How far away it is**), **`DIFF_LABELS`/`DIFF_ORDER`/`diffRank`/`diffLabel`** (see **Guessing how hard it is**), **`resolveTargetDate`/`bandForStored`/`isoLocal`/`RESOLVING_BANDS`** (a target band is resolved to a real date on the way *in*, so it cannot silently roll forward every January — see **A band is resolved on the way in**), **`activityListLabel(a, lists)`** — what the `.list-chip` on a row says, and '' when that list is one the user cannot see — and **`bootKeep`/`bootRead`/`bootDrop`**, the sessionStorage shelf that keeps `?join=`/`?share=` alive across a reload (see **Shared lists**; reading deliberately does not remove), plus **`bootKeepLong`/`bootReadLong`/`bootDropLong`** — the same shelf on localStorage with a 7-day TTL, so an invite survives the tab being closed while the recipient goes to find their password — plus **`setHTML(el, html)`** and **`coverFor(list)`**, the two things that stopped navigation looking like a reload (see **Rendering without reloading**). |
 | `exif.js` | `exifReadLocation(file)` — the GPS fix out of a photo's EXIF, or null. Handles **JPEG and HEIC/HEIF/AVIF**, dispatching on magic bytes rather than `file.type`. Underneath: the JPEG walk (`exifFindTiff`), the HEIC box walk (`isoBoxes`, `isoType`, `heicReadLocation`, `heicExifExtent`, `heicExifItemId`, `heicItemExtent`, `heicTiffStart`, `isTiffAt`), and the shared TIFF reader both land on (`exifGpsFrom`, `exifTagValue`, `exifDMS`). Pure, no dependencies, every failure path returns null rather than throwing. **Must be called against the original `File`**: a canvas re-encode strips every tag. See **Where the photo was taken**. |
@@ -4051,7 +4206,7 @@ Loaded in this order; **order matters**.
 
 | File | Domain |
 | --- | --- |
-| `auth.js` | **`resetAccountState()`** — everything belonging to one account, cleared on every auth transition (see **One account at a time**) — **`ensureSessionLive`/`verifyLiveUser`/`authAnswerIsDefinitive`/`signOutStaleSession`/`resetSessionLiveCheck`/`recheckSessionSoon`/`startSessionWatch`/`stopSessionWatch`**, which is how a session belonging to a deleted account stops being trusted, on every device (see **Being signed into an account that no longer exists**) — **`inviteSweepDue()`/`authJustAuthenticated`**, which decide when to ask the server whether an invite is waiting for this address (see **An invite that survives creating an account**) — plus `showAuth`/`showApp` (swap `#authPage` against `#appWrap`; `showApp` boots into Home, loads the profile, triggers the iOS install hint, and starts the token auto-refresh). Also the `visibilitychange` handler that stops/starts auto-refresh — browsers suspend timers in a backgrounded PWA, and without restarting on resume the access token goes stale and the next request 401s, which reads to the user as being logged out — and the `onAuthStateChange` listener that keeps `currentUser` in step and only shows the login screen on a real `SIGNED_OUT`, `toggleAuthMode`/`applyAuthMode` (tracked by the `authIsSignUp` flag, not by reading the heading text), `setAuthError`, `handleAuth`, `handleSignOut`. Sign-up also inserts the `Users` profile row. Plus **the confirmation-email landing** — `readEmailConfirmation` (boot; reads `token_hash`/`code`/implicit tokens/`error`, and strips only its own keys), `consumeEmailConfirmation`, `confirmFailureHTML`, `confirmRedirectUrl`, `setAuthNotice`, `setAuthView` (three states now: form / check / reset), `showCheckEmail`/`authBackToForm`, and the resend pair `sendConfirmationEmail`/`resendConfirmation`/`resendFromNotice`. See **Coming back through the confirmation email**. Plus **the password reset** — `requestPasswordReset`/`sendRecoveryEmail`/`showPasswordReset`/`savePasswordReset`/`PASSWORD_MIN` and the `recoveryLanding` flag `main.js` branches on. See **Resetting a password**. |
+| `auth.js` | **`resetAccountState()`** — everything belonging to one account, cleared on every auth transition (see **One account at a time**) — **`ensureSessionLive`/`verifyLiveUser`/`authAnswerIsDefinitive`/`signOutStaleSession`/`resetSessionLiveCheck`/`recheckSessionSoon`/`startSessionWatch`/`stopSessionWatch`**, which is how a session belonging to a deleted account stops being trusted, on every device (see **Being signed into an account that no longer exists**) — **`inviteSweepDue()`/`authJustAuthenticated`**, which decide when to ask the server whether an invite is waiting for this address (see **An invite that survives creating an account**) — plus `showAuth`/`showApp` (swap `#authPage` against `#appWrap`; `showApp` boots into Home, loads the profile, triggers the iOS install hint, and starts the token auto-refresh). Also the `visibilitychange` handler that stops/starts auto-refresh — browsers suspend timers in a backgrounded PWA, and without restarting on resume the access token goes stale and the next request 401s, which reads to the user as being logged out — and the `onAuthStateChange` listener that keeps `currentUser` in step and only shows the login screen on a real `SIGNED_OUT`, `toggleAuthMode`/`applyAuthMode` (tracked by the `authIsSignUp` flag, not by reading the heading text), `setAuthError`, `handleAuth`, **`signInErrorText`** (one sentence for every way a sign-in can fail — see **A failed sign-in says one thing**) and `handleSignOut` (which revokes globally BEFORE tearing the local state down, and says so when it could not — see the comment block in the function). Sign-up also inserts the `Users` profile row. Plus **the confirmation-email landing** — `readEmailConfirmation` (boot; reads `token_hash`/`code`/implicit tokens/`error`, and strips only its own keys), `consumeEmailConfirmation`, `confirmFailureHTML`, `confirmRedirectUrl`, `setAuthNotice`, `setAuthView` (three states now: form / check / reset), `showCheckEmail`/`authBackToForm`, and the resend pair `sendConfirmationEmail`/`resendConfirmation`/`resendFromNotice`. See **Coming back through the confirmation email**. Plus **the password reset** — `requestPasswordReset`/`sendRecoveryEmail`/`showPasswordReset`/`savePasswordReset`/`PASSWORD_MIN` and the `recoveryLanding` flag `main.js` branches on. See **Resetting a password**. |
 | `router.js` | **A URL for every screen.** `ROUTE_PAGE`/`ROUTE_ID`/`PAGE_ROUTE` (the route-key ↔ page-id table), `routeHash`/`parseRoute`, `routeSync` (called by `nav()`), `routeEntry` (called once by `showApp()`), `routeClear` (called by `handleSignOut()`) and `onRouteChange`, behind `popstate` and `hashchange`. Plus **`ROUTE_SHEET`/`routeSheetSync`/`routeSheetClear`/`routeOpenActivity`** — the one route that names an overlay rather than a screen, so a link can point at a single activity; see **A URL for one activity**. Hash-based deliberately — see **A URL for every screen**. Loads after `nav.js`, before `main.js`. |
 | `deeplink.js` | **Universal Links.** `deepLinkPlugin`, `initDeepLinks` (the `appUrlOpen` listener *and* `getLaunchUrl()`, because on a cold start the event can beat the listener) and `handleDeepLink(url)`, which applies an incoming link to the running app — an invite onto the same shelf `readPendingJoin()` writes, a `?conv=`/`?act=` landing onto the same two globals `messages.js` reads, a `#route` handed to `router.js`. It deliberately never navigates the web view to the URL: that would replace the bundled app with the website. Loads after `router.js`, before `main.js`. See **Universal Links**. |
 | `nav.js` | `nav(page, listId)` — the single entry point for changing screens (see **Screens and navigation**), and where the screen's URL is written via `routeSync()`. Plus `PAGE_TAB`, `TAB_ROOT`, `TAB_ORDER` and **`visibleTabs()`** (the tabs a swipe can actually reach — the Messages tab is hidden until its migration is run), `selectTab`, `goBack`, `dismissOverlays`, **`refreshAfterChange(src)`** (the single answer to "something was written, what redraws?" — see **Refreshing after a change**), `updateNavbar` (**where each screen's bar buttons are defined**, and where the collection FAB is bound to `startNewActivity`; there is no search bar button — see **Finding things again**), `applyNavCondense`, a debounced `resize` handler, **`setBodyScrollLock(lock)`** — the single place that touches body overflow — `RENDERERS`/`scrollKey`/`_scrollMem` (each screen's renderer in one table, and the offset it was left at — see **Rendering without reloading**), `queueNavCondense` — and **`syncTabbarToKeyboard()`**, which keeps the tab bar behind the software keyboard instead of riding up on top of it (see **Mobile layout rules**). |
@@ -4084,6 +4239,13 @@ Loaded in this order; **order matters**.
 | `nativepush.js` | **APNs — push for the iOS shell.** `nativePush`/`nativePushAvailable`/`nativePushState`/`refreshNativePushState`, `saveNativeToken`, `initNativePush` (the registration, foreground and tap listeners), `requestNativePush` (the user pressing the row) / `registerNativePush` (the silent re-register at sign-in, which must never prompt) and `unregisterNativePush`. Exists because WKWebView gives the `capacitor://` scheme neither a service worker nor a Notification API, so every line of `reminders.js` that reaches for `PushManager` is dead in the shipping app. Loads before `reminders.js`, which branches to it. See **Push is APNs here, not Web Push**. |
 | `messages.js` | **A conversation per shared list, and the hub over them.** `probeMessages`/`messagesReady`/`resetMessagesProbe`/`applyMessagesAvailability` (the tab is hidden until the migration is run), the hub cache (`fetchConversations`/`refreshConversations`/`invalidateConversations`/`cachedConversations`/`unreadTotal`/`updateMessagesBadge`/**`setAppIconBadge`** (the same count on the home-screen app icon, via `navigator.setAppBadge`; the worker keeps its own copy in a `bucketlist-badge` cache entry and increments it on a push, the page overwrites it with the truth)) and its screen (`renderMessages`/`convRowHTML`), then one conversation — `openConversation`/`renderConversation`/`leaveConversation`, `loadMessages`/`loadOlderMessages`/`paintConversation`/`msgRowHTML`/`scrollConversationToEnd`, `sendMessage` (through `dbInsert`, so it queues offline), the `@` picker (`mentionQuery`/`updateMentionSuggest`/`pickMention`/`renderPendingMentions`/`removePendingMention`), `openMessageMenu`/`deleteMessage` (soft), the sender's photo (`loadConversationAvatars`/`avatarsFor`/`msgAvatarHTML`/`invalidateAvatars` — see **A face on the account**), read state (`markConversationRead`), realtime (`subscribeConversation`/`unsubscribeConversation`/`onRealtimeMessage`), `syncComposerToKeyboard`, the push pair `notifyMessageSent`/`loadConversationMute`/`toggleConversationMute`, the notification landing (`readPushLanding` at boot, `handlePushLanding` from `showApp`, and the `serviceWorker` message listener), and `resetMessagesState` — called by `resetAccountState()`. Plus the naming helpers `msgSenderLabel`/`msgSenderGone`/`msgIsMine` and the time ones `msgClock`/`msgWhenShort`/`msgDayLabel`, which `notes.js` also uses. See **Messages**. |
 | `notes.js` | **The append-only log on an activity.** `notesReady()` (= `messagesReady()`), `fetchNotes`, `renderActivityNotes`/`noteRowHTML`/`onNoteInput`/`onNoteKey`, `addNote`/`submitActivityNote`/`openNoteMenu`/`copyNote`/`deleteNote`, **`addMessageToNotes`** — promoting a message into the activity's log, which is the reason the feature exists — and the new/edit sheet's pair `resetActivityNoteField`/`flushActivityNoteField`. There is deliberately no update path. See **Notes on an activity**. |
+| `widget.js` | **The home screen widget, web side.** `WIDGET_ROWS`, `widgetPlugin`/`widgetAvailable`, `widgetUrgent`/`widgetPayload`, `publishWidget` (called un-awaited at the end of `renderHome()` with the arrays that screen already fetched, so the widget cannot disagree with the app about what is next) and `clearWidget` (from `resetAccountState()` — a widget sits on a home screen the next person can see). Native only; a silent no-op in a browser, like `haptics.js`. The widget owns no data and makes no network call — everything crosses the App Group via `WidgetBridge.swift`. |
+| `shareinbox.js` | **Something shared into the app.** `shareInboxPlugin`, `pendingShare`, `takeSharedInput` (⚠️ reading the native stash CLEARS it — call once per landing), `handleSharedInput` (from `deeplink.js`'s `somedaywelldie://share` branch), `flushPendingShare` (from `showApp()`, for a share that landed while signed out) and `openSharedActivity`. ⚠️ **Not the old import feature**: no model call, no parsing, no bulk sheet — it opens the app's own new-activity sheet with the shared text as the name and the address on the Links page, so the "nothing inserts without a sheet" rule is untouched. ⚠️ The link is staged **after** `openNewActivity()`, which begins by clearing `aLinks`. |
+| `spotlight.js` | **Your activities in the phone's own search.** `SPOTLIGHT_MAX`, `spotlightPlugin`, `spotlightDetail`/`spotlightPayload`, `publishSpotlight` (beside `publishWidget()` at the end of `renderHome()`) and `clearSpotlight` (from `resetAccountState()` — the index is on the device and reachable from the home screen without opening the app). ⚠️ The whole set is republished rather than patched: the native side deletes the domain and re-adds, so a deleted activity, a list you left and a signed-out account cannot leak into a search field. See `SpotlightIndex.swift`; a tap arrives through `SceneDelegate`, which turns the searchable-item identifier — deliberately a complete `somedaywelldie://open#activity/<id>` — into an ordinary open-URL. |
+| `nativemedia.js` | **`pickMedia()` — one entry point, two implementations.** ⚠️ In a browser it clicks the same hidden `#photoInput` and `media.js` is untouched; natively it shows a Library/Camera action sheet and calls `NativeMedia`. It exists because `<input type="file">` gets a **converted** copy of a HEIC photo from iOS and the conversion strips every EXIF tag — which is why `exif.js` silently found nothing on the default camera format of every modern iPhone. ⚠️ The bytes do not cross the bridge: the plugin writes each pick into tmp/ and returns a `capacitor://` URL that `runNativePick()` fetches into a real `File`, then calls **`handleMedia()`** — the same function, so EXIF, the location offer, the upload and the cover rule stay one code path. |
+| `appleauth.js` | **Sign in with Apple**, native rather than the OAuth browser bounce. `appleAuthPlugin`/`appleSignInAvailable`, `renderAppleButton` (from `showAuth()`; the markup is always there and hidden) and `signInWithApple`. ⚠️ **The nonce is two values**: Apple is given the SHA-256 hash, Supabase the raw string. ⚠️ **The name arrives exactly once** — Apple returns `fullName` only on the first authorization, ever — so it is written to `user_metadata` (where `profileSeed()` looks) and onto the `Users` row. Needs the Apple provider enabled in the Supabase dashboard, or it answers "Unsupported provider". |
+| `applock.js` | **Face ID / passcode lock.** `APPLOCK_KEY` (`bl_applock`, per device, deliberately *not* cleared by `resetAccountState()`), `APPLOCK_GRACE_MS`, `probeAppLock` (from `showApp()`), `lockNow`/`tryUnlock`/`finishUnlock`, `appLockOnHide`/`appLockOnShow` (from `auth.js`'s existing `visibilitychange` handler) and the setting `renderAppLockRow`/`openAppLockMenu`/`setAppLock`. ⚠️ **A door, not encryption** — nothing is re-encrypted; it is for the person handing their phone across a table. ⚠️ **The cover goes up on the way OUT**: iOS takes the multitasking snapshot as the app resigns active, so a lock applied on resume has already been photographed. Turning it on prompts first, or somebody whose Face ID is broken discovers it while locked out. |
+| `nativemap.js` | **The Map tab, natively.** `nativeMapPlugin`/`nativeMapAvailable`, `nativeMapPoints`, `openNativeMap`, `nativeMapReturnTab`. ⚠️ **One branch, at the top of `renderGlobalMap()`**, returning before anything else runs — so MapLibre is never fetched (~900KB off a cold launch) and a browser falls straight through to the globe it always drew. ⚠️ **The collection map stays on MapLibre**: it is embedded in a scrolling screen rather than being one, and replacing it would put a native view inside the web view's layout — the thing the modal design exists to avoid. Points come from the same cache Home reads, filtered by the same `globalMapFilter`. |
 | `map.js` | All MapLibre GL. **`ensureMapLibre()`** — the library is loaded on demand here, not from `<head>`; at ~900KB it was the biggest single cost of a cold launch, blocking the parser on the way to a Home screen with no map on it. Both entry points await it and fall back to the "map unavailable" state if it cannot be fetched. Then `mapStyle()` (raster CARTO basemap + globe projection + sky), `webglOK()`, `actsToGeoJSON()`, and `attachActivityLayer()` — which adds the clustered GeoJSON source and the two symbol layers, and owns the click handlers. Then the marker icons (`ensureDotIcon`, `ensurePhotoIcon`, `ensureClusterIcon`, `stampPointIcons`). Then **one point, several activities**: `SAME_PLACE_DEG`/`CLUSTER_STACKED`/`samePlaceCluster` (is this bubble one place or a neighbourhood?), `indexActs`/`placeActs` (the id → activity index kept beside the layer data), `openClusterPlace`, `openPlaceSheet`/`placeTitle`/`sortPlaceActs`/`placeRowHTML`, and the two row actions `placeOpenActivity`/`placeToggleActivity` — see **Several activities at one point**. Then the two instances: the Map tab (`renderGlobalMap`, `fitGlobal`, `zoomGlobe`, `globeFillZoom`, `setGlobalMapFilter`) and the per-collection map (`renderMap`, `updateMapMarkers`). Plus `mapLoaded(map)` and `hasGeo`. Teardown is explicit — `destroyGlobalMap()`/`destroyDetailMap()` — because each map holds a WebGL context, but **only the detail map is torn down on navigation**. See **The immersive map** above for the traps. |
 | `pwa.js` | Service-worker registration and the install/offline UI: `isStandalone()`/`isIOS()` (which stamp `.standalone`/`.ios` on `<html>`), the `beforeinstallprompt` capture behind `pwaInstall()`, the iOS Add-to-Home-Screen sheet, `pwaShowInstallHelp()` (the Me tab row), and `pwaUpdateOnlineState()`. Dismissals persist in `localStorage` under `bl_*` keys. **It also calls `reg.update()` on foreground and on reconnect** — an installed PWA is rarely killed, and registration is the only moment the browser looks for a new `sw.js`, so without it a shipped fix can sit undelivered on the home-screen copy for days and look like it was never made. **`pwaHadController` gates the `controllerchange` reload** so it fires on an update and not on a first install — see **Shared lists**, where getting that wrong silently destroyed every invite link. |
 | `main.js` | Boot: `paintStaticIcons()` fills the empty icon placeholders left in `index.html` from the sprite map, then the query-string readers run in a **fixed order** — `readEmailConfirmation()`, `readPushLanding()`, `readPendingJoin()` — all **before** the session restore, because an invite can be opened or an address confirmed while signed out. The first two strip only their own keys; the last blanks the search string wholesale, which is why it goes last. Then `consumeEmailConfirmation()` is tried ahead of `restoreSession()`, and `showApp()`/`showAuth()` follows — or `showPasswordReset()`, when the link that just signed someone in was a recovery one. **Loads last.** See **Staying signed in** (why `restoreSession()` is more than one `getSession()` call) and **Coming back through the confirmation email** (why the reader order is not arbitrary). |
@@ -4996,6 +5158,32 @@ through the first, while the second is also reached by
 `openCompFrom()` when *editing* something already finished, where a
 completion haptic would be a lie.
 
+### ⚠️ A plugin in the app target must be REGISTERED BY HAND
+
+`ios/App/App/MainViewController.swift`, and it is the first place to
+look when a native feature "does nothing".
+
+A plugin that ships as a Swift **package** — `@capacitor/app`,
+`/haptics`, `/keyboard`, `/push-notifications` — is found on its own,
+because the package is a declared dependency of `CapApp-SPM`. **A
+plugin defined in the app target is not.** Conforming to
+`CAPBridgedPlugin` and marking the class `@objc` is necessary and not
+sufficient: nothing enumerates the app binary looking for them, so the
+class compiles, ships, and is never attached to the bridge.
+
+It fails in **total silence**, and that is the trap: every native
+feature in this app is guarded with `Capacitor.Plugins.X` precisely so
+it can hide itself in a browser, so an unregistered plugin reads as
+"not running natively" and each feature degrades exactly as designed.
+This shipped once — the widget sat on *Nothing next*, Spotlight indexed
+nothing, the picker fell back to the `<input>`, the Apple button and
+the lock row stayed hidden and the Map tab quietly loaded MapLibre.
+Seven features, one cause, no error anywhere.
+
+So `SceneDelegate` builds a **`MainViewController`**, not a stock
+`CAPBridgeViewController`, and its `capacitorDidLoad()` registers every
+one of them. Putting the stock class back turns all of it off.
+
 ### Plugins are reached through `Capacitor.Plugins`, never imported
 
 The pattern `nav.js` already established for Keyboard, and the reason
@@ -5368,14 +5556,24 @@ design.*
   AASA at install and reports nothing on failure, so the only test is
   to install the app and tap a link. Delete and reinstall after
   changing the file — the cached copy is not refreshed.
-- **`target="_blank"` on the two legal links is unverified in
-  WKWebView.** `index.html` opens `legal/privacy.html` and
-  `legal/terms.html` that way from the sign-up screen and the You tab,
-  and Capacitor's handling of `_blank` on a *local* URL may be a no-op.
-  If it is, the Terms link under Create Account is dead — which is
-  precisely the Guideline 1.2 requirement that the terms be reachable
-  before the account exists. Test on device; the fix is
-  `@capacitor/browser` or an in-app route.
+- **~~`target="_blank"` on the two legal links is unverified in
+  WKWebView.~~ FIXED, and it was broken.** Capacitor's
+  `WebViewDelegationHandler.createWebViewWith` hands a `_blank` link
+  straight to `UIApplication.shared.open(url)`, and iOS cannot open a
+  `capacitor://` URL — no app is registered for that scheme — so the
+  call failed silently and **both legal links did nothing in the
+  native app**. The Terms link under Create Account being dead is
+  exactly the Guideline 1.2 requirement it exists to satisfy.
+  The four links in `index.html` navigate **in place** now, and each
+  legal page carries a sticky `.backbar` (`legal/_style.css`) whose
+  link is `history.back()` with `../index.html` as the fallback.
+  ⚠️ **Do not put `target="_blank"` back on a local URL anywhere.**
+  Back rather than a link to the app: it returns without rebooting, so
+  a half-filled sign-up form survives the round trip; the href is what
+  catches somebody following the public privacy-policy URL from App
+  Store Connect, who has no history to go back to. No plugin
+  (`@capacitor/browser` was the alternative and is a dependency for
+  something two lines of markup answer).
 - **The launch screen is still the stock Capacitor splash.** All three
   `Splash.imageset` PNGs are byte-identical defaults and
   `LaunchScreen.storyboard` uses `systemBackgroundColor` — so launching
@@ -5388,12 +5586,13 @@ design.*
   nothing. Separately, the App Store Connect privacy questionnaire is
   mandatory and non-trivial here: the app collects email, name, photos,
   **precise location** and user content.
-- **App Review needs a demo account.** The app is behind an auth wall
-  with email confirmation on, so a reviewer who signs up has to go and
-  find a confirmation email. Put pre-confirmed credentials in the
-  review notes, on an account with real lists, photos, and a shared
-  list carrying a conversation — otherwise the likely outcome is a 2.1
-  "unable to review".
+- **~~App Review needs a demo account.~~ SCRIPTED, still has to be
+  run.** `tools/demo-account.py` creates it — see **The demo account**.
+  Dry-run by default like every other tool here; nothing exists until
+  somebody runs `--apply` and pastes the credentials into App Store
+  Connect → App Review Information. ⚠️ The two addresses in that file
+  are at `somedaywelldie.app`, a domain that may not be yours; change
+  them before running.
 
 - **A location typed offline never gets coordinates.** `requireLocation()`
   accepts the text and lets the activity sync without a pin, because blocking

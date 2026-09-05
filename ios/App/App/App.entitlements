@@ -25,6 +25,40 @@
 	     'production' (or unset) for everything else. See
 	     supabase/functions/_shared/apns.ts.
 	     ============================================================ -->
+	<!-- ============================================================
+	     APP GROUP — the only channel between the web layer and the
+	     home screen widget.
+
+	     ⚠️ THE SAME STRING APPEARS IN FOUR PLACES: here,
+	     SomedayWidget.entitlements, APP_GROUP in WidgetBridge.swift and
+	     WIDGET_GROUP in SomedayWidget.swift. A mismatch throws nothing —
+	     the app writes into a suite the widget does not read, and the
+	     widget sits on its placeholder forever. It also has to be
+	     enabled on BOTH App IDs in the developer portal.
+	     ============================================================ -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.landonjames.somedaywelldie</string>
+	</array>
+
+	<!-- ============================================================
+	     SIGN IN WITH APPLE
+
+	     ⚠️ ALSO A PAID-PROGRAM CAPABILITY. Like Push and Associated
+	     Domains, a Personal Team cannot provision it and the target
+	     will not sign until the App ID has it enabled.
+
+	     And Supabase has to be told about it separately —
+	     Authentication → Providers → Apple, with a Services ID and a
+	     key from the developer portal. Without that the button draws
+	     and the sign-in answers "Unsupported provider". See
+	     js/appleauth.js.
+	     ============================================================ -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+
 	<key>aps-environment</key>
 	<string>development</string>
 
@@ -46,24 +80,29 @@
 	     own AASA section, and this app has no reason to claim it.
 	     ============================================================
 
-	     DISABLED ON PURPOSE, 2 Sep 2026. The web app is served from
+	     ENABLED 3 Sep 2026. The web app is served from
 	     https://landonjames1.github.io/SomedayWellDie/ — a GitHub Pages
-	     PROJECT site, so the domain root that would have to serve
-	     /.well-known/apple-app-site-association belongs to a different
-	     repo (landonjames1.github.io), which does not exist. Universal
-	     Links therefore cannot match, and an entitlement claiming a
-	     domain is not merely inert: an App ID without the Associated
-	     Domains capability provisioned fails to SIGN, which would block
-	     building to a device for no benefit at all.
+	     PROJECT site — so the app lives under a path while the AASA file
+	     must be served from the DOMAIN ROOT. Those are two different
+	     repos on GitHub Pages, and the root one is what has to exist:
 
-	     To turn it back on: serve the AASA file from a domain root, set
-	     APP_WEB_ORIGIN in js/config.js to that domain, uncomment the two
-	     lines below, and enable Associated Domains on the App ID.
+	       landonjames1.github.io  ->  /.well-known/apple-app-site-association
+	       SomedayWellDie          ->  the app itself, under /SomedayWellDie/
 
+	     ⚠️ TWO THINGS STILL HAVE TO BE DONE BY HAND OR THIS SIGNS BUT
+	     NEVER MATCHES, WITH NO ERROR ANYWHERE:
+	       1. Enable "Associated Domains" on the App ID in the developer
+	          portal. Without it the target FAILS TO SIGN.
+	       2. Put the real 10-character Team ID into
+	          .well-known/apple-app-site-association, and serve that file
+	          from the domain root over https, with no redirect, as
+	          application/json and behind no auth.
+	     iOS fetches the file ONCE at install and caches it, so delete and
+	     reinstall after changing it — nothing else refreshes it.
+	     ============================================================ -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:REPLACE-WITH-YOUR-DOMAIN.example</string>
+		<string>applinks:landonjames1.github.io</string>
 	</array>
-	-->
 </dict>
 </plist>

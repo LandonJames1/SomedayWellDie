@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v174';
+const CACHE_VERSION = 'v187';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -39,6 +39,7 @@ const SHELL_ASSETS = [
   './css/pwa.css',
   './css/theme.css',
   './css/responsive.css',
+  './js/theme.js',
   './js/config.js',
   './js/state.js',
   './js/utils.js',
@@ -61,6 +62,13 @@ const SHELL_ASSETS = [
   './js/sharing.js',
   './js/moderation.js',
   './js/home.js',
+  './js/widget.js',
+  './js/spotlight.js',
+  './js/nativemedia.js',
+  './js/appleauth.js',
+  './js/applock.js',
+  './js/nativemap.js',
+  './js/shareinbox.js',
   './js/upnext.js',
   './js/done.js',
   './js/nativepush.js',

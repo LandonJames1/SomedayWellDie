@@ -72,11 +72,31 @@
 	<string>Save a photo from one of your activities back to your library.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Find places near you when you tap “Current location” while setting where an activity happens. Your location is never tracked in the background.</string>
+	<!-- ⚠️ REQUIRED, AND ITS ABSENCE IS A CRASH, not a refusal: iOS
+	     terminates the app the first time LocalAuthentication evaluates
+	     a policy with Face ID available and no string here. See
+	     applock.js. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock your lists with Face ID instead of your passcode.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record sound with a video of something you have accomplished.</string>
 	<!-- Declared so App Store Connect stops holding every build for an
 	     export-compliance answer. The app uses only HTTPS and Apple's
 	     own cryptography, which is exempt. -->
+	<!-- The home screen widget and the share extension both re-enter
+	     the app through this scheme. Capacitor turns the open into an
+	     appUrlOpen event, which js/deeplink.js reads. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.landonjames.somedaywelldie</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>somedaywelldie</string>
+			</array>
+		</dict>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!-- armv7 is a 32-bit device that cannot run iOS 13+. Left in place

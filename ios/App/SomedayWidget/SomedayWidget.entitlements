@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The only channel between the web layer and the widget. It must
+	     be identical here, in App.entitlements and in WIDGET_GROUP /
+	     APP_GROUP in Swift — a mismatch is silent, and shows up as a
+	     widget stuck on its placeholder. The group also has to be
+	     enabled on BOTH App IDs in the developer portal. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.landonjames.somedaywelldie</string>
+	</array>
+</dict>
+</plist>

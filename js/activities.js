@@ -891,7 +891,7 @@ function renderCompMediaCard(){
 /* Nothing attached yet means the page would be an empty grid and an Add
    button, which is the picker with a step in front of it. */
 function openCompMedia(){
-  if(!upMedia.length&&!_mediaPending){ $('photoInput').click(); return; }
+  if(!upMedia.length&&!_mediaPending){ pickMedia(); return; }
   compShowPane('media');
 }
 

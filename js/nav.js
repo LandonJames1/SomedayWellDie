@@ -219,6 +219,10 @@ function dismissOverlays(){
    force a specific screen; leave it off and the current one is right.
    ============================================================== */
 function refreshAfterChange(src){
+  /* The home screen widget and the phone's search index, which are
+     outside the app and would otherwise only be refreshed by a visit
+     to Home. See widget.js. */
+  if(typeof syncNativeIndexes==='function') syncNativeIndexes();
   const p=src||curPage;
   if(p==='home')           return renderHome();
   if(p==='upnext')         return renderUpNext();

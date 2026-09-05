@@ -28,3 +28,6 @@ www/
 ios/App/App/public/
 ios/App/build/
 ios/DerivedData/
+
+# Supabase CLI scratch
+supabase/.temp/
