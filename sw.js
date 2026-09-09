@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v188';
+const CACHE_VERSION = 'v189';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -324,7 +324,10 @@ async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   const network = fetch(request).then(res => {
-    if (res && res.ok) cache.put(request, res.clone());
+    /* Same rule as cacheFirst(): a partial response is not cacheable and
+       cache.put() throws on one. Hoisted declarations, so cacheable()
+       and safePut() below are already in scope here. */
+    if (cacheable(res)) safePut(cache, request, res.clone());
     return res;
   }).catch(() => null);
   return cached || network || fetch(request);
@@ -353,6 +356,27 @@ async function staleWhileRevalidate(request, cacheName) {
    an opaque response is only STORED for the request mode that can use
    it. The cost is one extra network request for the CORS case; the
    alternative is a response the browser refuses to hand over. */
+/* ⚠️ `res.ok` IS TRUE FOR A 206 AND cache.put() REFUSES ONE. The range
+   bypass in the fetch handler means nothing here should ever see a
+   partial response again — this is the belt to that brace, so a future
+   caller that reaches cacheFirst() with a ranged request fails by not
+   caching rather than by throwing. `status === 200` is the exact test
+   the Cache API itself applies. */
+function cacheable(res) {
+  return !!(res && res.ok && res.status === 200);
+}
+
+/* cache.put() rejects for reasons that are not the caller's fault —
+   a partial response, a quota that is full, a storage layer that has
+   been evicted mid-write. None of them is a reason to fail the request
+   that is already in hand, and un-awaited they surfaced as bare
+   unhandled rejections with no useful stack. */
+function safePut(cache, request, res) {
+  cache.put(request, res).catch(err => {
+    console.warn('[sw] cache.put failed:', request.url, err && err.message);
+  });
+}
+
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
@@ -372,8 +396,8 @@ async function cacheFirst(request, cacheName) {
   if (opaqueMismatch) cache.delete(request);
   try {
     const res = await fetch(request);
-    if (res && res.ok) cache.put(request, res.clone());
-    else if (res && res.type === 'opaque' && request.mode === 'no-cors') cache.put(request, res.clone());
+    if (cacheable(res)) safePut(cache, request, res.clone());
+    else if (res && res.type === 'opaque' && request.mode === 'no-cors') safePut(cache, request, res.clone());
     return res;
   } catch (e) {
     /* ⚠️ RETRY ONCE PAST THE HTTP CACHE. A cross-origin response fetched
@@ -388,13 +412,20 @@ async function cacheFirst(request, cacheName) {
        genuinely offline load still costs a single request. */
     try {
       const res = await fetch(new Request(request, { cache: 'reload' }));
-      if (res && res.ok) cache.put(request, res.clone());
+      if (cacheable(res)) safePut(cache, request, res.clone());
       return res;
     } catch (e2) {
       return Response.error();
     }
   }
 }
+
+/* Anything the <video> element streams. Matched on the key's extension,
+   which is the original file's -- mediaKey() in js/media.js builds
+   `${uid}/${uuid}.${ext}` and uploadVideo() passes the real one through,
+   so an .mp4 or .mov in the path is a reliable signal and needs no
+   lookup. */
+const VIDEO_EXT_RE = /\.(mp4|m4v|mov|webm|ogv|ogg|avi|mkv|3gp)(\?|$)/i;
 
 self.addEventListener('fetch', event => {
   const { request } = event;
@@ -404,6 +435,47 @@ self.addEventListener('fetch', event => {
   try { url = new URL(request.url); } catch { return; }
   if (!/^https?:$/.test(url.protocol)) return;
   if (matchesHost(url, NEVER_CACHE_HOSTS)) return;
+
+  /* ==============================================================
+     ⚠️ VIDEO IS NEVER INTERCEPTED, AND NEITHER IS ANY RANGE REQUEST.
+     Both lines are load-bearing and neither is an optimisation.
+
+     THIS IS WHY VIDEO PLAYED ON DESKTOP AND NOT ON THE PHONE.
+     Every R2 URL matches IMAGE_HOSTS, so video was going through
+     cacheFirst() like a photo, and two separate things went wrong:
+
+     1. `cache.match(request)` IGNORES THE RANGE HEADER unless it is
+        told not to. So once a video's full body was in the cache --
+        which happens on the first plain GET, the one `preload="metadata"`
+        makes -- every later `Range: bytes=…` request was answered with
+        a 200 CARRYING THE WHOLE FILE instead of a 206 Partial Content.
+        Desktop Chrome tolerates that and slices the body itself, which
+        is exactly why the site looked fine there. iOS will not: its
+        media stack requires a 206 for a request it ranged, and given a
+        200 it stops. The video element simply never plays, with no
+        error worth reading.
+
+     2. On a cache MISS with a range header, fetch() returns a 206,
+        `res.ok` is true for 206 (it is 200-299), and `cache.put()`
+        THROWS on a partial response -- "Partial response (status code
+        206) is unsupported". It is not awaited, so that surfaced as an
+        unhandled rejection rather than as anything pointing here, and
+        nothing was ever cached, so it repeated on every request.
+
+     Returning without calling respondWith() hands the request back to
+     the browser, which has a media stack built for exactly this and
+     does conditional requests, seeking and byte ranges properly. The
+     cost is that video is not available offline -- which it effectively
+     never was (see above), and which matches the rest of the app:
+     uploadVideo() already refuses to work offline, and a 5-20MB clip
+     is the first thing evicted from a cache quota anyway.
+     ============================================================== */
+  if (request.headers.has('range')) return;
+  if (VIDEO_EXT_RE.test(url.pathname)) return;
+  /* request.destination is the cleanest signal of the three but is the
+     least reliable across the WebKit versions this has to run on, so it
+     is the backstop rather than the test. */
+  if (request.destination === 'video' || request.destination === 'audio') return;
 
   /* Navigations: try the network so a redeploy lands, fall back to the
      cached shell when offline. */
