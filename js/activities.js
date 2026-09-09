@@ -2388,6 +2388,28 @@ async function openCollectionMenu(){
     ? {label:'Delete List',icon:'trash',role:'destructive',onSelect:confirmDeleteCollection}
     : {label:'Leave List', icon:'signout',role:'destructive',onSelect:confirmLeaveList});
 
+  /* ⚠️ REPORTING HAS TO BE REACHABLE FROM THE LIST, not only from the
+     conversation. It was in exactly one place — the conversation's own
+     ⋯ menu — which meant a shared list whose ACTIVITIES, notes or
+     photos were the problem could only be reported by first opening
+     its chat, a screen the reporter may have no reason to visit and
+     which does not exist on a list nobody has messaged in. That is
+     also the first place an App Store reviewer looks under Guideline
+     1.2, and not finding it reads as the mechanism being absent.
+
+     Not on your own list: the control there is Delete. */
+  if(moderationReady()&&!mine){
+    items.push({label:'Report this list',icon:'flag',role:'destructive',
+      onSelect:()=>openReportSheet({
+        kind:'collection',
+        id:l.id,
+        collectionId:l.id,
+        reportedId:l.ownerId||null,
+        snapshot:reportSnapshotForList(l),
+        label:'“'+(l.name||'this list')+'”',
+      })});
+  }
+
   showActionSheet({items});
 }
 

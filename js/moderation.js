@@ -37,11 +37,35 @@
    rather than the only one: a queue of unstructured paragraphs cannot
    be triaged, and the reporter is usually angry and typing on a
    phone. `id` is what lands in content_reports.reason. */
+/* ⚠️ TWO OF THESE ARE NOT PREFERENCES, THEY ARE OBLIGATIONS, and both
+   were missing from the first version of this list.
+
+   `csam` exists because 18 U.S.C. §2258A requires a provider to report
+   apparent child sexual abuse material to NCMEC, and you cannot report
+   what your own product gave nobody a way to tell you about. It leads
+   the list rather than sitting among the others, and openReportSheet()
+   marks it, because a report filed under "Something else" is one that
+   waits its turn in a queue where this one must not.
+
+   `copyright` exists because the app hosts user-uploaded photographs,
+   and the DMCA §512 safe harbour — the thing standing between the
+   operator and direct liability for every infringing upload — is
+   conditional on there being a notice-and-takedown path. Without a way
+   to send a notice there is nothing to be safe within.
+
+   ⚠️ NEITHER IS FINISHED IN CODE ALONE. §2258A needs an ESP
+   registration with NCMEC, and §512 needs a designated agent filed
+   with the US Copyright Office. See legal/terms.html §12 and the
+   header of supabase/moderation.sql. */
 const REPORT_REASONS=[
+  {id:'csam',       label:'Child sexual exploitation', urgent:true},
   {id:'harassment', label:'Harassment or bullying'},
   {id:'hate',       label:'Hate speech or symbols'},
   {id:'sexual',     label:'Sexual or explicit content'},
   {id:'violence',   label:'Violence or threats'},
+  {id:'selfharm',   label:'Self-harm or suicide'},
+  {id:'copyright',  label:'Copyright or trademark'},
+  {id:'privacy',    label:'Shares my private information'},
   {id:'spam',       label:'Spam or a scam'},
   {id:'other',      label:'Something else'},
 ];
@@ -246,6 +270,75 @@ function renderBlockedList(){
    ============================================================== */
 let _report=null;   /* {kind, id, reportedId, collectionId, snapshot, label} */
 
+/* ==============================================================
+   WHAT GOES IN THE SNAPSHOT
+
+   ⚠️ A REPORT WHOSE SNAPSHOT IS A NAME IS NOT ACTIONABLE. The column
+   exists so a report survives its author deleting the evidence, which
+   is the first thing somebody does when reported — and for a message
+   the body is the whole of it, so the first version simply passed the
+   text. That is wrong for everything else in the app: the content of a
+   shared LIST is its activities, and the content most likely to be
+   worth reporting is a PHOTO, which had no representation in the
+   snapshot at all. A moderator opening such a report saw a list name
+   and had to go and find the rows by hand, inside the 24 hours the
+   terms commit to.
+
+   So a collection's snapshot carries its name, its description, and a
+   line per activity with the media URLs attached — the URLs rather than
+   the images, because R2 objects are immutable and keyed randomly, so
+   the link keeps resolving after the row is deleted and there is no
+   need to copy megabytes into a Postgres column to preserve it.
+
+   ⚠️ IT IS DRAWN FROM THE IN-MEMORY CACHE and never fetches. Reporting
+   is a path somebody takes while upset, and the sheet must open now;
+   a cold cache yields the name alone, which is exactly what it yielded
+   before. REPORT_SNAPSHOT_MAX is what stops a large list writing an
+   unbounded blob into a table nobody prunes.
+   ============================================================== */
+function reportSnapshotForList(l){
+  if(!l)return '';
+  const lines=['LIST: '+(l.name||'(untitled)')];
+  if(l.description) lines.push('DESCRIPTION: '+l.description);
+  try{
+    const acts=cachedActivities().filter(a=>a.listId===l.id);
+    lines.push('ACTIVITIES: '+acts.length);
+    for(const a of acts){
+      lines.push(reportSnapshotForActivity(a));
+      /* Bounded as it is built rather than sliced at the end, so a very
+         long list does not cost the work of formatting all of it. */
+      if(lines.join('\n').length>REPORT_SNAPSHOT_MAX)break;
+    }
+  }catch(e){ /* Cold cache. The name alone is still a report. */ }
+  return lines.join('\n').slice(0,REPORT_SNAPSHOT_MAX);
+}
+
+/* One activity, with everything a moderator has to look at to judge it
+   — including the media, which is the point. */
+function reportSnapshotForActivity(a){
+  if(!a)return '';
+  const bits=['- '+(a.name||'(untitled)')];
+  if(a.location) bits.push('  at: '+a.location);
+  /* ⚠️ completionNotes, NOT `notes`. mapActivity() has no `notes` field
+     at all — the append-only log lives in its own table and is reached
+     through fetchNotes(). Reading a.notes here silently produced
+     undefined and dropped the one piece of free text an activity
+     actually carries. */
+  if(a.completionNotes) bits.push('  notes: '+a.completionNotes);
+  /* normMedia() has already turned every entry into {type,url,poster},
+     so this is always objects — never the bare strings the `photos`
+     column stores. */
+  const media=(a.media||[]).map(m=>(m&&m.url)||'').filter(Boolean);
+  const remote=media.filter(u=>!u.startsWith('data:'));
+  if(remote.length) bits.push('  media: '+remote.join(' '));
+  /* A legacy inline photo is COUNTED, not pasted: a base64 data URL is
+     hundreds of kilobytes and would fill the whole snapshot on its own,
+     leaving no room for the rest of the report. */
+  const inline=media.length-remote.length;
+  if(inline) bits.push('  media: '+inline+' inline image(s), not linkable');
+  return bits.join('\n');
+}
+
 /* kind: 'message' | 'collection' | 'activity'. */
 function openReportSheet(opts){
   if(!moderationReady()){
@@ -269,8 +362,8 @@ function openReportSheet(opts){
   $('reportError').textContent='';
   /* Rebuilt on every open so a previous report's choice is never inherited —
      the reason is the one field that must be a deliberate answer. */
-  $('reportReasons').innerHTML=REPORT_REASONS.map((r,i)=>`
-    <button class="report-reason" data-reason="${esc(r.id)}"
+  $('reportReasons').innerHTML=REPORT_REASONS.map(r=>`
+    <button class="report-reason${r.urgent?' urgent':''}" data-reason="${esc(r.id)}"
             onclick="pickReportReason('${esc(r.id)}')">
       <span class="report-radio"></span><span>${esc(r.label)}</span>
     </button>`).join('');
@@ -350,10 +443,27 @@ async function submitReport(){
    cannot finish creating an account. The record is a nicety for
    review; the acceptance itself happened in the UI.
    ============================================================== */
+/* ⚠️ THE VERSION IS THE HALF THAT MATTERS. A timestamp says somebody
+   agreed and not what to; the one question a dispute actually turns on
+   is what the document said that day, and until this there was nothing
+   anywhere that could answer it. TERMS_VERSION lives in js/config.js
+   and is bumped whenever legal/terms.html changes materially.
+
+   Still `.is(...,null)` — only the FIRST acceptance is recorded, so
+   this cannot quietly restamp an old account as having agreed to a
+   document it has never seen. Re-consent to a new version is a
+   deliberate act and would need a screen of its own; see the backlog. */
 async function recordTermsAcceptance(){
   if(!currentUser) return;
   try{
-    await sb.from('Users').update({terms_accepted_at:new Date().toISOString()})
+    const{error}=await sb.from('Users')
+      .update({terms_accepted_at:new Date().toISOString(),terms_version:TERMS_VERSION})
       .eq('id',currentUser.id).is('terms_accepted_at',null);
+    /* No terms_version column yet — write the timestamp alone rather
+       than losing the acceptance entirely. */
+    if(error&&(error.code==='PGRST204'||error.code==='42703')){
+      await sb.from('Users').update({terms_accepted_at:new Date().toISOString()})
+        .eq('id',currentUser.id).is('terms_accepted_at',null);
+    }
   }catch(e){ /* The column may not exist yet. Silent by design. */ }
 }

@@ -67,6 +67,12 @@ let shDrag=null;
 function sheetAt(target){
   const overlay=target.closest&&target.closest('.modal-overlay.open');
   if(!overlay)return null;
+  /* A locked sheet owns no dismissal gesture — see modalLocked() in
+     modals.js. Refusing the DRAG rather than the drop is deliberate:
+     letting it move and then snap back reads as the swipe having
+     failed, where nothing moving at all reads as the sheet not being
+     dismissable, which is the truth. */
+  if(modalLocked(overlay))return null;
   return{overlay,panel:overlay.querySelector('.modal')};
 }
 

@@ -21,7 +21,33 @@ function openModal(id){
   el.classList.add('open');
   setBodyScrollLock(true);
 }
+/* ==============================================================
+   A SHEET THAT CANNOT BE DISMISSED
+
+   Every overlay in this app is escapable, and one is deliberately not:
+   the age screen shown to an account that has never been asked (see
+   openAgeGate() in me.js). A question that decides whether somebody may
+   use the service at all cannot be answered by tapping the scrim.
+
+   ⚠️ THERE ARE FOUR WAYS AN OVERLAY CLOSES AND ONLY TWO OF THEM COME
+   THROUGH closeModal(). The scrim click and Escape do; the swipe-down
+   in gestures.js and dismissOverlays() in nav.js both write
+   classList.remove('open') themselves. All four ask modalLocked()
+   now — a guard in this function alone would have left the sheet
+   dismissable by a swipe, which is the gesture somebody actually
+   reaches for.
+
+   The lock is a class rather than a flag so it travels with the
+   element: nothing has to remember to clear it when the sheet is
+   finally answered, because answering it removes the class and closes
+   in one step. */
+function modalLocked(id){
+  const el=typeof id==='string'?$(id):id;
+  return !!(el&&el.classList&&el.classList.contains('modal-locked'));
+}
+
 function closeModal(id){
+  if(modalLocked(id)) return;
   /* ⚠️ #promptSheet is a .modal-overlay, so the scrim click and the
      Escape handler both land here rather than in closePrompt() -- and
      its cancel path has to run whichever way it was dismissed, or a

@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v187';
+const CACHE_VERSION = 'v188';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -80,6 +80,7 @@ const SHELL_ASSETS = [
   './js/messages.js',
   './js/notes.js',
   './js/me.js',
+  './js/export.js',
   './js/map.js',
   './js/pwa.js',
   './js/main.js',
@@ -88,15 +89,43 @@ const SHELL_ASSETS = [
   './icons/apple-touch-icon.png',
   './icons/favicon-32.png',
   './icons/favicon-16.png',
+  /* ⚠️ THE TYPE IS PART OF THE SHELL NOW. Both families used to come
+     from fonts.gstatic.com and were caught by VENDOR_HOSTS below; they
+     are served from this origin since the Google Fonts <link> was
+     removed for the GDPR reason set out at the top of css/fonts.css.
+     Left out of this list they would simply not be available offline,
+     and the app would fall back to the system serif — which reads as
+     the type having failed to load, because it has. */
+  './css/fonts.css',
+  /* supabase-js, vendored rather than fetched from a CDN — see
+     vendor/README.md. ⚠️ THE VERSION IS IN THE PATH, so moving to a new
+     one means changing it HERE as well as in index.html. Missed, the
+     app boots with no client at all and every screen is empty. */
+  './vendor/supabase-js-2.116.0.js',
+  './fonts/newsreader-var-latin.woff2',
+  './fonts/newsreader-var-latin-ext.woff2',
+  './fonts/newsreader-var-italic-latin.woff2',
+  './fonts/newsreader-var-italic-latin-ext.woff2',
+  './fonts/ibm-plex-mono-400-latin.woff2',
+  './fonts/ibm-plex-mono-400-latin-ext.woff2',
+  './fonts/ibm-plex-mono-500-latin.woff2',
+  './fonts/ibm-plex-mono-500-latin-ext.woff2',
+  './fonts/ibm-plex-mono-600-latin.woff2',
+  './fonts/ibm-plex-mono-600-latin-ext.woff2',
 ];
 
-/* Third-party code and assets the app cannot run without: MapLibre GL,
-   supabase-js, and the two display faces. */
+/* Third-party code the app cannot run without: MapLibre GL and
+   supabase-js.
+
+   ⚠️ THE TWO GOOGLE FONTS HOSTS ARE GONE FROM HERE ON PURPOSE and must
+   not come back. The faces are served from this origin and pre-cached
+   in SHELL_ASSETS above; leaving fonts.googleapis.com / fonts.gstatic.com
+   in this list would do nothing useful and would quietly re-permit the
+   exact request the self-hosting was done to eliminate, if anything
+   ever asked for one again. See the top of css/fonts.css. */
 const VENDOR_HOSTS = [
   'unpkg.com',
   'cdn.jsdelivr.net',
-  'fonts.googleapis.com',
-  'fonts.gstatic.com',
 ];
 
 /* Remote imagery — default collection covers and map tiles. */

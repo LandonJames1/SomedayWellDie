@@ -71,6 +71,13 @@ function resetAccountState(){
      bias and their "Home" shortcut. */
   resetHomePlace();
   resetDifficultyProfile();
+  /* The date of birth is per-account, and it is what decides whether
+     the locked age sheet appears — so carrying it across a sign-in
+     would let the previous account's answer wave the next one through.
+     The device-level retry lock (bl_agefail) is deliberately NOT
+     cleared here: it is a statement about this browser, not about an
+     account, and clearing it would make signing out the way around it. */
+  resetAgeGate();
   /* The globe is kept alive across navigation, so nothing else would
      dispose it — and its pins are the previous account's places. */
   destroyGlobalMap();
@@ -470,7 +477,12 @@ function applyAuthMode(){
   $('authSub').textContent=authIsSignUp
     ?'Start collecting the things you want to do.'
     :'Sign in to reach your lists.';
-  $('authBtn').textContent=authIsSignUp?'Create Account':'Sign In';
+  /* ⚠️ THE BUTTON NAMES WHAT PRESSING IT AGREES TO. That is half of
+     what makes the notice above it enforceable — Berman v. Freedom
+     Financial asks for the agreement to be identified AT the point of
+     action, and a button reading only "Create Account" identifies
+     nothing. See the comment on #authAgree in index.html. */
+  $('authBtn').textContent=authIsSignUp?'Agree & Create Account':'Sign In';
   $('authToggleText').textContent=authIsSignUp?'Already have an account?':'Don’t have an account?';
   $('authToggleBtn').textContent=authIsSignUp?'Sign in':'Create one';
   $('authExtraFields').style.display=authIsSignUp?'':'none';
@@ -488,6 +500,23 @@ function applyAuthMode(){
      back. Coming back to the form is the moment that gets undone. */
   $('authBtn').disabled=false;
   setAuthError('');
+  /* ⚠️ AFTER THE TWO LINES ABOVE, NOT BEFORE THEM. They are the reset,
+     and the first version of this sat over them — so the age lock was
+     applied and then immediately cleared, and the screen looked exactly
+     as though the lock did not exist.
+
+     An answer that failed the age screen shuts Create Account on this
+     device for a day. Signing IN is untouched: somebody who already has
+     an account has already been asked, and locking them out of their
+     own lists because a second person picked up the phone would be a
+     worse failure than the one this prevents. */
+  if(authIsSignUp&&ageGateBlocked()){
+    $('authBtn').disabled=true;
+    setAuthError('You can’t create an account right now.');
+  }
+  /* Never carried between modes: a date left in a hidden field is an
+     answer nobody gave on this pass. */
+  if(!authIsSignUp&&$('authDob')) $('authDob').value='';
 }
 
 /* The form, the check-your-email panel and the set-a-new-password panel
@@ -547,6 +576,35 @@ async function handleAuth(){
         setAuthError('Usernames are 3–30 characters: letters, numbers, dots or underscores.');
         throw{handled:true};
       }
+
+      /* ---- THE AGE SCREEN ----
+
+         Checked here, before signUp(), because the account must not
+         come into existence and then be judged: an under-age account
+         that exists for even a moment is an under-age account whose
+         email address you are now holding.
+
+         Three outcomes, and the third is the one worth reading:
+           - no date          -> ask for one, nothing is recorded;
+           - a real date, ok  -> rides on options.data to survive the
+                                 confirmation email, exactly as the
+                                 name and username do;
+           - a real date, too young -> the retry lock is set and the
+                                 refusal says nothing about what the
+                                 floor is. Naming the number turns the
+                                 screen back into the yes/no question
+                                 it was built to replace — the next
+                                 attempt would simply clear it. */
+      const dob=$('authDob').value;
+      if(!dob){setAuthError('Enter your date of birth.');throw{handled:true};}
+      const age=ageFromDOB(dob);
+      if(age===null){setAuthError('That date of birth isn’t valid.');throw{handled:true};}
+      if(age<MIN_AGE){
+        markAgeGateFail();
+        setAuthError('You can’t create an account right now.');
+        $('authBtn').disabled=true;
+        throw{handled:true};
+      }
       /* The name and username ride along on the auth user rather than
          being written to `Users` here.
 
@@ -579,7 +637,18 @@ async function handleAuth(){
       const{data,error}=await sb.auth.signUp({
         email,password,
         options:{
-          data:{display_name:displayName,username},
+          /* date_of_birth and terms_version ride here for the same
+             reason the name and handle do: signUp() returns no session
+             on a project with email confirmation on, so there is
+             nothing signed in to write the Users row with. They are
+             read back off user_metadata by profileSeed() in me.js on
+             the first sign-in that has one. */
+          data:{
+            display_name:displayName,
+            username,
+            date_of_birth:dob,
+            terms_version:TERMS_VERSION,
+          },
           emailRedirectTo:confirmRedirectUrl(),
         },
       });

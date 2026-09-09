@@ -189,6 +189,17 @@
     .fg .req { color: var(--red); }
     .fg .opt { text-transform: none; letter-spacing: -.002em; color: var(--label-3); }
 
+    /* The export's last-resort view — see the ladder at the top of
+       js/export.js. Mono because it is JSON and the columns matter,
+       and tall because the point of it is that ⌘C / long-press-Copy
+       has something worth selecting. */
+    .export-text {
+      width: 100%; height: 46dvh; height: 46vh;
+      font-family: var(--mono); font-size: max(16px, 12px);
+      line-height: 1.45; white-space: pre; overflow: auto;
+      -webkit-user-select: text; user-select: text;
+    }
+
     .field {
       background: var(--bg-elevated); border-radius: var(--r-row);
       overflow: hidden; box-shadow: var(--shadow-sm), var(--ring);

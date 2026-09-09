@@ -1,0 +1,144 @@
+/* ==============================================================
+   THE TWO WEB FONTS, SERVED FROM THIS ORIGIN
+
+   ⚠️ THIS FILE EXISTS FOR A LEGAL REASON, NOT A PERFORMANCE ONE.
+   Read this before "simplifying" it back to a <link> at Google.
+
+   Both faces used to be pulled straight from fonts.googleapis.com,
+   which is the ordinary way to do it and is a live liability anywhere
+   the GDPR applies. Loading a font from Google's servers transmits the
+   visitor's IP address to Google before anybody has agreed to
+   anything, and in January 2022 the Landgericht München I held that
+   doing so without consent is an actionable violation of the
+   plaintiff's right of personality — damages, plus costs. What
+   followed was a wave of demand letters to German site operators, and
+   the exposure has never gone away: it is trivially provable from the
+   outside, because anybody can open the network tab.
+
+   Self-hosting removes it completely rather than mitigating it. There
+   is nothing to consent to, no third party in the request path, and no
+   cookie banner needed to say so.
+
+   It is also, incidentally, faster — one origin instead of three, no
+   extra DNS, no extra TLS handshake, and the CSS no longer blocks on a
+   round trip to Google before it can even discover the font URLs.
+
+   ---- WHAT IS HERE ----
+
+   Exactly the files Google was already serving this app, fetched with
+   a modern-Chrome User-Agent so they are woff2, and filtered to the
+   two Latin subsets. The Cyrillic and Vietnamese subsets are dropped:
+   they were never downloaded by anybody reading this app in English,
+   because a subset whose unicode-range never matches is never
+   requested — so dropping them costs nothing and keeps the repo
+   smaller.
+
+   ⚠️ NEWSREADER IS A VARIABLE FONT AND IBM PLEX MONO IS NOT. Google
+   serves one Newsreader file per style covering the whole 400-700
+   range, and one Plex Mono file per weight. That is why the Newsreader
+   rules declare a weight RANGE (`font-weight: 400 700`) and there are
+   two of them rather than six — and why the Newsreader files are
+   130KB where a Plex Mono weight is 10KB.
+
+   ---- LICENCES ----
+
+   Both families are under the SIL Open Font License 1.1, which permits
+   this and requires the licence travel with the fonts. See
+   fonts/OFL.txt. Newsreader © Production Type; IBM Plex Mono © IBM.
+
+   ---- IF YOU CHANGE THE TYPE ----
+
+   Re-run the fetch rather than hand-editing: request the CSS from
+   fonts.googleapis.com with a Chrome User-Agent, keep the `latin` and
+   `latin-ext` blocks, download each woff2 into fonts/, and rewrite the
+   urls. Then add the files to SHELL_ASSETS in sw.js and to the
+   allowlist in scripts/build-www.js, or the native app ships with no
+   type at all and falls back to the system serif — which looks like a
+   font that failed to load, because it is.
+   ============================================================== */
+
+/* ---- Newsreader — display: titles, names, numerals, long notes ---- */
+
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(../fonts/newsreader-var-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(../fonts/newsreader-var-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: italic;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url(../fonts/newsreader-var-italic-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: italic;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url(../fonts/newsreader-var-italic-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ---- IBM Plex Mono — the small-caps labels, badges, tab bar ---- */
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-400-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-400-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-500-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-500-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(../fonts/ibm-plex-mono-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}

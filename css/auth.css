@@ -48,6 +48,43 @@
     .auth-fields input::placeholder { color: var(--label-3); }
     .auth-fields input:not(:last-child) { border-bottom: .5px solid var(--separator); }
 
+    /* THE AGE SCREEN'S ROW.
+
+       Every other field on this screen is placeholder-only, and a date
+       input cannot carry a placeholder — so this is the one field that
+       needs a visible label, and it takes the shape of an iOS grouped
+       row (label left, value right) rather than a label stacked over a
+       box, which would break the flush stack the rest of the block
+       makes.
+
+       ⚠️ THE BORDER IS DECLARED HERE RATHER THAN INHERITED. The
+       separator between fields is `.auth-fields input:not(:last-child)`,
+       and this input IS the last child — of the <label> wrapping it —
+       so it draws none, and the email field below would sit flush
+       against it with no line between. */
+    .auth-dob {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 16px; min-height: 50px;
+      background: var(--bg-elevated);
+      border-bottom: .5px solid var(--separator);
+    }
+    .auth-dob > span {
+      flex: 1 1 auto; min-width: 0;
+      color: var(--label-2); font-size: 15px; letter-spacing: -.011em;
+    }
+    /* Overrides `.auth-fields input`, which is display:block/width:100%
+       and would take the whole row and push the label out of it. */
+    .auth-dob input {
+      flex: 0 0 auto; width: auto; min-height: 0;
+      padding: 6px 0; text-align: right;
+      border-bottom: none !important;
+      color: var(--label);
+    }
+    /* Safari draws an empty date input as grey mm/dd/yyyy, which is the
+       placeholder this field cannot otherwise have. Left alone. */
+    .auth-dob input::-webkit-date-and-time-value { text-align: right; }
+    .auth-dob input::-webkit-calendar-picker-indicator { opacity: .45; }
+
     .auth-error {
       color: var(--red); font-size: 13px; line-height: 1.35;
       min-height: 18px; margin: 10px 4px 0; text-align: center;

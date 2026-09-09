@@ -28,17 +28,32 @@
   <!-- ===== Fonts =====
        Newsreader carries the display type and IBM Plex Mono the
        small-caps labels; the system stack still does all the UI chrome.
-       display=swap means the serif fallback (New York on Apple platforms)
-       paints immediately and is swapped in place, so there is no blank
-       text on a cold load. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+       font-display:swap means the serif fallback (New York on Apple
+       platforms) paints immediately and is swapped in place, so there is
+       no blank text on a cold load.
+
+       ⚠️ SERVED FROM THIS ORIGIN, NOT FROM GOOGLE, AND THAT IS A LEGAL
+       DECISION rather than a performance one — do not "restore" the
+       fonts.googleapis.com <link>. Pulling a font from Google's servers
+       hands the visitor's IP address to Google before anybody has
+       agreed to anything, which the Landgericht München I held in
+       January 2022 to be an actionable GDPR violation, and which set
+       off a wave of demand letters that has not stopped. Self-hosting
+       removes the exposure rather than mitigating it: there is no third
+       party in the request path and nothing to consent to. The whole
+       argument, and how to regenerate these files if the type ever
+       changes, is at the top of css/fonts.css.
+
+       The two preconnects that used to be here (fonts.googleapis.com,
+       fonts.gstatic.com) went with it — there is nothing left on either
+       host to connect to. -->
+  <link rel="preload" href="fonts/newsreader-var-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="fonts/ibm-plex-mono-500-latin.woff2" as="font" type="font/woff2" crossorigin />
   <!-- Every row the app draws comes from here, and so does place search
        (the geo function — see THE geo FUNCTION in location.js). Getting
        DNS, TCP and TLS out of the way during parse takes a chunk off the
        first query of a cold launch. -->
   <link rel="preconnect" href="https://xxdmendegyxlkikejvps.supabase.co" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
 
   <!-- ===== Third-party libraries =====
        MapLibre GL renders on the GPU and has a real globe projection,
@@ -52,9 +67,44 @@
        a map is actually asked for, stylesheet included. Only preconnect
        here, so that first fetch does not also pay for the handshake. -->
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- ⚠️ SERVED FROM THIS ORIGIN, PINNED IN ITS FILENAME. Do not put
+       a CDN URL back — see vendor/README.md for the full argument.
+
+       It used to be `@supabase/supabase-js@2` off jsDelivr: an
+       unpinned major, fetched fresh on every cold launch. Three
+       separate problems in one tag.
+
+       SUPPLY CHAIN. Every visitor executed whatever the newest 2.x
+       happened to be — code nobody here had ever seen, running with
+       full access to the session token and to every row this app can
+       read. A compromise of the package or of the CDN would have
+       landed here directly.
+
+       THE NATIVE APP FETCHED ITS OWN CODE OVER THE NETWORK. Capacitor
+       bundles the assets, which is what scripts/build-www.js is for,
+       and its header warns against server.url on Guideline 2.5.2 —
+       an app that updates itself outside the App Store. A CDN script
+       tag is that same argument by another route. It also meant the
+       shipped app could not boot without a connection at all: there is
+       no service worker on capacitor://, so nothing had cached it.
+
+       PRIVACY. The same shape as the Google Fonts problem above — a
+       request to a third party the user never chose, carrying their IP
+       address.
+
+       ⚠️ THE VERSION IS IN THE FILENAME ON PURPOSE. A generic
+       vendor/supabase.js would be served to returning installs from
+       the cache under a name whose contents had silently changed,
+       which is exactly what CACHE_VERSION exists to prevent.
+
+       ⚠️ AND UPDATES ARE NOW MANUAL, security fixes included. The
+       recipe is in vendor/README.md; it is four files, and forgetting
+       sw.js is the one that bites. -->
+  <script src="vendor/supabase-js-2.116.0.js"></script>
 
   <!-- ===== Styles — order matters =====
+       fonts       the two @font-face families, self-hosted (see below)
        base        design tokens + reset, everything depends on it
        layout      nav bar, tab bar, page system (the app shell)
        components  grouped lists, segmented controls, buttons, badges
@@ -62,6 +112,10 @@
        modals / map / dupes / sharing / pwa
                    per-feature components
        responsive  breakpoint overrides, must load last -->
+  <!-- First, so the @font-face rules are known before anything asks for
+       a family. It declares no colours and no layout — nothing else in
+       this list cares where it sits, only that it is here at all. -->
+  <link rel="stylesheet" href="css/fonts.css" />
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -125,6 +179,22 @@
         <div id="authExtraFields" style="display:none">
           <input id="authDisplayName" autocomplete="name" placeholder="Name" />
           <input id="authUsername" autocomplete="username" autocapitalize="none" autocorrect="off" placeholder="Username" />
+          <!-- THE AGE SCREEN, and the shape of it is the point.
+
+               It asks for a DATE and works out the age itself. It does
+               NOT ask "are you 16 or older?" — a yes/no question tells
+               the reader which answer opens the door, so the answer it
+               gets back is worth nothing, and the FTC says so in as
+               many words. This is the "neutral age screen" they
+               describe.
+
+               A label rather than a placeholder because a date input
+               cannot carry one. See MIN_AGE in config.js for why the
+               floor is 16. -->
+          <label class="auth-dob" for="authDob">
+            <span>Date of birth</span>
+            <input id="authDob" type="date" autocomplete="bday" />
+          </label>
         </div>
         <input id="authEmail" type="email" inputmode="email" autocomplete="email"
                autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Email" />
@@ -133,6 +203,29 @@
       </div>
 
       <div class="auth-error" id="authError"></div>
+
+      <!-- ⚠️ THIS SITS ABOVE THE BUTTON, NOT BELOW THE FORM, and that
+           is the whole of what makes it enforceable. It used to be the
+           last thing in the block — under the Apple button, under
+           "forgot password", under the sign-in toggle — which is the
+           arrangement courts keep refusing to enforce: notice that a
+           reasonable person would not see before acting is not notice.
+           Berman v. Freedom Financial (9th Cir. 2022) is the case, and
+           what it asks for is exactly this: the terms named next to the
+           action, the links visually distinct from the prose around
+           them, and a button whose own label says what pressing it
+           agrees to (applyAuthMode() makes it read "Agree & Create
+           Account").
+
+           Still a line rather than a checkbox. Apple accepts "by
+           continuing", the links are real 44px targets, and a tick box
+           is one more thing between somebody and an app they have
+           already decided to try. -->
+      <p class="auth-agree" id="authAgree" style="display:none">By creating an account you agree to the <a
+        href="legal/terms.html">Terms of Use</a> and <a
+        href="legal/privacy.html">Privacy Policy</a>. There is no
+        tolerance for abusive content or behaviour.</p>
+
       <button class="btn btn-filled auth-submit" id="authBtn" onclick="handleAuth()">Sign In</button>
 
       <!-- Native only. Hidden here and shown by renderAppleButton() when
@@ -158,18 +251,6 @@
         <span id="authToggleText">Don&rsquo;t have an account?</span>
         <button id="authToggleBtn" onclick="toggleAuthMode()">Create one</button>
       </div>
-      <!-- Shown in Create Account mode only, by applyAuthMode(). Apple
-           requires the terms to be agreed to before an account carrying
-           user-generated content exists; a "by continuing" line with
-           reachable links satisfies that without putting a checkbox
-           between somebody and the app they already decided to try. -->
-      <p class="auth-agree" id="authAgree" style="display:none">
-        By creating an account you agree to the
-        <a href="legal/terms.html">Terms of Use</a>
-        and
-        <a href="legal/privacy.html">Privacy Policy</a>.
-        There is no tolerance for abusive content or behaviour.
-      </p>
     </div>
 
     <!-- Where a sign-up lands while it waits to be confirmed. -->
@@ -494,6 +575,17 @@
 
   <div class="section-header">Account</div>
   <div class="group">
+    <!-- Data portability, answered in the app rather than by email —
+         see the header of export.js. It sits ABOVE the two
+         destructive rows deliberately: the moment somebody is about to
+         delete an account is the moment a copy of it is worth
+         offering, and finding that out afterwards is finding it out
+         too late. -->
+    <button class="row tappable has-leading" id="meExportRow" onclick="exportMyData()">
+      <span class="row-leading li-blue" id="meExportIcon"></span>
+      <span class="row-body"><span class="row-title">Export My Data</span></span>
+      <span class="row-chevron" id="meExportChevron"></span>
+    </button>
     <button class="row tappable destructive" onclick="confirmSignOut()">
       <span class="row-body"><span class="row-title">Sign Out</span></span>
     </button>
@@ -870,7 +962,16 @@
     </div>
     <div class="sheet-body">
       <div class="fg">
-        <label>What makes something easy or hard for you</label>
+        <!-- ⚠️ THE LABEL NAMES THE DESTINATION, and that is not the
+             help text rule 1 forbids — it is the label doing its job.
+             This paragraph is the only free text in the app that leaves
+             it: it is sent to Anthropic with every activity created, so
+             the difficulty rating can be judged against this person
+             rather than an average one. The privacy policy says so in
+             section 5, and a policy is not where somebody finds out
+             what a box in front of them does. The FTC's test is
+             surprise, not disclosure-somewhere. -->
+        <label>What makes something easy or hard for you &mdash; sent to the AI that rates difficulty</label>
         <textarea id="diffProfileText" rows="6" maxlength="600"
                   placeholder="No car, tight budget, hike most weekends, won’t fly"></textarea>
       </div>
@@ -1348,6 +1449,61 @@
   </div>
 </div>
 
+<!-- The last rung of the export ladder in export.js: the file as
+     text, selected, with a Copy button. It is reached only when the
+     share sheet and the blob download have both failed, which is a
+     configuration rather than an error — so it is a plain sheet and
+     says nothing apologetic. -->
+<div class="modal-overlay" id="exportSheet">
+  <div class="modal">
+    <div class="sheet-bar">
+      <button class="sheet-btn" onclick="closeModal('exportSheet')">Done</button>
+      <div class="sheet-title">Your data</div>
+      <button class="sheet-btn strong" onclick="copyExportText()">Copy</button>
+    </div>
+    <div class="sheet-body">
+      <div class="fg">
+        <textarea id="exportText" class="export-text" readonly spellcheck="false"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== THE AGE SCREEN, for an account the sign-up form never saw.
+
+     Two paths reach an account with no date of birth on it: every
+     account that existed before this was built, and Sign in with Apple,
+     which skips the form entirely — so a form-only gate is one button
+     away from being bypassed and every legacy row is a claim the terms
+     make and the database cannot support.
+
+     ⚠️ IT IS THE ONE OVERLAY IN THE APP THAT CANNOT BE DISMISSED.
+     .modal-locked is honoured by all four dismissal routes; see
+     modalLocked() in modals.js. There is no Cancel, no grabber and no
+     scrim escape, because the honest alternative to answering is
+     signing out, which is the button that IS on it.
+
+     No explanatory paragraph, per the rules at the top of CLAUDE.md:
+     the title asks the question and the field takes the answer. -->
+<div class="modal-overlay modal-locked" id="ageSheet">
+  <div class="modal">
+    <div class="sheet-bar sheet-bar-title">
+      <div class="sheet-title">Your date of birth</div>
+    </div>
+    <div class="sheet-body">
+      <div class="fg">
+        <label for="ageDob">Date of birth</label>
+        <input id="ageDob" type="date" autocomplete="bday" onchange="updateAgeGateBtn()" oninput="updateAgeGateBtn()" />
+      </div>
+      <div class="auth-error" id="ageError"></div>
+      <div class="sheet-actions">
+        <button class="btn btn-filled btn-block" id="ageSaveBtn" onclick="saveAgeGate()">Continue</button>
+        <button class="btn btn-block" onclick="confirmSignOut()">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reporting content, and the list of people you have blocked.
      Both exist for App Store review as much as for use — see the header
      of supabase/moderation.sql. The report sheet's body is static
@@ -1584,6 +1740,9 @@
 <script src="js/messages.js"></script>
 <script src="js/notes.js"></script>
 <script src="js/me.js"></script>
+<!-- Data portability. After me.js only because the Settings row lives
+     there; it declares no globals anything else reads. -->
+<script src="js/export.js"></script>
 <script src="js/map.js"></script>
 <!-- PWA: service worker, install prompts, offline state -->
 <script src="js/pwa.js"></script>

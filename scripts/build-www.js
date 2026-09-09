@@ -38,6 +38,18 @@ const INCLUDE=[
   'css',
   'js',
   'icons',
+  /* ⚠️ THE TYPE IS BUNDLED NOW. Both families used to come from
+     fonts.googleapis.com at runtime and are served from the app's own
+     origin since that <link> was removed (see the top of css/fonts.css
+     for why). Leaving this out ships a native app with no display
+     type at all — it falls back to the system serif, which does not
+     look like a missing file, it looks like the design. */
+  'fonts',
+  /* supabase-js, vendored. Without this the native app has no Supabase
+     client and every screen is empty — and because the old CDN tag
+     worked in a browser, that failure only ever appeared on device.
+     See vendor/README.md. */
+  'vendor',
   /* The two legal documents are linked from the You tab and from the
      sign-up screen, so they have to be in the bundle — otherwise those
      rows open a blank page on device. */

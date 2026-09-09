@@ -13,6 +13,57 @@
    one signs everyone out or orphans their cached data. */
 const APP_NAME='Someday We’ll Die';
 
+/* ---- THE AGE FLOOR ----
+
+   ⚠️ SIXTEEN, NOT THIRTEEN, AND THAT IS A DELIBERATE PRODUCT CHOICE
+   rather than a legal minimum. Read this before lowering it.
+
+   Thirteen is the US number: COPPA governs under-13s, so 13+ is the
+   floor almost every American app picks. It is the wrong number for a
+   service that anybody outside the US can reach, for two reasons:
+
+     1. GDPR Article 8 sets the age of digital consent at SIXTEEN,
+        and lets a member state lower it to as far as 13. So a 13+
+        rule is simply non-compliant in the member states that never
+        lowered it, and "13 in the US, 16 in Germany, 15 in France…"
+        is a per-country rule this app has no way to apply — it does
+        not know, and must not try to guess, where anybody is.
+
+     2. The UK Online Safety Act asks a much harder set of questions
+        of a user-to-user service that is LIKELY TO BE ACCESSED BY
+        CHILDREN, and a service that does not admit under-16s at all
+        answers most of them by construction.
+
+   Sixteen is therefore the one number that is correct everywhere with
+   no geolocation, and the market it gives up — 13, 14 and 15 year
+   olds keeping a bucket list — is close to nothing.
+
+   Lowering it to 13 is one edit here and needs no migration. Do it
+   only alongside a decision about which jurisdictions the app is
+   offered in, and change the number in legal/terms.html §1 and
+   legal/privacy.html §9 in the same commit — they are written from
+   this constant and will otherwise be lying, which is the exact
+   failure this whole mechanism was built to fix. */
+const MIN_AGE=16;
+
+/* ---- THE TERMS, AS A VERSION ----
+
+   `Users.terms_accepted_at` recorded WHEN somebody agreed and never
+   WHAT they agreed to — so the one question a dispute turns on had no
+   answer in the database. This is the string stored beside the
+   timestamp.
+
+   ⚠️ BUMP IT WHENEVER legal/terms.html CHANGES MATERIALLY, and change
+   the "Last updated" line in that file to match. Date-shaped on
+   purpose: a version nobody can map back to a document is the same
+   problem one step along. */
+const TERMS_VERSION='2026-09-09';
+
+/* Where a legal request actually goes. One constant rather than the
+   address written out in four templates, because the day it changes is
+   the day three of the four get missed. */
+const LEGAL_CONTACT='landon.talus@gmail.com';
+
 /* ---- The app's public web address ----
 
    Two jobs, and the first one is a bug fix rather than a feature.
@@ -191,6 +242,37 @@ const VAPID_PUBLIC_KEY='BGkQr3oXiXD5Cs1iyVT6YI5lagtApiNOkFXOk6KPXVnZrnOgWMt-ikNC
    ============================================================== */
 
 /* Default cover images */
+/* ---- The default collection covers ----
+
+   ⚠️ TEN HOTLINKED UNSPLASH PHOTOGRAPHS, AND THAT IS AN OPEN LICENSING
+   QUESTION rather than a settled one. Worth resolving before this is a
+   commercial app in a store.
+
+   The Unsplash Licence itself is generous — free use, commercial
+   included, attribution appreciated rather than required — so the
+   PHOTOS are almost certainly fine. The unresolved part is the
+   HOTLINKING: pulling files straight off images.unsplash.com rather
+   than through their API is governed by the API Terms and Guidelines,
+   which ask for the API to be used and for a download to be triggered
+   per use, and Unsplash has been Getty-owned since 2021 with terms that
+   have moved more than once since these URLs were pasted in.
+
+   It also has the same privacy shape as the Google Fonts problem that
+   css/fonts.css was written to fix: every cover drawn is a request to a
+   third party the user never chose, carrying their IP address.
+
+   THE CHEAP FIX IS TO STOP HOTLINKING. Ten images, downloaded once into
+   an assets directory, added to SHELL_ASSETS in sw.js and to INCLUDE in
+   scripts/build-www.js — the same shape the fonts took. That removes
+   the licence question, the privacy question and the offline gap in one
+   change, and it is the reason this note is here rather than in a
+   backlog file nobody opens. Commissioned or public-domain art would be
+   better still.
+
+   ⚠️ NOTE WHAT DOES *NOT* GO AWAY: a user's OWN uploaded cover, and
+   every completion photo, are user content and are handled by the
+   Terms (section 4: you must have the right to upload it) and by the
+   report/takedown path. This block is only about the ten defaults. */
 const COVERS=[
   'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1600&q=90',
   'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1600&q=90',

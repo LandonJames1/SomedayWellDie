@@ -197,11 +197,20 @@ function dismissOverlays(){
      the Back handler in router.js. */
   routeSheetClear();
   clearSheetReturns();
-  document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
+  /* Everything except a locked sheet — the age screen has to survive a
+     tab tap and a Back press like it survives the scrim. See
+     modalLocked() in modals.js. */
+  document.querySelectorAll('.modal-overlay.open').forEach(m=>{
+    if(!modalLocked(m)) m.classList.remove('open');
+  });
   const as=$('actionSheet'),lb=$('lightbox');
   if(as&&as.classList.contains('open')) closeActionSheet();
   if(lb&&lb.classList.contains('open')) closeLightbox();
-  setBodyScrollLock(false);
+  /* ⚠️ NOT UNCONDITIONALLY. A locked sheet is still on screen, and
+     giving the body its scrolling back underneath one is the whole
+     stranded-overlay problem this function exists to prevent, arrived
+     at from the other side. */
+  if(!document.querySelector('.modal-overlay.open')) setBodyScrollLock(false);
 }
 
 /* ==============================================================

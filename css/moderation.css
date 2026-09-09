@@ -51,6 +51,18 @@
   text-align:left;
   cursor:pointer;
 }
+/* The one reason that is a legal obligation rather than a preference.
+   It is marked but NOT made loud: this file is deliberately quiet
+   because the person reading it is already upset, and a red panel over
+   the first row of the list reads as the app having taken a side before
+   it knows anything. A weight and a hairline is enough to say "this one
+   is not like the others" — the queue is where it actually gets
+   treated differently. */
+.report-reason.urgent{ font-weight:600; }
+.report-reason.urgent .report-radio{
+  box-shadow:inset 0 0 0 1.5px var(--pri-high);
+}
+
 .report-radio{
   flex:0 0 auto;
   width:20px;
@@ -116,24 +128,40 @@
 }
 
 /* ---- The sign-up agreement ----
-   Not a checkbox. Apple accepts an "by continuing you agree" line so
+   Not a checkbox. Apple accepts a "by continuing you agree" line so
    long as the terms are reachable before the account is made, and a
    checkbox is one more thing standing between somebody and the app
    they have decided to try. The links are the part that matters and
-   they are real 44px targets. */
+   they are real targets.
+
+   ⚠️ IT SITS ABOVE THE BUTTON, not at the foot of the form — see the
+   comment on #authAgree in index.html for why that placement is the
+   thing that makes any of this enforceable. */
 .auth-agree{
-  margin:14px 0 0;
+  margin:16px 4px 14px;
   font-size:13px;
-  line-height:1.5;
+  line-height:1.7;
   text-align:center;
   color:var(--text-3);
 }
+/* ⚠️ UNDERLINED, AND NOT ONLY TINTED. Two reasons and they happen to
+   agree. Legally, the notice has to be CONSPICUOUS — a link a
+   reasonable person would not recognise as a link is the defect courts
+   keep striking these clauses over, and terracotta on cream is a
+   14-degree hue shift that a colour-blind reader does not see at all.
+   Technically, that is WCAG 1.4.1: colour may not be the only thing
+   carrying meaning. Do not take the underline off. */
 .auth-agree a{
   color:var(--tint);
-  text-decoration:none;
-  /* The line is small; the target is not. */
+  text-decoration:underline;
+  text-underline-offset:2px;
+  text-decoration-thickness:1px;
+  /* The line is small; the target is not. The negative margin gives the
+     padding back to the line box, or a two-line notice would space out
+     to 44px per line and read as a gap rather than a sentence. */
   display:inline-block;
-  padding:4px 2px;
+  padding:12px 0;
+  margin:-12px 0;
 }
 .auth-agree a:active{ opacity:.6; }
 

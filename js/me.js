@@ -247,9 +247,18 @@ async function loadUserProfile(){
   if(data){
     userProfile=data;
     if(curPage==='me') renderMeIdentity();
+    /* Un-awaited, like everything else hanging off this function: it is
+       a second small round trip and nothing is waiting on it. */
+    loadAgeGate();
     return;
   }
   await createUserProfile();
+  /* After the row exists, or there is nothing to read the date off and
+     nothing to write one to. A brand-new sign-up already carries its
+     answer through user_metadata, so this finds it and asks nobody;
+     a Sign in with Apple account does not, and this is where it is
+     caught. */
+  loadAgeGate();
 }
 
 /* Fall back to the email's local part for anything created before the
@@ -262,7 +271,18 @@ function profileSeed(){
   const display=(meta.display_name||meta.full_name||meta.name||local||'').trim();
   let username=(meta.username||local||'').toLowerCase().replace(/[^a-z0-9_.]/g,'');
   if(username.length<3) username=(username+'user').slice(0,12);
-  return{display:display||username,username:username.slice(0,30)};
+  /* The date of birth and the terms version ride on user_metadata from
+     signUp() for the same reason the name does — there is no session at
+     that moment to write a row with. Both are absent on a Sign in with
+     Apple account, which never touches that form; openAgeGate() below
+     is what asks those, and recordTermsAcceptance() writes the version
+     it was shown. */
+  return{
+    display:display||username,
+    username:username.slice(0,30),
+    dob:(meta.date_of_birth||'')||null,
+    termsVersion:(meta.terms_version||'')||null,
+  };
 }
 
 async function createUserProfile(){
@@ -275,7 +295,30 @@ async function createUserProfile(){
   for(let attempt=0;attempt<4;attempt++){
     const username=attempt?`${seed.username.slice(0,26)}${Math.floor(Math.random()*9000+1000)}`:seed.username;
     const row={id:currentUser.id,display_name:seed.display,username};
-    const{error}=await sb.from('Users').insert(row);
+    /* Only sent when there is something to send. A project that has not
+       run supabase/age-and-legal.sql has neither column, and PostgREST
+       fails the WHOLE insert on an unknown one — which would leave the
+       account with no profile at all, the exact failure this function
+       was written to repair. So the columns are attempted and a
+       rejection retries without them, one rung down the same ladder
+       loadUserProfile() climbs for avatar_url. */
+    if(seed.dob) row.date_of_birth=seed.dob;
+    if(seed.termsVersion) row.terms_version=seed.termsVersion;
+    let{error}=await sb.from('Users').insert(row);
+    /* ⚠️ AN UNKNOWN COLUMN IS REPORTED TWO DIFFERENT WAYS. PostgREST
+       answers PGRST204 when its own schema cache has never heard of the
+       column; Postgres answers 42703 (undefined_column) when it has.
+       Which one you get depends on how stale the cache is, so checking
+       for only the first works on a fresh project and fails on a warm
+       one — for a project that has not run age-and-legal.sql that would
+       mean no profile row at all, which is the exact failure this
+       function exists to repair. */
+    if(error&&(row.date_of_birth||row.terms_version)&&
+       (error.code==='PGRST204'||error.code==='42703')){
+      console.info('[me] no Users.date_of_birth/terms_version — run supabase/age-and-legal.sql.');
+      delete row.date_of_birth; delete row.terms_version;
+      ({error}=await sb.from('Users').insert(row));
+    }
     if(!error){
       userProfile={display_name:row.display_name,username:row.username};
       if(curPage==='me') renderMeIdentity();
@@ -303,6 +346,142 @@ async function createUserProfile(){
       return;
     }
   }
+}
+
+/* ==============================================================
+   THE AGE SCREEN
+
+   legal/terms.html has always said "you must be at least N years old"
+   and nothing anywhere asked, which made the sentence evidence against
+   the app rather than for it. The sign-up form asks now — see the
+   neutral age screen in index.html — but a form-only gate leaves two
+   whole populations un-asked:
+
+     - EVERY ACCOUNT THAT ALREADY EXISTS. Their rows carry null, and
+       backfilling a date would fabricate an answer nobody gave (the
+       same reasoning that left terms_accepted_at null on accounts
+       predating moderation.sql).
+     - SIGN IN WITH APPLE, which creates an account from one button and
+       never renders the form at all. A gate a single tap walks around
+       is not a gate.
+
+   So the real gate is here: any signed-in account whose profile has no
+   date of birth is asked once, at launch, in a sheet that cannot be
+   dismissed. Answering it is the only way past, and the only other
+   button on it signs out.
+
+   ⚠️ IT NEVER GATES THE FIRST PAINT. It hangs off loadUserProfile(),
+   which showApp() deliberately does not await — so an account that has
+   already answered pays nothing at all, and one that has not sees the
+   sheet arrive a moment after its lists do. Holding the splash on a
+   round trip that is a no-op for almost everybody is exactly what the
+   comment block in showApp() forbids.
+   ============================================================== */
+
+/* null  = not read yet, or the column does not exist (see below)
+   ''    = read, and this account has never answered
+   'yyyy-mm-dd' = the answer */
+let myDOB=null;
+let _ageColumn=null;   /* null unknown, true present, false absent */
+
+function resetAgeGate(){ myDOB=null; _ageColumn=null; }
+
+/* Its own query rather than another rung on loadUserProfile()'s
+   select ladder, and that is the house pattern for an optional column
+   — the Home address columns are read exactly this way. Asking for a
+   column that does not exist fails the WHOLE row, so folding this into
+   the profile read would take the display name down with it on any
+   project that has not run the migration. */
+async function loadAgeGate(){
+  if(!currentUser)return;
+  try{
+    const{data,error}=await sb.from('Users')
+      .select('date_of_birth').eq('id',currentUser.id).maybeSingle();
+    if(error)throw error;
+    _ageColumn=true;
+    myDOB=(data&&data.date_of_birth)||'';
+  }catch(e){
+    /* ⚠️ NO COLUMN MEANS NOBODY IS ASKED. There is nowhere to put the
+       answer, so asking would take a date off somebody and throw it
+       away — worse than not asking, because it looks like it worked.
+       Said once, loudly enough to be findable, because unlike every
+       other optional migration in this app the absent state here is
+       not shippable. */
+    _ageColumn=false;
+    myDOB=null;
+    console.warn('[me] no Users.date_of_birth — the age screen is OFF. '+
+      'Run supabase/age-and-legal.sql. legal/terms.html claims an age '+
+      'limit that nothing is currently enforcing.');
+  }
+  maybeAskAge();
+}
+
+function maybeAskAge(){
+  if(!currentUser||_ageColumn!==true)return;
+  if(myDOB)return;                 /* answered, on some previous launch */
+  if($('ageSheet').classList.contains('open'))return;
+  openAgeGate();
+}
+
+function openAgeGate(){
+  $('ageDob').value='';
+  $('ageError').textContent='';
+  updateAgeGateBtn();
+  /* Anything already on screen goes first — this is not a sheet that
+     may sit on top of a half-finished activity. dismissOverlays()
+     leaves a locked sheet alone, so the order matters: clear, then
+     open. */
+  dismissOverlays();
+  openModal('ageSheet');
+}
+
+function updateAgeGateBtn(){
+  const btn=$('ageSaveBtn');
+  if(btn) btn.disabled=!$('ageDob').value;
+}
+
+async function saveAgeGate(){
+  const dob=$('ageDob').value;
+  const age=ageFromDOB(dob);
+  if(age===null){ $('ageError').textContent='That date of birth isn’t valid.'; return; }
+
+  if(age<MIN_AGE){
+    /* Nothing is written. Recording a date on an account that is about
+       to be signed out would be storing personal data about a child in
+       order to refuse them, which is the opposite of the point — and
+       the row is left exactly as it was, so if this was somebody else
+       holding the phone the real owner is asked again next launch.
+
+       The refusal does not name the number, for the same reason the
+       sign-up form's does not: told the threshold, the next answer
+       simply clears it. */
+    markAgeGateFail();
+    $('ageError').textContent='You can’t use this account.';
+    setTimeout(()=>{ handleSignOut(); },1200);
+    return;
+  }
+
+  const btn=$('ageSaveBtn');
+  btn.disabled=true;
+  const{error}=await sb.from('Users')
+    .update({date_of_birth:dob,age_gate_at:new Date().toISOString()})
+    .eq('id',currentUser.id);
+  if(error){
+    console.warn('saveAgeGate:',error);
+    $('ageError').textContent='Couldn’t save that. Check your connection.';
+    btn.disabled=false;
+    return;
+  }
+  myDOB=dob;
+  /* Unlock, then close. The class is what all four dismissal routes
+     ask about, so removing it is the whole of "this sheet is finished"
+     — nothing else has to remember. */
+  $('ageSheet').classList.remove('modal-locked');
+  closeModal('ageSheet');
+  /* An account that predates the terms as well as the age question has
+     both recorded now rather than only one — this is the one moment
+     somebody who signed up years ago is actually being asked. */
+  recordTermsAcceptance();
 }
 
 /* ==============================================================

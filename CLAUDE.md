@@ -169,7 +169,15 @@ legal/                privacy.html + terms.html, the two documents App Store Con
                       to the site should open the app. Served by the WEB HOST, deliberately not
                       bundled into www/. See **Universal Links** and .well-known/README.md.
 supabase/             Backend — schema.sql (reminders + reminder_deliveries), native-push.sql (an APNs
-                      device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), storage.sql (the media bucket), cron.sql, functions/_shared/apns.ts (APNs delivery, shared by the two push functions — no imports, the JWT is signed with Web Crypto), and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
+                      device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), age-and-legal.sql (`Users.date_of_birth`/`terms_version`/`age_gate_at` and the report-snapshot purge — **also not optional**: without the first column nothing enforces the age limit both legal documents claim, and the app says so once in the console; see **The age gate**), storage.sql (the media bucket), cron.sql, functions/_shared/apns.ts (APNs delivery, shared by the two push functions — no imports, the JWT is signed with Web Crypto), and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
+fonts/                The two web faces as woff2, plus OFL.txt. ⚠️ SELF-HOSTED FOR A LEGAL
+                      REASON — see css/fonts.css. Bundled by build-www.js and pre-cached
+                      by sw.js; left out of either, the native app ships with no type.
+vendor/               supabase-js, pinned and served from this origin rather than a CDN.
+                      Read vendor/README.md before "restoring" the jsDelivr tag: the old
+                      one was an unpinned major, it meant the NATIVE app fetched its own
+                      executable code over the network (Guideline 2.5.2, and it could not
+                      boot offline at all), and it handed every visitor's IP to a CDN.
 css/                  One stylesheet per concern (see CSS file map). Each dark palette lives in ONE
                       top-level `@media (prefers-color-scheme: dark)` block per file (base, theme, map);
                       js/theme.js switches appearance by rewriting those conditions — keep them top level.
@@ -182,8 +190,16 @@ tools/                difficulty-rate.py — asks Claude to rate every un-rated 
                       (see **The demo account**); rls-probe.py — signs in as those two and tries
                       to reach each other's rows, which is the ONLY test that catches the hole
                       supabase/rls-lockdown.sql was written for (see **Proving RLS actually holds**).
-                      All four read tools/backfill-config.txt, which is gitignored, and all four
-                      are dry-run by default.
+                      moderation-queue.py — the queue behind the 24-hour promise in the terms
+                      (see **Reporting and blocking**); until it existed the "process" was
+                      remembering to run a select by hand, and a promise with no process is
+                      worse than no promise. It shows and resolves reports and soft-deletes a
+                      message; it deliberately CANNOT ban an account — that stays in the
+                      dashboard, because a script that can ban accounts can ban them by
+                      accident at 2am. Exits non-zero when anything is past 24 hours or is a
+                      child-safety report, so cron can notice.
+                      All read tools/backfill-config.txt, which is gitignored, and all are
+                      dry-run by default.
 ios/App/SomedayWidget/  The home screen widget (WidgetKit + SwiftUI). Owns no data: it reads the
                       App Group that js/widget.js writes through WidgetBridge.swift.
 ios/App/ShareExtension/ "Share to Someday We'll Die" — stashes what was shared and hands off to
@@ -2628,6 +2644,80 @@ are left alone. The one correction is `syncComposerToKeyboard()`, which
 drops the tab-bar clearance once it has been lifted, since the bar is
 no longer underneath it.
 
+#### The age gate
+
+`supabase/age-and-legal.sql`, `MIN_AGE` in `config.js`, the neutral
+screen in the sign-up form, and the locked sheet in `me.js`.
+
+**`legal/terms.html` has always said "you must be at least N years old"
+and nothing anywhere asked.** That is the worst shape a legal document
+can be in — a claim the product does not support is evidence against
+the operator rather than for them — and it is a COPPA exposure (strict
+liability on actual knowledge) and a GDPR Article 8 one.
+
+**⚠️ THE FLOOR IS SIXTEEN, NOT THIRTEEN, AND THAT IS A PRODUCT
+DECISION.** Thirteen is the US number. Article 8 sets the age of
+digital consent at 16 unless a member state lowered it, so 13+ is
+simply non-compliant in the states that did not — and "13 in the US, 16
+in Germany, 15 in France" is a per-country rule this app cannot apply,
+because it does not know and must not guess where anybody is. Sixteen
+is the one number correct everywhere with no geolocation, and it also
+answers most of the UK Online Safety Act's children's-access questions
+by construction. Lowering it is one edit in `config.js` — **and the
+number in `legal/terms.html` §1 and `legal/privacy.html` §7 in the same
+commit**, or the documents go back to lying.
+
+**It is a neutral screen: a DATE, not a yes/no.** "Are you 16 or
+older?" tells the reader which answer opens the door, so the answer is
+worth nothing; this is the shape the FTC actually describes.
+`ageFromDOB()` in `utils.js` does the arithmetic — **from y/m/d parts,
+never `new Date(iso)`**, which parses as UTC and on exactly one day a
+year is the difference between admitting somebody and turning them
+away.
+
+**There are two entry points because a form-only gate is one button
+wide.** Sign in with Apple never renders the form, and every account
+that already existed carries null.
+
+- **The form** asks before `signUp()`, and the answer rides on
+  `options.data` like the name and username — there is no session at
+  that moment to write a row with.
+- **The sheet** (`openAgeGate()` in `me.js`) catches everyone else. It
+  hangs off `loadUserProfile()`, which `showApp()` deliberately does not
+  await, so **it never gates the first paint**.
+
+Things to keep:
+
+- **⚠️ IT IS THE ONE OVERLAY THAT CANNOT BE DISMISSED.** `modalLocked()`
+  in `modals.js` is the mechanism, and **four routes close an overlay
+  while only two go through `closeModal()`** — the swipe in
+  `gestures.js` and `dismissOverlays()` in `nav.js` both write
+  `classList.remove('open')` themselves. All four ask. A guard in
+  `closeModal()` alone leaves the sheet swipe-dismissable, which is the
+  gesture people actually reach for. `dismissOverlays()` also stops
+  releasing the body scroll lock unconditionally, or the page scrolls
+  underneath an open locked sheet.
+- **A refusal never names the number.** Told the threshold, the next
+  answer simply clears it — the same reason the screen is neutral in the
+  first place.
+- **The retry lock** (`bl_agefail`, 24h, `utils.js`) blocks Create
+  Account on this device after a failed answer, and **is deliberately
+  not cleared by `resetAccountState()`** — it is a statement about the
+  browser, not about an account, and clearing it would make signing out
+  the way around it. Signing *in* is never blocked.
+- **Nothing is written for an under-age answer.** Storing a child's date
+  of birth in order to refuse them is the opposite of the point, and
+  leaving the row untouched means the real owner is asked again if it
+  was somebody else holding the phone.
+- **No column means nobody is asked**, loudly, once, in the console.
+  There is nowhere to put the answer, so asking would take a date and
+  throw it away. Unlike every other optional migration here, that state
+  is **not shippable**.
+- `Users.terms_version` rides along: `terms_accepted_at` recorded *when*
+  somebody agreed and never *what to*, which is the one question a
+  dispute turns on. `TERMS_VERSION` in `config.js` — **bump it whenever
+  `legal/terms.html` changes materially.**
+
 #### Reporting and blocking
 
 `js/moderation.js` plus `supabase/moderation.sql`. **This exists for App
@@ -4165,6 +4255,7 @@ Loaded in this order; **order matters**.
 
 | File | Domain |
 | --- | --- |
+| `fonts.css` | **The two web faces, self-hosted.** ⚠️ It exists for a LEGAL reason, not a performance one: both used to come from `fonts.googleapis.com`, and pulling a font off Google's servers hands the visitor's IP to Google before anybody has agreed to anything — held actionable by the Landgericht München I in January 2022, and followed by a wave of demand letters that has not stopped. Self-hosting removes the exposure rather than mitigating it. Loads **first**, declares no colours and no layout. The files are in `fonts/` with `OFL.txt` beside them, which the licence requires. ⚠️ Newsreader is a VARIABLE font (one file per style, `font-weight: 400 700`) and IBM Plex Mono is not (one per weight) — that is why there are ten files and eighteen faces' worth of coverage. Only `latin` and `latin-ext`; the Cyrillic and Vietnamese subsets were never fetched by anybody reading this app in English. Read its header before changing the type. |
 | `base.css` | The design system: `color-scheme`, the three type tokens (`--serif`/`--sans`/`--mono`), the warm palette with a full `prefers-color-scheme: dark` variant, the `--shadow-*` depth scale, the priority scale (`--tint`/`--violet`/`--slate` and their `-soft` fills), layout metrics (`--gutter`, `--nav-h`, `--tab-h`), the iOS safe-area tokens (`--safe-*`, plus the `--gx-l`/`--gx-r` gutter+inset shorthands every screen uses for horizontal padding), the type scale (`.t-*`, including `.t-eyebrow` for the mono small-caps label), the reset, and the shared keyframes. Everything depends on it. |
 | `layout.css` | The app shell: the translucent `.navbar` and its `.condensed` state, `.large-title`, the `.tabbar`, and the `.page` show/hide system with its push/fade animations. |
 | `components.css` | The reusable iOS primitives every screen builds from: `.group`/`.row` inset grouped lists, `.seg` segmented controls, `.btn` styles, `.searchfield`, `.badge`/`.tag`, **`.list-chip`** (a collection's name on any row that could have come from any list — Home's Up Next, the Up Next screen, search results, the duplicate sheet; sized to match `.tag` so the capsules on one row line up), the `.pri-*` priority marks, `.media-tile`/`.media-play` (one tile for a photo or a video, used by three screens), `.empty`, `.progress`, `.spinner`. Look here before inventing a new component. |
@@ -4247,6 +4338,7 @@ Loaded in this order; **order matters**.
 | `applock.js` | **Face ID / passcode lock.** `APPLOCK_KEY` (`bl_applock`, per device, deliberately *not* cleared by `resetAccountState()`), `APPLOCK_GRACE_MS`, `probeAppLock` (from `showApp()`), `lockNow`/`tryUnlock`/`finishUnlock`, `appLockOnHide`/`appLockOnShow` (from `auth.js`'s existing `visibilitychange` handler) and the setting `renderAppLockRow`/`openAppLockMenu`/`setAppLock`. ⚠️ **A door, not encryption** — nothing is re-encrypted; it is for the person handing their phone across a table. ⚠️ **The cover goes up on the way OUT**: iOS takes the multitasking snapshot as the app resigns active, so a lock applied on resume has already been photographed. Turning it on prompts first, or somebody whose Face ID is broken discovers it while locked out. |
 | `nativemap.js` | **The Map tab, natively.** `nativeMapPlugin`/`nativeMapAvailable`, `nativeMapPoints`, `openNativeMap`, `nativeMapReturnTab`. ⚠️ **One branch, at the top of `renderGlobalMap()`**, returning before anything else runs — so MapLibre is never fetched (~900KB off a cold launch) and a browser falls straight through to the globe it always drew. ⚠️ **The collection map stays on MapLibre**: it is embedded in a scrolling screen rather than being one, and replacing it would put a native view inside the web view's layout — the thing the modal design exists to avoid. Points come from the same cache Home reads, filtered by the same `globalMapFilter`. |
 | `map.js` | All MapLibre GL. **`ensureMapLibre()`** — the library is loaded on demand here, not from `<head>`; at ~900KB it was the biggest single cost of a cold launch, blocking the parser on the way to a Home screen with no map on it. Both entry points await it and fall back to the "map unavailable" state if it cannot be fetched. Then `mapStyle()` (raster CARTO basemap + globe projection + sky), `webglOK()`, `actsToGeoJSON()`, and `attachActivityLayer()` — which adds the clustered GeoJSON source and the two symbol layers, and owns the click handlers. Then the marker icons (`ensureDotIcon`, `ensurePhotoIcon`, `ensureClusterIcon`, `stampPointIcons`). Then **one point, several activities**: `SAME_PLACE_DEG`/`CLUSTER_STACKED`/`samePlaceCluster` (is this bubble one place or a neighbourhood?), `indexActs`/`placeActs` (the id → activity index kept beside the layer data), `openClusterPlace`, `openPlaceSheet`/`placeTitle`/`sortPlaceActs`/`placeRowHTML`, and the two row actions `placeOpenActivity`/`placeToggleActivity` — see **Several activities at one point**. Then the two instances: the Map tab (`renderGlobalMap`, `fitGlobal`, `zoomGlobe`, `globeFillZoom`, `setGlobalMapFilter`) and the per-collection map (`renderMap`, `updateMapMarkers`). Plus `mapLoaded(map)` and `hasGeo`. Teardown is explicit — `destroyGlobalMap()`/`destroyDetailMap()` — because each map holds a WebGL context, but **only the detail map is torn down on navigation**. See **The immersive map** above for the traps. |
+| `export.js` | **Export My Data** — the right of data portability, answered in the app rather than by an email promise with a 30-day statutory clock behind it. `EXPORT_FORMAT`, `EXPORT_TABLES` (every table holding one person's rows, with the **columns written out rather than `*`** — `*` would export whatever columns exist on the day, including ones added later that nobody decided to hand out), `buildExport`, `exportFilename`, `exportMyData`, `deliverExport`, `showExportFallback`, `copyExportText`. ⚠️ It reads RAW rows and deliberately does **not** go through `api.js`: an export has to be a copy of the data, not a picture of the UI's model. RLS scopes it, so a shared list you are a member of is included — the file says who owns each collection. ⚠️ **Three delivery paths, tried in order** — `navigator.share()` with a File (the only one that works inside WKWebView), a blob download (the web path), and the text on screen with Copy (a real floor, needing nothing from the platform). No new Capacitor plugin. |
 | `pwa.js` | Service-worker registration and the install/offline UI: `isStandalone()`/`isIOS()` (which stamp `.standalone`/`.ios` on `<html>`), the `beforeinstallprompt` capture behind `pwaInstall()`, the iOS Add-to-Home-Screen sheet, `pwaShowInstallHelp()` (the Me tab row), and `pwaUpdateOnlineState()`. Dismissals persist in `localStorage` under `bl_*` keys. **It also calls `reg.update()` on foreground and on reconnect** — an installed PWA is rarely killed, and registration is the only moment the browser looks for a new `sw.js`, so without it a shipped fix can sit undelivered on the home-screen copy for days and look like it was never made. **`pwaHadController` gates the `controllerchange` reload** so it fires on an update and not on a first install — see **Shared lists**, where getting that wrong silently destroyed every invite link. |
 | `main.js` | Boot: `paintStaticIcons()` fills the empty icon placeholders left in `index.html` from the sprite map, then the query-string readers run in a **fixed order** — `readEmailConfirmation()`, `readPushLanding()`, `readPendingJoin()` — all **before** the session restore, because an invite can be opened or an address confirmed while signed out. The first two strip only their own keys; the last blanks the search string wholesale, which is why it goes last. Then `consumeEmailConfirmation()` is tried ahead of `restoreSession()`, and `showApp()`/`showAuth()` follows — or `showPasswordReset()`, when the link that just signed someone in was a recovery one. **Loads last.** See **Staying signed in** (why `restoreSession()` is more than one `getSession()` call) and **Coming back through the confirmation email** (why the reader order is not arbitrary). |
 
@@ -5462,12 +5554,26 @@ select
      where table_name='user_blocks') as has_blocks,
   (select count(*) from information_schema.columns
      where table_name='push_subscriptions' and column_name='platform') as has_native_push,
+  (select count(*) from information_schema.columns
+     where table_name='Users' and column_name='date_of_birth') as has_age_gate,
+  (select count(*) from information_schema.columns
+     where table_name='Users' and column_name='terms_version') as has_terms_version,
+  (select count(*) from "Users" where date_of_birth is null) as never_asked_age,
   (select count(*) from "Activities"
      where target_date in ('This Month','This Year','Next Year','In 2-3 Years')) as needs_rollover;
 ```
 
 `needs_single_list` and `needs_rollover` should be **0**; everything else
 should be **1**.
+
+**`has_age_gate` is the one that is not optional if this is going in a
+store at all.** Without it nothing enforces the age limit that
+`legal/terms.html` §1 and `legal/privacy.html` §7 both state, which is
+worse than having no limit written down — and, like every other missing
+migration here, it is invisible from inside the app apart from one
+console warning. `never_asked_age` counts the accounts that will see the
+locked age sheet on their next launch; it falls on its own as people
+come back.
 
 **`has_native_push` is the one that is not optional if the iOS app is
 being shipped.** Without it the native app cannot store an APNs token
@@ -5508,6 +5614,64 @@ policies at all — reachable only by the service role, which is the
 design.*
 
 ## Known issues / cleanup backlog
+
+### ⚠️ Legal work that is NOT code, and that nothing here can finish
+
+Every item below is blocked on a person, a filing or a signature. They
+are listed first because each one is invisible from inside the app —
+there is no console warning and no failing test for "no LLC" — and
+because several of them gate shipping rather than merely improving it.
+
+- **The operator is a NATURAL PERSON.** `legal/terms.html` makes the
+  agreement with `[YOUR LEGAL ENTITY]` and there is not one. Forming an
+  LLC does not prevent lawsuits; it decides whose house is in them.
+  Pair it with tech E&O / cyber liability cover. **Highest ratio of
+  protection to effort on this whole list**, and it also supplies the
+  business address the two documents need.
+- **⚠️ SECTION 16 OF THE TERMS HAS NOT BEEN REVIEWED BY A LAWYER.** It
+  is a conventional consumer arbitration clause with a class-action
+  waiver, a 30-day opt-out, a small-claims carve-out and a
+  cost-shifting paragraph — written to be RED-LINED, not relied on. A
+  badly drafted clause is worse than none: struck as unconscionable,
+  you are in litigation anyway and have handed the other side a story
+  about overreach. It is also the single biggest lever for actually
+  avoiding suits, so it is worth an hour of somebody's time.
+- **The DMCA designated agent is not registered.** §512 safe harbour —
+  the thing between the operator and direct liability for every
+  infringing photo a user uploads — is conditional on a filing with the
+  US Copyright Office (a few dollars, renewed every three years) AND on
+  the agent's details appearing publicly, which is what
+  `[YOUR DMCA AGENT …]` in `terms.html` §8 is for. The in-app path
+  exists now (a `copyright` report reason); the legal half does not.
+- **NCMEC registration is not done.** 18 U.S.C. §2258A requires a
+  provider to report apparent child sexual abuse material to the
+  CyberTipline, and registering as an Electronic Service Provider is
+  how you are able to. The app can now be told (`csam` leads
+  `REPORT_REASONS`, and `moderation-queue.py` sorts it to the front);
+  there is nowhere to pass it on to.
+- **No signed DPAs.** Supabase, Cloudflare and Anthropic each offer a
+  Data Processing Agreement and none is executed.
+  `legal/privacy.html` §11 states that transfers rely on the
+  providers' standard contractual clauses, which is only true once
+  they are signed.
+- **Nothing alerts on a new report**, so the 24-hour commitment in
+  `terms.html` §6 rests on somebody remembering to run
+  `tools/moderation-queue.py`. See the entry further down.
+- **Nothing tells an existing account that the terms changed.**
+  `recordTermsAcceptance()` writes only the FIRST acceptance, on
+  purpose — it must not silently restamp an old account as having
+  agreed to a document it has never seen. A re-consent screen is the
+  missing piece, and it becomes necessary the first time
+  `TERMS_VERSION` is bumped on a live app.
+- **The app is offered worldwide, which is a choice nobody made.** The
+  UK Online Safety Act and the EU DSA both attach to a user-to-user
+  service with UK/EU links regardless of size. The age gate at 16
+  answers a good deal of the OSA's children's-access question, and the
+  appeal path in `terms.html` §6 covers the DSA's statement-of-reasons
+  duty — but a risk assessment is a document somebody has to write.
+  Geo-restricting to the US at launch removes most of this; that is a
+  decision, not an oversight.
+
 
 - **⚠️ FOUR PLACEHOLDERS HAVE TO BE FILLED IN BEFORE THE NATIVE APP
   SHIPS**, and every one of them fails silently rather than loudly:
@@ -5580,12 +5744,16 @@ design.*
   in dark mode flashes **black** before the app's `#16140f`, and white
   before `#efece6` in light. Cheap to fix and the first thing anyone
   sees.
-- **The App target has no `PrivacyInfo.xcprivacy`.** Capacitor ships
-  privacy manifests for its own frameworks
-  (`node_modules/@capacitor/ios/…`), but the app target declares
-  nothing. Separately, the App Store Connect privacy questionnaire is
-  mandatory and non-trivial here: the app collects email, name, photos,
-  **precise location** and user content.
+- **~~The App target has no `PrivacyInfo.xcprivacy`.~~ DONE and
+  verified in the built binary.** `ios/App/App/PrivacyInfo.xcprivacy`
+  declares the four required-reason APIs and the eight collected data
+  types (precise location among them), and it is registered in the App
+  target's Copy Bundle Resources phase — being in the folder is not
+  what puts it in the app, and the first sign of getting that wrong is
+  `ITMS-91053` on upload. The check is one build; the command is in
+  that file's header. **Still outstanding: the App Store Connect
+  privacy questionnaire**, which is unanswered and has to agree with
+  that file and with `legal/privacy.html` §2.
 - **~~App Review needs a demo account.~~ SCRIPTED, still has to be
   run.** `tools/demo-account.py` creates it — see **The demo account**.
   Dry-run by default like every other tool here; nothing exists until
@@ -5846,29 +6014,40 @@ design.*
 - **~~`supabase/single-list.sql` has to be run by hand.~~ DONE** —
   `extra_collection_ids` is off the table (verified 31 Aug 2026), and
   the narrow `can_use_activity` is what the policies use.
-- **There is no moderation UI.** Reports land in `content_reports` and
-  are worked with a `select` in the SQL editor (the query is at the
-  bottom of `moderation.sql`). The 24-hour commitment in the terms is a
-  promise that somebody runs it daily; nothing enforces it, nothing
-  alerts on a new report, and there is no record in the app of a report
-  having been acted on. A single admin page reading that table is the
-  obvious fix and is the thing most likely to matter if the app gets
-  any real use.
+- **There is no moderation UI, but there is now a moderation TOOL.**
+  `tools/moderation-queue.py` lists open reports oldest-first with
+  child-safety ones ahead of them, shows one in full, records a
+  decision, and soft-deletes a message; it exits non-zero when anything
+  is past the 24 hours the terms promise, so cron can notice. What is
+  still missing is the thing that makes it a process rather than a
+  habit: **nothing alerts on a new report.** A Supabase Database
+  Webhook on `content_reports` insert, pointed at an email or a
+  push, is the remaining piece — and it is the single item on this
+  list most likely to matter if the app gets real use. Banning an
+  account is deliberately still the dashboard.
 - **A report is fire-and-forget from the reporter's side.** By design —
   see **A report goes one way** — but it does mean somebody who reports
   something gets no confirmation beyond a toast and can never check what
   came of it. The block offered immediately afterwards is what makes
   that tolerable.
-- **Blocking hides messages and nothing else.** A blocked person's
-  activities, notes and completion photos in a shared list are still
-  drawn, and their name is still on them. That is defensible — they are
-  the list's content, not a message aimed at you — but somebody who
-  blocks a person expects rather more silence than they get.
-- **`legal/privacy.html` and `legal/terms.html` carry placeholders.**
-  `[YOUR NAME OR COMPANY]`, `[YOUR ADDRESS]`, `[CONTACT EMAIL]` and
-  `[YOUR JURISDICTION]` have to be filled in before either is submitted
-  to App Store Connect, and the privacy policy URL there must be a live
-  public URL. Grep for `[` in that directory.
+- **Blocking now hides messages AND notes; activities and photos
+  remain.** The notes half was the important one — a shared plan is
+  argued about in the log as much as in the chat, so blocking used to
+  be a much smaller promise than the word implies. What is still drawn
+  is a blocked person's **activities and the completion photos on
+  them**, under their own name. That is defensible (they are the list's
+  content, not a message aimed at you) and it is still less silence
+  than somebody who blocks a person expects.
+- **`legal/privacy.html` and `legal/terms.html` carry placeholders**,
+  all of the form `[YOUR …]` — `grep -o "\[YOUR[^]]*\]" legal/*.html`
+  lists them. They cover the legal entity, a business address, a
+  contact email, the DMCA agent's three fields, the governing state and
+  county, the arbitration provider, and the fee threshold. All must be
+  real before either document is submitted to App Store Connect, and
+  the privacy policy URL there must be a live public URL.
+  ⚠️ **The business address must NOT be a home address** — it was one,
+  on a page reachable without an account and linked from the store
+  listing. See the comment at the top of `privacy.html`.
 - **The two legal pages are not in `SHELL_ASSETS`**, deliberately —
   they are separate documents rather than part of the app shell, so
   they are not available offline. Opening one in a tunnel fails.

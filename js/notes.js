@@ -76,7 +76,26 @@ async function fetchNotes(activityId){
     .eq('activity_id',activityId)
     .order('created_at',{ascending:true});
   if(error){ console.warn('fetchNotes:',error); return []; }
-  return data||[];
+
+  /* ⚠️ BLOCKING REACHES THE LOG TOO. It used to stop at messages, which
+     made it a much smaller promise than the word implies: somebody you
+     had blocked to stop hearing from was still writing, under their own
+     name, on the activities in a list you were both in — and notes are
+     where a shared plan is actually argued about, so it was often the
+     louder channel of the two.
+
+     Filtered HERE rather than in the painter, because every reader of
+     the log goes through this function and the count drawn in the
+     section header is `notes.length`. Filtering downstream would leave
+     a header reading "4 notes" over two entries, which reads as the app
+     having lost something.
+
+     Same rules as paintConversation(): client-side (so the author
+     cannot discover the block by watching their own rows vanish), and a
+     cold or failed block list filters nothing — drawing a note you
+     meant to hide is visible and recoverable, holding the log behind a
+     pending request looks like the notes are gone. */
+  return (data||[]).filter(n=>!isBlocked(n.author_id));
 }
 
 /* ==============================================================

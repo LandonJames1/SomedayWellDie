@@ -81,6 +81,10 @@ function paintStaticIcons(){
   set('mePrivacyChevron',icon('chevron-right'));
   set('meTermsIcon',icon('rows'));
   set('meTermsChevron',icon('chevron-right'));
+  /* 'folder' rather than 'share': the row builds a file, and only one
+     of its three delivery paths is the share sheet. See js/export.js. */
+  set('meExportIcon',icon('folder'));
+  set('meExportChevron',icon('chevron-right'));
 }
 
 /* ==============================================================

@@ -162,6 +162,84 @@ function bootDropLong(key){
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 function todayISO(){return new Date().toISOString().split('T')[0];}
 
+/* ==============================================================
+   AGE
+
+   The arithmetic behind the neutral age screen. Shared by the
+   sign-up form (js/auth.js) and by the one-time sheet that asks an
+   account which never was (js/me.js), so the two cannot come to
+   different conclusions about the same date.
+
+   ⚠️ BUILT FROM y/m/d PARTS, NEVER new Date(iso). The latter parses a
+   bare date as UTC, so a birthday of 2010-01-01 comes back as
+   31 December 2009 anywhere west of Greenwich — which on exactly one
+   day a year is the difference between admitting somebody and turning
+   them away. Same trap isoLocal() exists for, one field along.
+   ============================================================== */
+
+/* Whole years between a yyyy-mm-dd string and today, local. Null for
+   anything that is not a real date — never 0, which would read as a
+   newborn and is a value the caller must be able to tell apart from
+   "no answer". */
+function ageFromDOB(iso){
+  if(!iso||typeof iso!=='string')return null;
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if(!m)return null;
+  const y=+m[1],mo=+m[2],d=+m[3];
+  if(mo<1||mo>12||d<1||d>31)return null;
+  const born=new Date(y,mo-1,d);
+  /* Rejects 31 February, which the Date constructor silently rolls
+     into March rather than refusing. */
+  if(born.getFullYear()!==y||born.getMonth()!==mo-1||born.getDate()!==d)return null;
+  const now=new Date();
+  let age=now.getFullYear()-y;
+  /* Not had this year's birthday yet. */
+  const beforeBirthday=(now.getMonth()<mo-1)||(now.getMonth()===mo-1&&now.getDate()<d);
+  if(beforeBirthday)age--;
+  if(age<0||age>150)return null;
+  return age;
+}
+
+function meetsMinAge(iso){
+  const a=ageFromDOB(iso);
+  return a!==null&&a>=MIN_AGE;
+}
+
+/* ---- The retry lock ----
+
+   A neutral age screen is only neutral the first time. Told "you are
+   not old enough", anybody can put in a different year and press the
+   button again — and a screen that lets them is worth no more than the
+   yes/no question this one exists to replace. The FTC's guidance is to
+   prevent the immediate retry, and this is that: a failed answer shuts
+   Create Account for a day on this device.
+
+   It is not a security control and is not meant to be one. It is a
+   record of good faith, and it stops the accidental version of the
+   problem (a child who simply tries again) without pretending to stop
+   the determined one, which no client-side check ever can.
+
+   Per DEVICE, in localStorage beside the other bl_* keys, and
+   deliberately NOT cleared by resetAccountState() — it is a statement
+   about this browser, not about an account. */
+const AGE_FAIL_KEY='bl_agefail';
+const AGE_FAIL_MS=24*60*60*1000;
+
+function ageGateBlockedUntil(){
+  try{
+    const raw=localStorage.getItem(AGE_FAIL_KEY);
+    if(!raw)return 0;
+    const t=+raw;
+    if(!t||Number.isNaN(t))return 0;
+    if(Date.now()-t>AGE_FAIL_MS){localStorage.removeItem(AGE_FAIL_KEY);return 0;}
+    return t+AGE_FAIL_MS;
+  }catch(e){ return 0; }   /* Private mode. Fail open — see above. */
+}
+function ageGateBlocked(){ return ageGateBlockedUntil()>0; }
+function markAgeGateFail(){
+  try{ localStorage.setItem(AGE_FAIL_KEY,String(Date.now())); }catch(e){}
+}
+
 function fmtDate(s,withYear){
   const d=new Date(s+'T00:00:00');
   const now=new Date();
