@@ -168,6 +168,217 @@ function dataURLToBlob(url){
   return new Blob([buf],{type:mime});
 }
 
+/* ==============================================================
+   SAVING A PHOTO OR VIDEO BACK TO THE PHONE
+
+   The app has always been a one-way street for media: you attach a
+   photo to a completion and from then on it lives in a bucket, viewable
+   and not retrievable. That is the wrong shape for a record of your own
+   life — the phone it was taken on gets replaced, and the copy in the
+   camera roll is the one that goes with it.
+
+   ⚠️ THE BYTES ARE FETCHED, NOT LINKED, AND THAT IS THE WHOLE TRICK.
+   A cross-origin `<a download>` is ignored (which is what
+   mediaDownloadUrl() exists to work around) and inside the Capacitor
+   WKWebView no script-driven download arrives at all. So the object is
+   read into a Blob here and handed to deliverFile() in utils.js, which
+   puts it in the iOS share sheet — where "Save Image" and "Save Video"
+   are, so the camera roll is reached by the only route WKWebView has.
+
+   ⚠️ AND THE READ GOES THROUGH THE WORKER, not straight at the bucket.
+   /download is the one endpoint that definitely answers with CORS
+   headers, and reading a cross-origin response without them fails in a
+   way that looks exactly like the file being missing. Three sources,
+   and all three are live in this app today:
+
+     data:   a legacy inline photo, or one attached offline. No request
+             at all, so this is the one path that works in a tunnel.
+     R2      through the Worker, per above.
+     other   Supabase Storage, from before the R2 move. Fetched where
+             it stands; mediaDownloadUrl() leaves a URL it does not
+             recognise alone.
+   ============================================================== */
+
+/* Only what the app produces, matching ALLOWED_TYPES in the Worker.
+   The blob's own type is preferred over the URL's extension because a
+   legacy inline photo has no extension to read. */
+const MEDIA_SAVE_EXT={
+  'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic',
+  'video/mp4':'mp4','video/quicktime':'mov',
+};
+
+async function mediaBlobFor(m){
+  const url=(m&&m.url)||'';
+  if(!url)throw new Error('nothing to save');
+  if(url.indexOf('data:')===0)return dataURLToBlob(url);
+  /* credentials omitted deliberately: these objects are public, and a
+     request carrying cookies would need the far end to name this origin
+     rather than answering '*'. */
+  const res=await fetch(mediaDownloadUrl(url),{mode:'cors',credentials:'omit'});
+  if(!res.ok)throw new Error('fetch failed ('+res.status+')');
+  return res.blob();
+}
+
+/* Named after the activity, so a camera roll full of these is still
+   readable a year later. The index is only appended when there is more
+   than one, or a single photo comes out called "kayaking-1". */
+function mediaSaveName(m,blob,base,idx,total){
+  const byType=MEDIA_SAVE_EXT[(blob&&blob.type)||''];
+  const byUrl=(String((m&&m.url)||'').split('?')[0].match(/\.([a-z0-9]{3,4})$/i)||[])[1];
+  const ext=byType||(byUrl&&byUrl.toLowerCase())||((m&&m.type==='video')?'mp4':'jpg');
+  return fileSlug(base,'someday')+((total||1)>1?'-'+((idx||0)+1):'')+'.'+ext;
+}
+
+/* One at a time. A video is megabytes and the button sits under a
+   thumb; without this a second tap starts a second fetch of the same
+   object and two share sheets race to present. */
+let _savingMedia=false;
+function mediaSaving(){ return _savingMedia; }
+
+async function saveMedia(m,base,idx,total,onState){
+  if(_savingMedia)return;
+  if(!m||!m.url){showToast('Nothing to save.');return;}
+  _savingMedia=true;
+  if(onState)onState(true);
+  try{
+    const blob=await mediaBlobFor(m);
+    const name=mediaSaveName(m,blob,base,idx,total);
+    const how=await deliverFile(blob,name,base||APP_NAME);
+    /* ⚠️ NO TOAST AFTER THE SHARE SHEET. It has just been on screen and
+       has given its own confirmation, and we cannot tell a save from a
+       dismissal anyway — deliverFile() reports both as 'share', because
+       neither is a failure. Saying "Saved" over a sheet the user
+       cancelled would be the app stating something that did not
+       happen. */
+    if(how==='download')showToast('Saved.');
+    else if(!how)saveMediaFallback(m,name);
+  }catch(e){
+    /* ⚠️ THE FETCH IS THE FRAGILE STEP, AND ITS FAILURE HAS A FLOOR TOO.
+       Reading a cross-origin object needs CORS headers on the far end,
+       and a host that does not send them fails here in a way that looks
+       identical to the file being gone. Handing the URL to the browser
+       needs no CORS at all — a navigation is not a read — so an online
+       failure is passed down rather than reported. Offline there is
+       nothing underneath and it says so instead. */
+    console.warn('saveMedia:',e);
+    const url=String((m&&m.url)||'');
+    if(navigator.onLine&&url&&url.indexOf('data:')!==0){
+      saveMediaFallback(m,mediaSaveName(m,null,base,idx,total));
+    }else{
+      showToast(navigator.onLine?'Couldn’t save that one.':'Offline — can’t fetch that photo.');
+    }
+  }finally{
+    _savingMedia=false;
+    if(onState)onState(false);
+  }
+}
+
+/* ==============================================================
+   EVERYTHING ON ONE ACTIVITY, IN ONE ACTION
+
+   The lightbox disc saves what is on screen, which is right for a
+   viewer and wrong for the thing people actually want off the app: a
+   trip with eleven photos on it, all of them, now. Eleven taps through
+   eleven share sheets is not a feature.
+
+   ⚠️ IT IS ONE SHARE SHEET, NOT A LOOP OF THEM. deliverFiles() takes
+   the whole set, so iOS offers "Save 11 Images" once. That is the only
+   reason this is not simply saveMedia() called in a for-loop, and it
+   is why the ladder in utils.js is plural at the bottom rather than
+   being wrapped in a loop at the top.
+
+   ⚠️ THE FETCHES ARE POOLED, NOT SERIALISED. Eleven photos one after
+   another is eleven round trips end to end, on a control somebody is
+   watching; all eleven at once is a burst that competes with itself
+   and, with video in the set, a lot of memory in flight. Three is the
+   usual answer to that and it is the answer here.
+
+   ⚠️ AND A FAILURE COSTS ONE ITEM, NOT THE SET. Anything that cannot
+   be fetched is counted and dropped, and whatever did arrive is still
+   delivered — the alternative is one unreachable photo standing
+   between somebody and the other ten. The count is reported, because
+   handing over ten when eleven were asked for and saying nothing is
+   the quiet kind of wrong this app tries not to ship.
+   ============================================================== */
+
+const MEDIA_SAVE_POOL=3;
+
+async function saveAllMedia(items,base,onProgress){
+  if(_savingMedia)return;
+  const list=(items||[]).filter(m=>m&&m.url);
+  if(!list.length){showToast('Nothing to save.');return;}
+  /* One item is the single path, and must stay the single path: it
+     keeps the floor saveMedia() has under it, which this cannot use
+     because there is no sensible way to open eleven URLs. */
+  if(list.length===1){
+    return saveMedia(list[0],base,0,1,busy=>{ if(onProgress)onProgress(busy?0:null,1); });
+  }
+
+  _savingMedia=true;
+  let done=0;
+  if(onProgress)onProgress(0,list.length);
+  try{
+    /* Indexed rather than pushed, so the files keep the order they are
+       shown in however the pool finishes — the names carry that order. */
+    const files=new Array(list.length);
+    let next=0;
+    const worker=async()=>{
+      for(;;){
+        const i=next++;
+        if(i>=list.length)return;
+        try{
+          const blob=await mediaBlobFor(list[i]);
+          files[i]=new File([blob],mediaSaveName(list[i],blob,base,i,list.length),
+            {type:blob.type||'application/octet-stream'});
+        }catch(e){
+          console.warn('saveAllMedia: item '+i+' failed:',e);
+        }
+        done++;
+        if(onProgress)onProgress(done,list.length);
+      }
+    };
+    const pool=[];
+    for(let k=0;k<Math.min(MEDIA_SAVE_POOL,list.length);k++) pool.push(worker());
+    await Promise.all(pool);
+
+    const got=files.filter(Boolean);
+    const missing=list.length-got.length;
+    if(!got.length){
+      showToast(navigator.onLine?'Couldn’t save those.':'Offline — can’t fetch those photos.');
+      return;
+    }
+    const how=await deliverFiles(got,base||APP_NAME);
+    /* No toast over the share sheet, for the reason saveMedia() gives —
+       except when something is missing, which the sheet cannot say. */
+    if(!how) showToast('Couldn’t save those.');
+    else if(missing) showToast(missing+' couldn’t be fetched.');
+    else if(how==='download') showToast('Saved '+got.length+'.');
+  }catch(e){
+    console.warn('saveAllMedia:',e);
+    showToast('Couldn’t save those.');
+  }finally{
+    _savingMedia=false;
+    if(onProgress)onProgress(null,list.length);
+  }
+}
+
+/* The floor, and it is a real one rather than a gesture: the Worker
+   already serves the object with Content-Disposition set, so handing
+   the browser that URL saves the file with nothing asked of the page.
+   Natively it leaves the app for Safari, which is a detour and is still
+   the file arriving. Reached only when both rungs of deliverFile() are
+   refused, which on a data: URL means there is nowhere left to go. */
+function saveMediaFallback(m,name){
+  const url=mediaDownloadUrl(m.url,name);
+  if(!url||url.indexOf('data:')===0){showToast('Couldn’t save that one.');return;}
+  try{
+    const w=window.open(url,'_blank');
+    if(!w)throw new Error('blocked');
+  }catch(e){
+    showToast('Couldn’t save that one.');
+  }
+}
+
 /* ---- Photos ---- */
 function compressFile(file,maxD,q){
   return new Promise((resolve,reject)=>{

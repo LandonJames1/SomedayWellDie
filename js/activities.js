@@ -1837,6 +1837,65 @@ async function delActivity(id){
    "+N" tile — two rows of three. */
 const AD_GRID_MAX=6;
 
+/* What the Save button under the media acts on, held here rather than
+   interpolated into its onclick: the media list is already written into
+   the lightbox's handler as JSON, and putting the same blob in a second
+   attribute would double the largest string on the sheet to save
+   declaring two variables. */
+let adMediaSet=[],adMediaLabel='';
+
+/* SAVE, ON THE PHOTOS THEMSELVES — a rounded square in the bottom-right
+   corner of the stage, the way a camera app puts its controls on the
+   frame rather than under it. It was a labelled mono row beneath the
+   media; the glyph alone in the corner it acts on says the same thing
+   in a quarter of the space, and the stage is the only place on the
+   sheet where "these photos" is unambiguous.
+
+   ⚠️ IT IS SOLID --tint, NOT THE GLASS DISC THE LIGHTBOX AND THE MAP
+   USE. Those float over a known ground; this one floats over whatever
+   photograph happens to be underneath, and a translucent control
+   disappears into a light one. The one colour that cannot be mistaken
+   for part of a photo is the app's own, and it is the same fill the
+   Edit button in the dock below it already uses.
+
+   ⚠️ AND ITS onclick MUST STOP PROPAGATION. The whole stage is a button
+   that opens the lightbox, so without it every save opened the viewer
+   on top of the share sheet it had just raised. */
+function adStageSaveHTML(n){
+  const label=n>1?`Save all ${n} items`:'Save';
+  return `<button class="ad-stage-save" id="adSaveAllBtn" aria-label="${esc(label)}"
+    onclick="event.stopPropagation();saveActivityMedia()">
+    <span class="ad-stage-save-ic">${icon('download')}</span>
+    <span class="ad-stage-save-n" id="adSaveAllLabel"></span>
+  </button>`;
+}
+
+/* The button carries its own progress — a state on the control, not a
+   message beside it. Nineteen photos is nineteen fetches and the button
+   is the only thing that can say so.
+
+   ⚠️ TWO CLASSES, NOT ONE, and the split is the reason it does not read
+   as broken on a single item: `is-busy` is the pulse and is always
+   right, `counting` swaps the glyph for a tally and is only honest when
+   there is a tally to show. One item would otherwise sit there saying
+   "1/1". */
+async function saveActivityMedia(){
+  const btn=$('adSaveAllBtn'),lab=$('adSaveAllLabel');
+  await saveAllMedia(adMediaSet,adMediaLabel,(done,total)=>{
+    if(!btn)return;
+    if(done===null){
+      btn.classList.remove('is-busy','counting');btn.disabled=false;
+      if(lab)lab.textContent='';
+      return;
+    }
+    btn.classList.add('is-busy');btn.disabled=true;
+    if(total>1){
+      btn.classList.add('counting');
+      if(lab)lab.textContent=`${done}/${total}`;
+    }
+  });
+}
+
 /* The completed sheet's photo stage: one container that fades between
    the media on its own. The interval stops itself once the stage has
    left the DOM, so nothing has to be torn down by hand. */
@@ -1988,6 +2047,12 @@ async function openActDetail(id){
   /* The lightbox walks the full media list, so a video opens in place
      rather than being skipped over. */
   const mediaArg=JSON.stringify(media).replace(/"/g,'&quot;');
+  /* What a saved file is named after. Through JSON.stringify for the
+     same reason the media is: it has to survive being written into an
+     HTML attribute that is then parsed as JavaScript, and a name with
+     an apostrophe in it is the common case, not the edge one. */
+  const nameArg=JSON.stringify(a.name||'').replace(/"/g,'&quot;');
+  adMediaSet=media;adMediaLabel=a.name||'';
 
   /* The name, then the badges, then the photos. The title leads because
      it is what the sheet is about; the state and the date read as the
@@ -2074,13 +2139,14 @@ async function openActDetail(id){
   if(a.completed&&media.length){
     /* One large stage that fades between the media on its own, and
        opens the lightbox when tapped. */
-    h+=`<div class="ad-stage" onclick="openLB(${mediaArg},adStageIndex())">
+    h+=`<div class="ad-stage" onclick="openLB(${mediaArg},adStageIndex(),${nameArg})">
       ${media.map((m,i)=>`<div class="ad-slide${i?'':' on'}">${mediaTileHTML(m)}</div>`).join('')}
       ${media.length>1?`<div class="ad-dots">${media.map((_,i)=>
         `<i class="${i?'':'on'}"></i>`).join('')}</div>`:''}
+      ${adStageSaveHTML(media.length)}
     </div>`;
   } else if(a.completed&&media.length===1){
-    h+=`<div class="ad-hero-wrap" onclick="openLB(${mediaArg},0)">
+    h+=`<div class="ad-hero-wrap" onclick="openLB(${mediaArg},0,${nameArg})">
       ${mediaTileHTML(media[0],'ad-hero')}</div>`;
   } else if(a.completed&&media.length>1){
     /* Past six the grid runs several rows deep and pushes the notes and
@@ -2091,9 +2157,9 @@ async function openActDetail(id){
     const over=media.length>AD_GRID_MAX;
     const shown=over?media.slice(0,AD_GRID_MAX-1):media;
     h+=`<div class="ad-photos">${shown.map((m,i)=>
-      `<div class="ad-photo-cell" onclick="openLB(${mediaArg},${i})">${mediaTileHTML(m)}</div>`).join('')}
+      `<div class="ad-photo-cell" onclick="openLB(${mediaArg},${i},${nameArg})">${mediaTileHTML(m)}</div>`).join('')}
       ${over?`<button class="ad-photo-cell ad-photo-more"
-        onclick="openLB(${mediaArg},${AD_GRID_MAX-1})"
+        onclick="openLB(${mediaArg},${AD_GRID_MAX-1},${nameArg})"
         aria-label="Show all ${media.length} items">
         ${icon('plus','ic-sm')}<span>${media.length-(AD_GRID_MAX-1)}</span>
       </button>`:''}</div>`;

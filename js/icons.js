@@ -76,6 +76,10 @@ const ICON_PATHS = {
   'map':      '<path d="M3.4 6.6 9 4.2v13.2l-5.6 2.4zM9 4.2l6 2.4v13.2L9 17.4zM15 6.6l5.6-2.4v13.2L15 19.8z"/>',
   'folder':   '<path d="M3.4 7.4a2.4 2.4 0 0 1 2.4-2.4h3a2.4 2.4 0 0 1 1.8.8l1.2 1.4h6.8a2.4 2.4 0 0 1 2.4 2.4v8.6a2.4 2.4 0 0 1-2.4 2.4H5.8a2.4 2.4 0 0 1-2.4-2.4z"/>',
   'share':    '<path d="M12 15.6V3.4M8 7.4 12 3.4l4 4"/><path d="M6.2 11.4H5a1.6 1.6 0 0 0-1.6 1.6v6.4A1.6 1.6 0 0 0 5 21h14a1.6 1.6 0 0 0 1.6-1.6V13a1.6 1.6 0 0 0-1.6-1.6h-1.2"/>',
+  /* Deliberately the share glyph with its arrow reversed -- the two are
+     the same act pointing opposite ways, and on iOS saving a photo is
+     reached THROUGH the share sheet, so they should look related. */
+  'download': '<path d="M12 3.4v12.2M8 11.6 12 15.6l4-4"/><path d="M6.2 11.4H5a1.6 1.6 0 0 0-1.6 1.6v6.4A1.6 1.6 0 0 0 5 21h14a1.6 1.6 0 0 0 1.6-1.6V13a1.6 1.6 0 0 0-1.6-1.6h-1.2"/>',
   'undo':     '<path d="M4 9.4h9.6a5.6 5.6 0 1 1 0 11.2H8"/><path d="M7.8 5 3.4 9.4l4.4 4.4"/>',
   'signout':  '<path d="M15 8V6a2.2 2.2 0 0 0-2.2-2.2H6.4A2.2 2.2 0 0 0 4.2 6v12a2.2 2.2 0 0 0 2.2 2.2h6.4A2.2 2.2 0 0 0 15 18v-2"/><path d="M9.6 12h11M17.2 8.4 20.8 12l-3.6 3.6"/>',
   /* A four-point star — used for empty states and "someday" moments. */

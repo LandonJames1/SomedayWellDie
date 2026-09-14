@@ -28,22 +28,19 @@
    ---- GETTING THE FILE TO THE USER ----
 
    ⚠️ THREE WAYS, TRIED IN ORDER, AND THE LADDER IS NOT DECORATION.
-   A cross-origin `<a download>` is ignored by browsers (which is why
-   mediaDownloadUrl() exists in media.js), and inside the Capacitor
-   WKWebView a script-driven download is inert whichever way it is
-   dressed up — the file silently does not arrive, and the user is left
-   pressing a button that appears to do nothing.
+   The first two are deliverFile() in utils.js — the share sheet, then
+   a blob download — and its header explains why that order and not the
+   other. The third is this file's own:
 
-     1. navigator.share() with a File. This is the one that works
-        natively: it hands the JSON to the iOS share sheet, from which
-        it can go to Files, Mail, AirDrop or anywhere else. Guarded by
-        canShare(), because a browser that has share() but cannot take
-        files answers false rather than throwing.
-     2. A blob download. The ordinary web path, and the best one there.
      3. The text on screen, selected, with Copy. Ugly, and it is a real
         floor rather than a gesture: it needs nothing from the platform
         at all, so there is no configuration in which the export is
         simply unavailable.
+
+   It does not generalise, which is why it stayed here rather than
+   going into the helper — a photo cannot be pasted out of a textarea,
+   so saveMedia() in media.js has a different floor under the same two
+   rungs.
 
    No new Capacitor plugin. @capacitor/share would make step 1 tidier
    and is a dependency to add, sync and register for something the web
@@ -160,46 +157,15 @@ async function exportMyData(){
   }
 }
 
-/* Returns 'share' | 'download' | 'copy'. See the ladder at the top. */
+/* Returns 'share' | 'download' | 'copy'. The first two rungs are
+   deliverFile() in utils.js, which media.js also saves photos through —
+   there is one description of how a file reaches this platform and one
+   place to fix it. The third rung is this file's own, because the floor
+   does not generalise: a photo cannot be pasted out of a textarea. */
 async function deliverExport(text,name){
   const blob=new Blob([text],{type:'application/json'});
-
-  /* 1. The share sheet, which is the only one of the three that works
-        inside the native shell. canShare() with the file in hand is the
-        only reliable test — a platform that has share() but refuses
-        files answers false here rather than throwing later. */
-  try{
-    if(navigator.share&&navigator.canShare){
-      const file=new File([blob],name,{type:'application/json'});
-      if(navigator.canShare({files:[file]})){
-        await navigator.share({files:[file],title:'Someday We’ll Die — your data'});
-        return 'share';
-      }
-    }
-  }catch(e){
-    /* An AbortError is the user dismissing the sheet, and it must not
-       fall through to dumping the JSON on screen — they said no. */
-    if(e&&e.name==='AbortError')return 'share';
-  }
-
-  /* 2. The ordinary web download. Same-origin blob, so `download` is
-        honoured — unlike the cross-origin case in media.js. */
-  try{
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;a.download=name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    /* Revoked late: Safari has been known to cancel an in-flight
-       download when the object URL goes away underneath it. */
-    setTimeout(()=>URL.revokeObjectURL(url),30000);
-    return 'download';
-  }catch(e){
-    console.warn('export download failed, falling back to copy:',e);
-  }
-
-  return 'copy';
+  const how=await deliverFile(blob,name,'Someday We’ll Die — your data');
+  return how||'copy';
 }
 
 /* The floor. Needs nothing from the platform, which is the whole

@@ -28,6 +28,7 @@ function paintStaticIcons(){
   set('compDateIcon',icon('calendar'));
 
   set('lbCloseBtn',icon('x'));
+  set('lbSaveBtn',icon('download'));
   set('calPrev',icon('chevron-left'));
   set('calNext',icon('chevron-right'));
   set('lbPrev',icon('chevron-left'));

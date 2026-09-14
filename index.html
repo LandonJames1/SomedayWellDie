@@ -1589,6 +1589,9 @@
 <!-- Photo lightbox -->
 <div class="lightbox" id="lightbox">
   <button class="lb-close" onclick="closeLightbox()" aria-label="Close" id="lbCloseBtn"></button>
+  <!-- Opposite corner from Close, so the gesture that dismisses and the
+       one that keeps a copy are nowhere near each other. -->
+  <button class="lb-save" onclick="lbSave()" aria-label="Save photo" id="lbSaveBtn"></button>
   <div class="lb-img-wrap">
     <button class="lb-nav lb-prev" id="lbPrev" onclick="lbStep(-1)" aria-label="Previous"></button>
     <img id="lbImg" src="" alt="" />

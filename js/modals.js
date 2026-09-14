@@ -549,11 +549,14 @@ function listPickerCreateNew(){
    {type,url,poster} — so the same viewer handles photos and video. A
    bare string or array of strings is still accepted, since plenty of
    call sites only ever have photo URLs. */
-let lbPhotos=[],lbIdx=0;
-function openLB(items,startIdx){
+let lbPhotos=[],lbIdx=0,lbLabel='';
+function openLB(items,startIdx,label){
   if(typeof items==='string') items=[items];
   lbPhotos=(items||[]).map(m=>typeof m==='string'?{type:'photo',url:m}:m);
   lbIdx=startIdx||0;
+  /* What the saved file is named after. Optional, because a bare array
+     of URLs is still a valid call — see the note above. */
+  lbLabel=label||'';
   lbShow();
   $('lightbox').classList.add('open');
   setBodyScrollLock(true);
@@ -577,6 +580,34 @@ function lbShow(){
   $('lbCounter').textContent=lbPhotos.length>1?`${lbIdx+1} of ${lbPhotos.length}`:'';
   $('lbPrev').style.display=lbPhotos.length>1?'flex':'none';
   $('lbNext').style.display=lbPhotos.length>1?'flex':'none';
+  /* The label says which of the two it will save, because on iOS the
+     sheet it opens says "Save Video" or "Save Image" and the button
+     should not have promised the other one. It is the accessible name
+     only — the glyph is the control, exactly as the close button is. */
+  const save=$('lbSaveBtn');
+  if(save){
+    save.style.display=m.url?'flex':'none';
+    save.setAttribute('aria-label',isVideo?'Save video':'Save photo');
+  }
+}
+
+/* Saves whatever is on screen. The lightbox is the one viewer every
+   photo in the app passes through — the stage, the hero and the grid on
+   an accomplished activity all open it — so putting the control here
+   puts it on all of them at once, rather than on three call sites that
+   would then have to agree. */
+function lbSave(){
+  const m=lbPhotos[lbIdx];
+  if(!m||!m.url)return;
+  const btn=$('lbSaveBtn');
+  saveMedia(m,lbLabel,lbIdx,lbPhotos.length,busy=>{
+    /* A state on the control rather than a message beside it. A video
+       is megabytes and the fetch is not instant; without this the
+       button reads as dead for the whole of it. */
+    if(!btn)return;
+    btn.classList.toggle('is-busy',!!busy);
+    btn.disabled=!!busy;
+  });
 }
 function lbStep(dir){
   if(!lbPhotos.length)return;
@@ -589,7 +620,7 @@ function closeLightbox(){
      whatever screen is underneath. */
   const vid=$('lbVideo');
   if(vid){vid.pause();vid.removeAttribute('src');vid.load();}
-  lbPhotos=[];lbIdx=0;
+  lbPhotos=[];lbIdx=0;lbLabel='';
   setBodyScrollLock(false);
 }
 

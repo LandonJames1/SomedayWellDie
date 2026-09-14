@@ -873,3 +873,94 @@ function coverFor(list){
   for(let i=0;i<id.length;i++) h=(h*31+id.charCodeAt(i))>>>0;
   return COVERS[h%COVERS.length];
 }
+
+/* ==============================================================
+   HANDING A FILE TO THE USER
+
+   ⚠️ TWO RUNGS, TRIED IN ORDER, AND THE ORDER IS NOT A PREFERENCE.
+   Inside the Capacitor WKWebView a script-driven download is inert
+   whichever way it is dressed up — the file silently does not arrive
+   and the user is left pressing a button that appears to do nothing.
+   The share sheet is the only thing that works there, and on iOS it is
+   also where "Save Image" and "Save Video" live, so it is the path to
+   the camera roll as well as the path to Files.
+
+     1. navigator.share() with a File. Guarded by canShare() with the
+        file already in hand, because a platform that has share() but
+        refuses files answers false here rather than throwing later.
+     2. A blob download. The ordinary web path, and the best one there.
+        The object URL is same-origin, so `download` is honoured —
+        unlike the cross-origin case mediaDownloadUrl() exists for.
+
+   deliverFiles() takes the whole set, and deliverFile() is the one-file
+   wrapper over it — a set has to reach the share sheet in a single
+   presentation, or saving four photos would be four sheets in a row.
+
+   Returns 'share' | 'download' | null, and a null is the caller's cue
+   to reach for whatever floor it has. It deliberately does not have
+   one of its own: the export's is the JSON on screen with Copy, a
+   photo's is opening it in the browser, and neither generalises.
+
+   ⚠️ AN AbortError IS A SUCCESS. It is the user dismissing the share
+   sheet — they said no, and falling through to a download would hand
+   them the file they just declined.
+   ============================================================== */
+/* Several at once, which is a real difference rather than a loop: the
+   share sheet takes the whole set in ONE presentation, so saving four
+   photos is one sheet and one "Save 4 Images" rather than four sheets
+   in a row — and a ladder that shared them one at a time would be
+   unusable long before it was slow. Only the second rung is a loop,
+   because a download genuinely is one file at a time. */
+async function deliverFiles(files,title){
+  if(!files||!files.length)return null;
+
+  try{
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files})){
+      await navigator.share(title?{files,title}:{files});
+      return 'share';
+    }
+  }catch(e){
+    if(e&&e.name==='AbortError')return 'share';
+    /* Anything else — a platform that lied about canShare, a sheet
+       that failed to present — falls through to the rung below. */
+    console.warn('share failed, falling back to download:',e);
+  }
+
+  try{
+    for(let i=0;i<files.length;i++){
+      const url=URL.createObjectURL(files[i]);
+      const a=document.createElement('a');
+      a.href=url;a.download=files[i].name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      /* Revoked late: Safari has been known to cancel an in-flight
+         download when the object URL goes away underneath it. */
+      setTimeout(()=>URL.revokeObjectURL(url),30000);
+      /* Browsers throttle a burst of downloads from one gesture, and
+         some drop the ones after the first outright. A beat between
+         them is the difference between four files and one. */
+      if(i<files.length-1) await new Promise(r=>setTimeout(r,180));
+    }
+    return 'download';
+  }catch(e){
+    console.warn('download failed:',e);
+  }
+
+  return null;
+}
+
+async function deliverFile(blob,name,title){
+  return deliverFiles([new File([blob],name,
+    {type:blob.type||'application/octet-stream'})],title);
+}
+
+/* A name safe to put in a filename and in Content-Disposition. Keeps
+   it recognisable rather than correct-by-emptying: a title of nothing
+   but punctuation falls back rather than producing "". */
+function fileSlug(s,fallback){
+  const out=String(s||'').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
+  return out||fallback||'file';
+}
