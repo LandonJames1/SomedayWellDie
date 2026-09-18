@@ -144,6 +144,65 @@ async function sharedCollectionIds(){
 }
 
 /* ==============================================================
+   TELLING THE REST OF A SHARED LIST THAT SOMETHING GOT DONE
+
+   The other half of what a shared list is for. Somebody rides the
+   Shinkansen and the other three people planning that trip find out
+   when they next happen to open the app — which, for a list about
+   something that takes a year, can be weeks. The completion is the
+   single most interesting thing that happens on a shared list and it
+   was the only one that made no sound.
+
+   Same shape as notifyMessageSent() in messages.js, for the same
+   reasons: an event, pushed from the client the moment the write
+   succeeds, rather than a trigger over pg_net. The function is trusted
+   with an activity id and NOTHING else — it reads the name, the list,
+   the audience and whether the thing is actually completed back with
+   the service role, and takes who to attribute it to from the JWT. See
+   supabase/functions/send-activity-push.
+
+   Three things it deliberately does not do:
+
+   - It never fires for an UN-completion. The callers only reach it on
+     the way in, and the function refuses anything whose
+     date_completed is null, so the two agree from both ends.
+   - It never fires twice for one completion. That is the function's
+     job (activity_completion_pushes), not this one's, because two
+     devices replaying the same write would each think they were first.
+   - It never blocks or reports. The completion is saved and on screen;
+     not notifying is a degradation, not something to put a toast in
+     front of somebody who has just finished something.
+   ============================================================== */
+async function notifyActivityCompleted(activityId,listId){
+  if(!activityId||!listId||!navigator.onLine) return;
+
+  /* Free, and it is why this can sit on the completion path at all.
+     _sharedIds is already in memory for the badge on the Lists tab,
+     and it holds lists you own AND have invited someone into as well
+     as lists you joined — so it answers "is this list shared" in both
+     directions. Most accounts share nothing, and asking the server to
+     work that out would be a round trip on every single completion. */
+  let shared=false;
+  try{ shared=(await sharedCollectionIds()).has(listId); }
+  catch(e){ return; }
+  if(!shared) return;
+
+  try{
+    const{data,error}=await sb.functions.invoke('send-activity-push',{body:{activityId}});
+    if(error) console.info('[sharing] completion push not sent:',error.message||error);
+    /* A 200 can still mean nobody was told — everyone muted, nobody
+       registered a device, somebody already announced it. Logged
+       because that is otherwise indistinguishable from one that went
+       out. */
+    else console.info('[sharing] completion push:',data);
+  }catch(e){
+    /* Not deployed, or unreachable. Shared lists work regardless —
+       the same degradation everything optional here has. */
+    console.info('[sharing] send-activity-push unavailable:',e&&e.message);
+  }
+}
+
+/* ==============================================================
    INVITE CODES
 
    URL-safe alphabet, no look-alike characters — these get read aloud

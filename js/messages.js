@@ -1285,13 +1285,19 @@ function readPushLanding(){
   }catch(e){ /* a malformed URL is not worth failing the boot over */ }
 }
 
-/* Called from showApp(), once there is a user to open it for. */
+/* Called from showApp(), once there is a user to open it for.
+
+   ⚠️ ONE DESTINATION. A completion notification carries both ids — the
+   activity is the news and the list is the context — so both globals
+   can be set at once, and doing each in turn would open the activity's
+   sheet and then navigate out from under it to the conversation. The
+   activity wins: it is the more specific of the two. */
 function handlePushLanding(){
   const act=pendingAct;
-  pendingAct=null;
-  if(act) openActivityFromPush(act);
   const id=pendingConv;
+  pendingAct=null;
   pendingConv=null;
+  if(act){ openActivityFromPush(act); return; }
   if(!id) return;
   /* probeMessages() may not have answered yet on a cold start. Waiting
      on it is correct: without the table there is no conversation to

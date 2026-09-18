@@ -169,7 +169,7 @@ legal/                privacy.html + terms.html, the two documents App Store Con
                       to the site should open the app. Served by the WEB HOST, deliberately not
                       bundled into www/. See **Universal Links** and .well-known/README.md.
 supabase/             Backend — schema.sql (reminders + reminder_deliveries), native-push.sql (an APNs
-                      device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), age-and-legal.sql (`Users.date_of_birth`/`terms_version`/`age_gate_at` and the report-snapshot purge — **also not optional**: without the first column nothing enforces the age limit both legal documents claim, and the app says so once in the console; see **The age gate**), storage.sql (the media bucket), cron.sql, functions/_shared/apns.ts (APNs delivery, shared by the two push functions — no imports, the JWT is signed with Web Crypto), and five Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
+                      device token beside the Web Push rows — see **Push is APNs here, not Web Push**), profiles.sql (the Users row, its RLS and the sign-up trigger), sharing.sql (shared lists), messages.sql (a conversation per shared list, plus the append-only activity_notes log), single-list.sql (drops the retired extra_collection_ids column), target-rollover.sql (one-time: resolves stored target bands to real dates — see **A band is resolved on the way in**), target-band-2-4.sql (one-time: moves rows filed under the old 2-3 year band to the 2-4 window), home.sql (the saved Home address), difficulty.sql (the inferred easy/medium/hard rating), difficulty-override.sql (the flag saying a person overruled it — see **Correcting a rating**), difficulty-profile.sql (the paragraph that rating is judged against — see **Rating for one person, not an average one**), avatars.sql (the profile photo, plus the one RPC that lets other people see it), moderation.sql (reporting, blocking and the agreement record — the one migration that is NOT optional for shipping; see **Reporting and blocking**), age-and-legal.sql (`Users.date_of_birth`/`terms_version`/`age_gate_at` and the report-snapshot purge — **also not optional**: without the first column nothing enforces the age limit both legal documents claim, and the app says so once in the console; see **The age gate**), storage.sql (the media bucket), activity-push.sql (one delivery marker, which is what makes a completion notification happen ONCE — see **Notifying a completion**), cron.sql, emails/ (the six auth email templates that go in the Supabase dashboard, plus _preview.html, the bench that renders all six — see emails/README.md; the link in every one of them is `token_hash`, never `{{ .ConfirmationURL }}`, for the reason in **Coming back through the confirmation email**), functions/_shared/apns.ts (APNs delivery, shared by the three push functions — no imports, the JWT is signed with Web Crypto), and six Edge Functions: send-reminders, send-message-push (an immediate Web Push when a message is sent — see **Notifying a conversation**), send-activity-push (the same, when something on a shared list is ticked off — see **Notifying a completion**), unfurl (location prediction *and* the difficulty rating — it used to import shared links and screenshots; see **Importing is gone**), geo (place search, holding the HERE key so the browser never does) and delete-account (erasing an account needs the service_role key, so it cannot live in the client). All optional except profiles.sql; each other piece probes for itself and the UI that needs it hides when it is absent.
 fonts/                The two web faces as woff2, plus OFL.txt. ⚠️ SELF-HOSTED FOR A LEGAL
                       REASON — see css/fonts.css. Bundled by build-www.js and pre-cached
                       by sw.js; left out of either, the native app ships with no type.
@@ -209,8 +209,9 @@ ios/App/ShareExtension/ "Share to Someday We'll Die" — stashes what was shared
 cloudflare/           media-worker/worker.js — the Worker that authorizes uploads to R2 and serves
                       downloads. Pasted into the Cloudflare dashboard by hand; there is no deploy step
                       in this repo. See **Media**.
-js/                   One script per concern (see JS file map). router.js is the newest —
-                      a hash route per screen; see **A URL for every screen**.
+js/                   One script per concern (see JS file map). photos.js is the newest —
+                      every photo you have ever attached, as one grid; see **Every photo
+                      in one place**.
 icons/                App icon PNGs + generate.py, the script that draws them
 Supabase Setup/       CSV exports of the Collections / Activities / Users tables (schema reference; STALE, see Back end)
 .github/workflows/    reminders.yml — the daily sweep that fires send-reminders. Replaces
@@ -390,6 +391,7 @@ by `js/router.js`. See **A URL for every screen**.
 | `page-home` | `home` | Home | `renderHome()` — the dashboard |
 | `page-upnext` | `upnext` | (pushed on Home) | `renderUpNext()` — every unfinished activity |
 | `page-done` | `done` | (pushed on Home) | `renderDone()` — everything ever completed |
+| `page-photos` | `photos` | (pushed on Home) | `renderPhotoWall()` — every photo and video, as a grid |
 | `page-lists` | `lists` | Lists | `renderCollections()` — every collection as a photo card |
 | `page-detail` | `detail` | (pushed on Lists) | `renderDetail()` — one collection's activities, or one of the three derived difficulty lists |
 | `page-messages` | `messages` | Chat | `renderMessages()` — a row per shared list's conversation |
@@ -432,7 +434,7 @@ can be linked to, and the browser's own Back — the button, and the back
 
 | Route | Screen |
 | --- | --- |
-| `#home` `#upnext` `#done` | Home and the two screens pushed on it |
+| `#home` `#upnext` `#done` `#photos` | Home and the three screens pushed on it |
 | `#lists` `#list/<id>` | Lists, and one collection |
 | `#messages` `#chat/<id>` | The hub, and one conversation |
 | `#map` `#you` | Map, You |
@@ -567,6 +569,7 @@ Things to keep:
   and priority would otherwise push the flight below it. The grouping on the
   Up Next screen still uses the band, so a row's group always matches the
   colour of its label;
+- **On this day** — see below;
 - Recently accomplished, by `completedDate` descending, **capped at six** —
   two rows of three.
 
@@ -578,6 +581,41 @@ still learning where things are.
 
 Home has no floating action button: the composer near the top is already the
 add affordance, and two competing ones on a single screen is one too many.
+
+##### On this day
+
+`onThisDayMatches()` / `renderHomeOnThisDay()` in `home.js`. The completed
+activities whose anniversary is today, as the same `.rec-card` shelf Recently
+accomplished uses, with the caption replaced by *1 year ago* / *3 years ago*.
+
+**The app never looked backwards.** It is very good at capture and planning —
+the composer, Up Next, target dates, reminders, the map — and once something
+was done it went behind a month header on Accomplished and was effectively
+gone. This is the cheapest possible correction: every input already exists, so
+there is no schema, no network, no state and no new component.
+
+- **⚠️ MATCHED BY SLICING THE STRING, NEVER BY PARSING A DATE.**
+  `completedDate` is a bare ISO `YYYY-MM-DD`, and `new Date('2025-09-14')`
+  parses as **UTC** — so it reads back as the 13th anywhere west of Greenwich
+  and every anniversary in the Americas fires a day early. That is the same
+  trap `isoLocal()` exists for and that `fmtDate()` pays the `T00:00:00` to
+  avoid. Here there is nothing to pay: the month and the day are two
+  substrings.
+- **Strictly earlier years.** Something finished this morning belongs under
+  Recently accomplished, not under a heading about the past.
+- **The caption names the real gap** rather than saying "a year" about
+  something five years old — so the section heading is *On this day*, which is
+  true of all of them, and the card carries the number.
+- **Feb 29 surfaces on Feb 28 in a common year.** Left alone, the one memory
+  whose date people are most likely to remember would be invisible three years
+  in four. Feb 28 rather than Mar 1 because it is still February, which is
+  what they recall.
+- **It sits above Recently accomplished, not at the top of Home.** On the great
+  majority of days it has nothing and is hidden, and a section that shoves Up
+  Next down the screen a dozen times a year has to earn that on the other
+  three hundred too.
+- **`.rec-date` stays green.** It still means *completed*, and this screen
+  already carries three colour scales.
 
 ##### One field, both questions
 
@@ -1059,6 +1097,60 @@ un-completing writes has to preserve that.
 Deleting a photo drops the URL from the row; it does not delete the
 object. There is no reference counting here to make deletion safe, and
 storage is cheap — `storage.sql` carries a sweeper query in a comment.
+
+##### Every photo in one place
+
+`js/photos.js` plus `css/photos.css` — `page-photos`, route `#photos`, a
+pushed screen owned by the Home tab. Every piece of media on every
+completed activity, grouped by the month it was finished, three to a row.
+
+**The photographs are the payoff of the whole app and were the hardest
+thing in it to look at.** To see one you had to remember which activity
+it was attached to, find that activity and open its sheet. Accomplished
+lists the activities; nothing listed the pictures.
+
+- **⚠️ BUILT FROM `a.media`, NEVER FROM `a.photos`.** `mapActivity()`
+  derives `photos` by mapping a video to its poster and then dropping
+  anything falsy, so an activity holding a video whose poster never got
+  captured has *fewer* entries in `photos` than in `media` — and from
+  there the two arrays' indices disagree. Everywhere else that is
+  harmless, because `photos` is only ever read as a thumbnail. Here the
+  index is what the lightbox opens on, so an off-by-one shows the wrong
+  picture.
+- **⚠️ THE FLAT LIST IS A MODULE GLOBAL, NOT SERIALISED INTO EACH TILE.**
+  `activities.js` passes a media array into its inline `onclick` by
+  JSON-stringifying it (`activities.js:2049`), which is fine for one
+  activity's handful of items and would put the entire library's JSON
+  into every cell on this screen. `_pwItems` plus `photoWallOpen(i)`.
+- **A lightbox item may now carry its own `label`**, and optionally
+  `saveIdx`/`saveTotal`. Until this screen one lightbox held one
+  activity's media, so a single `lbLabel` named all of it — which is
+  what `saveMedia()` calls the downloaded file. The wall walks
+  everything you own, so one name would give every file the same one.
+  **`saveIdx`/`saveTotal` are the item's position within ITS OWN
+  activity**, not in the wall: `mediaSaveName()` appends the index only
+  when there is more than one, and `lbPhotos.length` here is the whole
+  library, so without them every single file would be suffixed with a
+  meaningless number. Nothing else passes any of the three, so all four
+  existing call sites are unaffected.
+- **The caption is the label, in `#lbCounter`.** A photo on this screen
+  with no idea what it was of is a picture, not a memory. That line
+  therefore insets itself now — see the ⚠️ on `.lb-counter` in
+  `modals.css`; it used to read "5 of 12" and never came near the glass.
+  A long name wraps rather than truncating, which is the right way round.
+- **It is reached from two places, so its back chevron reads `backTab`**
+  — *You* or *Home* — exactly as the detail screen's does rather than
+  hardcoding a label that would be wrong half the time.
+- **⚠️ AND IT CARRIES `page-pushed`**, because it carries a back button.
+  That class is applied per screen precisely because Up Next,
+  Accomplished and Settings have none; without it the chevron lands on
+  top of the large title. Read the comment on `.page.page-pushed` in
+  `layout.css`.
+- **Three columns at every phone width**, unlike `.shelf-3` which drops
+  to two below 375px. A shelf is a taster and wants its captions
+  readable; this is a wall and wants density.
+- Month headers are `.home-sec-head` and `monthLabel()` from `done.js`,
+  so the two screens cannot disagree about what a month is called.
 
 #### Searching for a place
 
@@ -2761,6 +2853,109 @@ are left alone. The one correction is `syncComposerToKeyboard()`, which
 drops the tab-bar clearance once it has been lifted, since the bar is
 no longer underneath it.
 
+#### Notifying a completion
+
+`notifyActivityCompleted()` in `sharing.js`,
+`supabase/functions/send-activity-push`, `supabase/activity-push.sql`.
+
+Somebody ticks something off a shared list and everyone else on it gets
+*"Dana · Japan 2027 / Accomplished “Ride the Shinkansen”"*, which opens
+that activity. **The person who filled in the sheet is never told** —
+they were looking at it a second ago.
+
+It is the same shape as **Notifying a conversation** above and for the
+same reasons: the event is the write, so it is pushed from the client
+the moment the write succeeds, with no `pg_net`, no trigger and the
+caller's JWT already in hand. Read that section first; only the
+differences are written out here.
+
+**The completion was the loudest thing on a shared list and the only
+one that made no sound.** Three people planning a trip could each have
+finished something and none of them would know until they next happened
+to open the app, which for a list about something a year out is weeks.
+
+##### The check that does not exist here, and what stands in
+
+`send-message-push` refuses when `messages.sender_id !== caller.id`, so
+a member cannot re-push somebody else's message at will. **There is no
+equivalent for a completion**: an activity row does not record who
+completed it, because any member may tick anything off and the app has
+never needed to know which one did. Without a stand-in, *"announce
+activity X"* is a button any member of the list can hold down — a
+notification spam vector wearing a valid JWT.
+
+So `activity_completion_pushes` is claimed **before anything is sent**,
+and a second call gets `skipped: already-notified`. Two things about
+its key:
+
+- **It is `(activity_id, completed_on)`, not `activity_id` alone**, for
+  the reason `reminder_deliveries` carries `remind_at`: un-completing
+  and finishing again on another day is a new event and should be
+  announced again, while pressing Done twice on one day is not.
+- **It is claimed rather than checked.** Two devices replaying the same
+  write would each read "not yet notified" and both send; the insert is
+  what makes one of them lose.
+
+**It tolerates its own table being missing**, which is a deliberate
+departure from `send-reminders` refusing without `reminder_deliveries`.
+There, a missing marker means re-notifying everybody every day; here it
+means one duplicate.
+
+##### Things to keep
+
+- **Un-completing never notifies, and that is enforced at both ends.**
+  The two callers only reach it on the way in (`wasNew`), and the
+  function refuses any row whose `date_completed` is null — which also
+  stops a call racing ahead of the write it is reporting.
+- **Both insert paths call it**: `confirmComplete()` for something
+  planned and `commitCompDraft()` for something logged after the fact.
+  The second is if anything more worth saying, since nobody else knew
+  it was happening.
+- **A queued write does not notify** (`!offline`), because it has not
+  reached the table anybody would be told about. Same gap the offline
+  message replay has, and it is in the backlog for the same reason.
+- **The shared-list check is free and must stay that way.**
+  `sharedCollectionIds()` is already in memory for the Lists tab badge
+  and answers in both directions — a list you joined and one you own
+  and invited into. Most accounts share nothing, and without that
+  guard every completion on a private list would spend a round trip to
+  be told there is nobody to tell.
+- **Who it is attributed to comes from the JWT**, looked up in `Users`.
+  A message carries a `sender_name` snapshot; an activity has no such
+  column, so the name is read at send time — meaning a completion
+  announced today carries today's display name.
+- **Muting reuses `conversation_prefs`.** A mute is a statement about a
+  *list* being noisy, and somebody who silenced the conversation has
+  not asked to hear about it by another route.
+- **The APNs thread is `done:<collection>`, not `conv:<collection>`.**
+  A completion is not part of the conversation, and grouping them
+  together would bury one in the other.
+
+##### Three kinds of push, one table in `sw.js`
+
+`PUSH_KINDS` replaced the nested ternaries that decided a banner's
+headline, fallback, tag and renotify flag. Two senders was four
+ternaries; three would have been six. **Adding a fourth kind is one row.**
+
+Two things it encodes that are easy to get backwards:
+
+- **A message tags by list and a completion tags by activity.** A burst
+  of messages in one conversation should replace itself rather than
+  fill the shade; three people finishing three different things is
+  three pieces of news and collapsing them would show one.
+- **An unknown `kind` falls back to `reminder`**, because the reminder
+  sender is the one that does not set the field — so a push already in
+  flight from an older deploy still lands correctly.
+
+**And `notificationclick` now picks ONE destination, activity first.**
+A completion payload carries both ids — the activity is the news, the
+list is the context — and the old branch-per-kind shape would have
+matched twice, opening the activity's sheet and then navigating out
+from under it to the conversation. `handlePushLanding()` in
+`messages.js` had the identical bug for the cold-start path and is
+fixed the same way. **Anything that adds a payload carrying two ids has
+to keep that rule.**
+
 #### The age gate
 
 `supabase/age-and-legal.sql`, `MIN_AGE` in `config.js`, the neutral
@@ -3641,6 +3836,12 @@ page"*.
 | **Auth → Emails → Confirm signup** | Should be `{{ .SiteURL }}/index.html?token_hash={{ .TokenHash }}&type=email`. |
 | **Auth → Emails → Reset password** | The same shape with `type=recovery`. See **Resetting a password** — `type` is the only thing that tells the client a landing is a reset rather than a confirmation. |
 
+**The templates themselves live in `supabase/emails/`** — all six, with
+the right `token_hash` link and `type` already in them, plus
+`_preview.html`, which renders the lot with the variables filled in.
+Paste, do not retype: the `type` values are the part that is silently
+wrong if you guess.
+
 **That template is what makes the link work on a device other than the one
 that signed up**, which is the common case — people sign up on a laptop and
 read their mail on a phone. `config.js` sets `flowType:'pkce'`, so the default
@@ -4378,6 +4579,7 @@ Loaded in this order; **order matters**.
 | `components.css` | The reusable iOS primitives every screen builds from: `.group`/`.row` inset grouped lists, `.seg` segmented controls, `.btn` styles, `.searchfield`, `.badge`/`.tag`, **`.list-chip`** (a collection's name on any row that could have come from any list — Home's Up Next, the Up Next screen, search results, the duplicate sheet; sized to match `.tag` so the capsules on one row line up), the `.pri-*` priority marks, `.media-tile`/`.media-play` (one tile for a photo or a video, used by three screens), `.empty`, `.progress`, `.spinner`. Look here before inventing a new component. |
 | `auth.css` | The signed-out screen — no nav bar, no tab bar, its own centring. Plus `.auth-invite`, the tinted note shown when an invite link was opened while signed out; `.auth-notice`, the same shape for a confirmation link that could not be honoured, but carrying its own way out (a resend button) because "that link expired" with no way to get another is the same dead end the link was; `.auth-check`, the quieter waiting-for-confirmation panel — nothing has gone wrong there, and the title above is already carrying the message — and `.auth-forgot`, quieter still than the `.auth-toggle` beneath it (creating an account is one of the two things this screen is for; recovering one is what you reach for when neither worked) while keeping the same 44px target, since it is pressed by somebody already having a bad time. |
 | `home.css` | The dashboard: the greeting, the SVG progress ring, the context-free quick-add composer (`.home-composer-wrap` owns the gutters so `.home-suggest`, its results dropdown, can position against the field), the Up Next list, and the two `.shelf` grids (recently accomplished, your lists). |
+| `photos.css` | `.pw-grid`/`.pw-cell` — the photo wall, and nothing else: the month headers are `.home-sec-head` and the tiles inside each cell are `.media-tile`, so this file owns only the grid and the box one photo sits in. It scales `.media-play` down, which is why it must load after `components.css`. Three columns at every phone width — unlike `.shelf-3`, which drops to two below 375px. See **Every photo in one place**. |
 | `collections.css` | The Lists tab: `.smart-row`/`.smart-btn` — the three derived difficulty lists as a button strip above everything else (see **Three lists nobody edits**) — `.coll-card` photo cards, the "New List" tile, and the now-unused `.coll-card-auto`. |
 | `detail.css` | A collection's screen (**and both activity sheets** — the `.ad-*` blocks are shared, see the note on `#actSheet` in `index.html`): `.det-banner`, `.det-ctl-row`/`.det-sort` (the filter and sort controls sharing a line — the row owns the gutters so `.seg` can give up its own margins), `.act-row` list rows (plus `.ad-stage-save`, the rounded-square save button floating in the bottom-right of a completed activity's photo stage, and `.act-dist`, the distance shown while a collection is sorted by it — non-shrinking, unlike the place name beside it), `.composer` quick-add, `.act-card` grid cards, and the `.ad-*` activity detail sheet including `.ad-lists`/`.ad-list-chip` and `.ad-chip.c-dist`, which is untinted for the same reason the difficulty chip is. **The `.ad-*` blocks are shared with the NEW-ACTIVITY sheet** — the plate, the chips and the Where card are one set of rules drawn on both, which is why the four Orchard hues are declared on `#actDetailBody, #actSheetBody, #compPaneMain` together — the **completion** sheet draws the plate, the Where card and (as its Media row) the Links card too, so all three sheets now share these blocks; the handful of differences an empty sheet has live in a block of their own at the end of the file. **`.ad-dock`/`.ad-dock-view`/`.ad-dock-disc` and `.ad-navbar`/`.ad-back`/`.ad-navtitle` are now used by THREE sheets** — the activity sheet, the new-activity sheet and the COMPLETION sheet, none of which has a `.sheet-bar` any more. They are generic sheet furniture despite the `ad-` prefix; change one and check all three. |
 | `me.css` | The Me tab: the stats card, the progress card, the identity row. |
@@ -4419,7 +4621,7 @@ Loaded in this order; **order matters**.
 | `deeplink.js` | **Universal Links.** `deepLinkPlugin`, `initDeepLinks` (the `appUrlOpen` listener *and* `getLaunchUrl()`, because on a cold start the event can beat the listener) and `handleDeepLink(url)`, which applies an incoming link to the running app — an invite onto the same shelf `readPendingJoin()` writes, a `?conv=`/`?act=` landing onto the same two globals `messages.js` reads, a `#route` handed to `router.js`. It deliberately never navigates the web view to the URL: that would replace the bundled app with the website. Loads after `router.js`, before `main.js`. See **Universal Links**. |
 | `nav.js` | `nav(page, listId)` — the single entry point for changing screens (see **Screens and navigation**), and where the screen's URL is written via `routeSync()`. Plus `PAGE_TAB`, `TAB_ROOT`, `TAB_ORDER` and **`visibleTabs()`** (the tabs a swipe can actually reach — the Messages tab is hidden until its migration is run), `selectTab`, `goBack`, `dismissOverlays`, **`refreshAfterChange(src)`** (the single answer to "something was written, what redraws?" — see **Refreshing after a change**), `updateNavbar` (**where each screen's bar buttons are defined**, and where the collection FAB is bound to `startNewActivity`; there is no search bar button — see **Finding things again**), `applyNavCondense`, a debounced `resize` handler, **`setBodyScrollLock(lock)`** — the single place that touches body overflow — `RENDERERS`/`scrollKey`/`_scrollMem` (each screen's renderer in one table, and the offset it was left at — see **Rendering without reloading**), `queueNavCondense` — and **`syncTabbarToKeyboard()`**, which keeps the tab bar behind the software keyboard instead of riding up on top of it (see **Mobile layout rules**). |
 | `gestures.js` | The two touch gestures, both delegated from `document`: **swipe a sheet down to dismiss it** (`.modal` and the action sheet) and **swipe sideways to change screen**. `overlayOpen`, `ownsHorizontal`/`ownsVertical` (surfaces with their own gesture), `SHEET_DISMISS_PX`/`SHEET_FLICK_PX`, `SWIPE_MIN`/`SWIPE_EDGE`, `TAB_ORDER` (in `nav.js`). See **Gestures** below. |
-| `modals.js` | **`showActionSheet` items take an optional `tone`** — `high`/`medium`/`low`/`easy`/`hard` — which colours the label with the scale the rest of the app already draws (priority's rails, capsules and pins; the three difficulty buttons on the Lists tab). The menu used to be the one place those scales went missing. `openModal` (**resets `.sheet-body` scrollTop** — see the note under *Sheets* below) / `closeModal` (they call `setBodyScrollLock`, so use them rather than toggling `.open` yourself), the scrim-click and Escape handlers, **`showActionSheet(opts)`** and `showConfirm` (iOS confirms destructive actions with an action sheet, not a dialog — `confirmDeleteCollection`/`confirmDeleteActivity` wrap it), the photo lightbox (swipe sideways to page, down to close, and `lbSave()` on the disc opposite Close — see **Getting a photo back off the app**), the list picker (`openListPicker`/`renderListPickerRows`/`listPickerPick` — single-select, see **The list picker**), `ensurePickerRoom`/`releasePickerRoom` (see **Gestures**), and `showToast`. |
+| `modals.js` | **`showActionSheet` items take an optional `tone`** — `high`/`medium`/`low`/`easy`/`hard` — which colours the label with the scale the rest of the app already draws (priority's rails, capsules and pins; the three difficulty buttons on the Lists tab). The menu used to be the one place those scales went missing. `openModal` (**resets `.sheet-body` scrollTop** — see the note under *Sheets* below) / `closeModal` (they call `setBodyScrollLock`, so use them rather than toggling `.open` yourself), the scrim-click and Escape handlers, **`showActionSheet(opts)`** and `showConfirm` (iOS confirms destructive actions with an action sheet, not a dialog — `confirmDeleteCollection`/`confirmDeleteActivity` wrap it), the photo lightbox (swipe sideways to page, down to close, and `lbSave()` on the disc opposite Close — see **Getting a photo back off the app**; an entry may carry its own `label` plus `saveIdx`/`saveTotal`, which is what lets the photo wall open the whole library in one viewer without every file coming out with the same name — see **Every photo in one place**), the list picker (`openListPicker`/`renderListPickerRows`/`listPickerPick` — single-select, see **The list picker**), `ensurePickerRoom`/`releasePickerRoom` (see **Gestures**), and `showToast`. |
 
 **Reusable form widgets**
 
@@ -4434,11 +4636,12 @@ Loaded in this order; **order matters**.
 | File | Domain |
 | --- | --- |
 | `dupes.js` | **Fuzzy duplicate detection.** `dupeGuard(opts, proceed)` — the single gate every add path goes through — plus `findDupes`, `dupeScore`, the sheet's handlers (`dupeAddAnyway`/`dupeOpenExisting`/`dupeCancel`) and the `DUPE_LIKELY`/`DUPE_POSSIBLE` thresholds. The batch half — `dupeGuardBatch`/`dupeSkipDuplicates` — went with the bulk sheet. Loads before every screen that adds an activity. See **Catching duplicates**. |
-| `sharing.js` | **Shared lists.** `probeSharing`/`sharingReady`/`resetSharingProbe`, `ownsCollection`/`isSharedWithMe` (which buttons to draw), the invite sheet (`openShareList`/`renderShareList`/`createInvite`/`revokeInvite`/`copyInviteLink`/`copyInviteCode`/`sendInviteLink`/`removeMember`), leaving (`confirmLeaveList`/`leaveList`), and accepting (`readPendingJoin` at boot, `handlePendingJoin`/`acceptJoin`/`declineJoin`, `updateAuthInviteNotice`/`authInviteWaitingNotice` for the signed-out case, and the link-free path `openJoinByCode`/`submitJoinCode`/`parseInviteCode`), plus **`claimInviteForEmail`/`claimInvitesForMe`** — the server-side copy of the code, which is the only one that survives a sign-up confirmed on another device — and `makeInviteCode`/`inviteUrl`. See **Shared lists**, **Accepting an invite** for why that link-free group exists, and **An invite that survives creating an account** for the last pair. |
+| `sharing.js` | **Shared lists.** `probeSharing`/`sharingReady`/`resetSharingProbe`, `ownsCollection`/`isSharedWithMe` (which buttons to draw), the invite sheet (`openShareList`/`renderShareList`/`createInvite`/`revokeInvite`/`copyInviteLink`/`copyInviteCode`/`sendInviteLink`/`removeMember`), leaving (`confirmLeaveList`/`leaveList`), and accepting (`readPendingJoin` at boot, `handlePendingJoin`/`acceptJoin`/`declineJoin`, `updateAuthInviteNotice`/`authInviteWaitingNotice` for the signed-out case, and the link-free path `openJoinByCode`/`submitJoinCode`/`parseInviteCode`), plus **`claimInviteForEmail`/`claimInvitesForMe`** — the server-side copy of the code, which is the only one that survives a sign-up confirmed on another device — and `makeInviteCode`/`inviteUrl`, plus **`notifyActivityCompleted(activityId, listId)`** — the push that tells the rest of a shared list something got ticked off, guarded by the already-in-memory `sharedCollectionIds()` so a private list costs nothing (see **Notifying a completion**). See **Shared lists**, **Accepting an invite** for why that link-free group exists, and **An invite that survives creating an account** for the last pair. |
 | `moderation.js` | **Reporting content and blocking people.** `probeModeration`/`moderationReady`/`resetModerationProbe`, the block list (`loadMyBlocks`/`isBlocked`/`blockedCount`/`confirmBlockUser`/`blockUser`/`unblockUser`/`openBlockedList`/`renderBlockedList`), the report sheet (`REPORT_REASONS`/`openReportSheet`/`pickReportReason`/`submitReport`), `recordTermsAcceptance`, and `resetModerationState` — called by `resetAccountState()`. Loads after `sharing.js`. See **Reporting and blocking**. |
 | `upnext.js` | The Up Next screen pushed from Home: every unfinished activity, bucketed by `targetBand()`. Borrows its rows and sort from `home.js`. |
 | `done.js` | The Accomplished screen pushed from Home: everything completed, grouped by the month it was finished. Reuses Home's photo tiles. |
-| `home.js` | The Home tab. `renderHome()` plus one function per section, the shared `upNextRowHTML()`/`sortUpNext()` the Up Next screen also uses, the context-free composer (`homeQuickAdd`, which asks plan-or-record via `startNewActivity()`), the composer's search half (`updateHomeSuggest`/`homeSuggestRowHTML`/`openHomeSuggest`/`closeHomeSuggest`, plus `searchActivities`/`searchMark`/`SEARCH_MIN`/`SEARCH_ACT_WEIGHTS` — all that survives of the deleted Search screen; see **One field, both questions** and **Finding things again**), and `toggleCompleteFrom()` — Home's copy of the completion toggle, which cannot rely on `curListId`. |
+| `photos.js` | **Every photo and video in one grid**, pushed from Accomplished's bar button and from the You tab. `_pwItems`/`photoWallItems`/`renderPhotoWall`/`pwCellHTML`/`photoWallOpen`. ⚠️ Built from `a.media`, never `a.photos` — the two arrays' indices disagree whenever a video has no poster, and the index is what the lightbox opens on. Borrows `monthLabel()` from `done.js`, so it loads after it. See **Every photo in one place**. |
+| `home.js` | The Home tab. `renderHome()` plus one function per section, **`onThisDayMatches()`/`renderHomeOnThisDay()`** (what you finished on this date in earlier years — ⚠️ matched by slicing the ISO string, never by parsing a `Date`; see **On this day**), the shared `upNextRowHTML()`/`sortUpNext()` the Up Next screen also uses, the context-free composer (`homeQuickAdd`, which asks plan-or-record via `startNewActivity()`), the composer's search half (`updateHomeSuggest`/`homeSuggestRowHTML`/`openHomeSuggest`/`closeHomeSuggest`, plus `searchActivities`/`searchMark`/`SEARCH_MIN`/`SEARCH_ACT_WEIGHTS` — all that survives of the deleted Search screen; see **One field, both questions** and **Finding things again**), and `toggleCompleteFrom()` — Home's copy of the completion toggle, which cannot rely on `curListId`. |
 | `smartlists.js` | **The three derived lists — Easy, Medium, Hard.** `SMART_PREFIX`/`SMART_LISTS`, `isSmartList`/`smartTier`, `smartCollection`/`smartCollections` (the synthetic collection `fetchCollection()` hands back for a sentinel id), `smartActivitiesFor` (the query that *is* the list), `smartRowHTML` (the three buttons at the top of the Lists tab) and `openSmartListMenu`. Loads before `collections.js` and `detail.js`, which both draw them. **They are deliberately absent from `fetchCollections()`** — that is what makes them impossible to add to. See **Three lists nobody edits**. |
 | `collections.js` | `renderCollections()` (the Lists tab) plus the collection CRUD: `openNewList`, `openEditList`, `renderCoverPreview`, `clearCover`, `handleCoverUpload`, `saveList`, `delList`. `delList` deletes the collection's activities first — there is no DB cascade — in one statement, since an activity belongs to exactly one list. |
 | `detail.js` | One collection. Rendering is **deliberately split in two**: `renderDetail()` builds the banner and the controls, `renderActivitiesList()` rebuilds only the list. Search and filter call the second, so the search field never loses focus mid-typing. Also `activityRowHTML`/`activityCardHTML`, `sortButtonHTML()` (the sort control beside the filter), and the quick-add composer helpers (`composerHTML`, `onComposerKey`, `focusComposer`). |
@@ -5050,6 +5253,7 @@ they can be queued when there is no network.
 | `content_reports` *(optional)* | `id`, `reporter_id`, `reported_id` (both **`on delete set null`**), `target_kind`, `target_id`, `collection_id`, `reason`, `detail`, `snapshot`, `created_at`, `reviewed_at`, `resolution` — added by `moderation.sql`. **Insert-only: no select policy at all**, not even for the reporter. See **Reporting and blocking** |
 | `push_subscriptions` | `id`, `user_id`, `endpoint` (unique), `p256dh`, `auth` *(both nullable since `native-push.sql`)*, `platform` *(`'web'` \| `'ios'`, added by `native-push.sql`)*, `user_agent`, `created_at` — added by `schema.sql`. **A native row holds an APNs device token in `endpoint` and has no keys**; a check constraint keeps a *web* row from doing the same. One table rather than two because every question either push function asks is per-user, not per-transport — see **Push is APNs here, not Web Push** |
 | `reminder_deliveries` | `activity_id`, `user_id`, `remind_at` (composite PK), `sent_at` — added by `schema.sql`. Who has already been told about which reminder, per person. See **Reminders**. |
+| `activity_completion_pushes` *(optional)* | `activity_id`, `completed_on` (composite PK), `notified_at`, `notified_by` — added by `activity-push.sql`. What makes a completion notification happen once. **RLS on with no policies**, like `reminder_deliveries`. See **Notifying a completion** |
 
 RPCs, from `sharing.sql`: `peek_invite(code)` reads an invite without
 accepting it, and `join_collection(code)` is **the only way a member row
@@ -5671,6 +5875,8 @@ select
      where table_name='user_blocks') as has_blocks,
   (select count(*) from information_schema.columns
      where table_name='push_subscriptions' and column_name='platform') as has_native_push,
+  (select count(*) from information_schema.tables
+     where table_name='activity_completion_pushes') as has_activity_push,
   (select count(*) from information_schema.columns
      where table_name='Users' and column_name='date_of_birth') as has_age_gate,
   (select count(*) from information_schema.columns
@@ -5681,7 +5887,9 @@ select
 ```
 
 `needs_single_list` and `needs_rollover` should be **0**; everything else
-should be **1**.
+should be **1** — except `has_activity_push`, which is genuinely optional:
+at 0 completion notifications still go out and only the once-only
+guarantee is missing (see **Notifying a completion**).
 
 **`has_age_gate` is the one that is not optional if this is going in a
 store at all.** Without it nothing enforces the age limit that
@@ -5907,6 +6115,23 @@ because several of them gate shipping rather than merely improving it.
   photos.~~ DONE.** `tools/media-backfill.py` moved them; the audit after
   that run showed 0 inline items. The script stays for anything that
   slips through — it is idempotent and dry-run by default.
+- **There is no way from a photo to its activity.** The wall's lightbox
+  names the activity in its caption, which answers *what was this* and
+  not *take me to it* — closing it returns to the grid. Making the
+  caption a control means closing the lightbox in order to open a sheet,
+  which is the same stranded-overlay problem the place sheet has (see
+  **Several activities at one point**). `_pwItems` already carries
+  `actId` for whenever that is worth solving.
+- **The wall renders every tile at once.** Lazy `<img>` means the bytes
+  are not fetched until a tile is near the viewport, but the DOM is one
+  node per photo and the whole thing is rebuilt by `setHTML()` on every
+  visit. Fine at hundreds; a library in the thousands wants
+  `content-visibility` per month block, or windowing.
+- **On this day is exact-date only.** Nothing surfaces "this week last
+  year", so a person whose completions cluster on weekends can go a long
+  time without the section ever appearing. Widening it to a window would
+  mean the caption could no longer say *on this day*, which is why it
+  was not done.
 - **Reordering media is drag-only.** There is no keyboard or
   assistive-technology path to it, and the tiles are not focusable. The button
   menu it replaced was reachable; this is not. A long-press menu as a fallback
@@ -5953,6 +6178,20 @@ because several of them gate shipping rather than merely improving it.
   long time accumulates ops indefinitely, and a queued write against a row
   another device has since deleted is dropped on replay with only a console
   warning — the user is told "1 change couldn't be synced" but not which.
+- **Something completed while offline never notifies anybody**, and it
+  is the same gap as the message one below, from the same cause: the
+  push is fired by the client right after the write, and `flushQueue()`
+  replays without going near it. Both are closed by the same few lines
+  — teaching the flush to call `notifyActivityCompleted()` for a
+  replayed `Activities` update that sets `date_completed`, and
+  `notifyMessageSent()` for a replayed `messages` insert.
+- **Nothing announces a completion that happened on another device
+  either.** The client that wrote it is the only one that calls the
+  function, so an activity ticked off on a laptop by somebody whose
+  phone syncs later is announced once, correctly — but an activity
+  completed by a *different* member while you were offline is never
+  re-announced to you. Correct, and worth knowing before it is reported
+  as a missing notification.
 - **A message sent while offline never notifies anybody.** The push is
   fired by the client right after the insert; the offline queue replays
   through `sb.from().upsert()` in `flushQueue()`, which does not go near

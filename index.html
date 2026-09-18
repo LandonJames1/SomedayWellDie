@@ -121,6 +121,9 @@
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/auth.css" />
   <link rel="stylesheet" href="css/home.css" />
+  <!-- The photo wall. After home.css (it reuses .home-sec-head) and
+       after components.css, whose .media-play it scales down. -->
+  <link rel="stylesheet" href="css/photos.css" />
   <link rel="stylesheet" href="css/collections.css" />
   <link rel="stylesheet" href="css/detail.css" />
   <link rel="stylesheet" href="css/me.css" />
@@ -335,6 +338,17 @@
   </div>
   <div class="up-list" id="homeUpNext"></div>
 
+  <!-- What you finished on this date in earlier years. Hidden on most
+       days, which is why it sits below Up Next rather than at the top —
+       see ON THIS DAY in home.js. No "See all": there is no longer list
+       behind it. -->
+  <div id="homeOnThisDaySection" style="display:none">
+    <div class="home-sec-head">
+      <h2>On this day</h2>
+    </div>
+    <div class="shelf shelf-3" id="homeOnThisDay"></div>
+  </div>
+
   <div id="homeRecentSection" style="display:none">
     <div class="home-sec-head">
       <h2>Recently accomplished</h2>
@@ -363,6 +377,19 @@
     <h1><em>Accomplished</em></h1>
   </div>
   <div id="doneBody"></div>
+</div>
+
+<!-- ===== ALL PHOTOS — pushed on top of Home =====
+     Every photo and video ever attached to a completion, grouped by the
+     month it was finished. Reached from Accomplished's bar button and
+     from the You tab, so its back chevron names whichever it came from.
+     See photos.js. -->
+<div class="page page-pushed" id="page-photos">
+  <div class="large-title">
+    <div class="eyebrow" id="photosEyebrow"></div>
+    <h1><em>Photos</em></h1>
+  </div>
+  <div id="photosBody"></div>
 </div>
 
 <!-- ===== LISTS TAB (root) ===== -->
@@ -458,6 +485,21 @@
          onchange="handleAvatarFile(this)"/>
   <div class="stats-card" id="meStats"></div>
   <div class="me-progress" id="meProgress"></div>
+
+  <!-- The one row on this tab, and it belongs here rather than in
+       Settings for the reason the split above describes: You is a
+       record and Settings is preferences, and every photo you have ever
+       taken of something you did is a record. See photos.js. -->
+  <div class="group">
+    <button class="row tappable has-leading" onclick="nav('photos')">
+      <span class="row-leading li-purple" id="mePhotosIcon"></span>
+      <span class="row-body"><span class="row-title">All Photos</span></span>
+      <span class="row-trailing">
+        <span class="row-value" id="mePhotosCount"></span>
+        <span class="row-chevron" id="mePhotosChevron"></span>
+      </span>
+    </button>
+  </div>
 
   <div class="me-version">From essential to extraordinary</div>
 </div>
@@ -1728,6 +1770,9 @@
 <script src="js/shareinbox.js"></script>
 <script src="js/upnext.js"></script>
 <script src="js/done.js"></script>
+<!-- The photo wall. After done.js, whose monthLabel() it borrows for
+     its month headers. -->
+<script src="js/photos.js"></script>
 <!-- APNs. Before reminders.js, which asks it whether native push is
      the transport before reaching for PushManager — there is no
      service worker and no Notification API inside the iOS shell. -->

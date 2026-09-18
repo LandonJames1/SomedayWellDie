@@ -1,0 +1,164 @@
+<!doctype html>
+<!-- ==============================================================
+     The email bench. Renders all six templates side by side with the
+     Go variables filled in, on both grounds, at phone and desktop
+     width — the same reason theme-lab.html and color-lab.html exist:
+     a template you cannot look at is a template nobody checks.
+
+     ⚠️ IT MUST BE SERVED, NOT OPENED FROM file://. It reads the
+     templates with fetch(), which a file:// origin refuses, and the
+     failure is a blank stage rather than an error — so it says so
+     itself when that happens. From the repo root:
+
+         python3 -m http.server 8000
+         open http://localhost:8000/supabase/emails/_preview.html
+
+     ⚠️ AND IT IS NOT A CLIENT. It renders in an iframe in this
+     browser, which is far more capable than Outlook and slightly more
+     capable than Gmail. It catches copy, hierarchy, colour and the
+     dark palette. It cannot tell you whether a client will strip
+     something — for that, send yourself a real one.
+
+     Dev tool only: not linked from the app, not in sw.js, outside
+     build-www.js's allowlist.
+     ============================================================== -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Email bench</title>
+<style>
+  :root{
+    --ink:#1c1a16; --muted:#5f5a4f; --edge:#ddd5c6; --ground:#eeeae2;
+    --tint:#9c5a2e; --card:#fbf9f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+  header{position:sticky;top:0;z-index:5;background:var(--card);
+         border-bottom:1px solid var(--edge);padding:14px 20px;
+         display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+  h1{margin:0;font:600 13px/1 ui-monospace,Menlo,monospace;
+     letter-spacing:.16em;text-transform:uppercase;color:var(--tint);}
+  button{font:inherit;padding:7px 14px;border:1px solid var(--edge);
+         background:var(--ground);border-radius:9px;cursor:pointer;color:inherit}
+  button[aria-pressed="true"]{background:var(--tint);color:#fbf9f5;border-color:var(--tint)}
+  .note{color:var(--muted);font-size:13px}
+  main{padding:24px 20px 80px;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+  figure{margin:0}
+  figcaption{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--muted);margin:0 0 8px;}
+  iframe{border:1px solid var(--edge);border-radius:12px;background:#fff;
+         width:620px;height:720px;display:block;box-shadow:0 8px 28px rgba(90,70,40,.10)}
+  body.narrow iframe{width:380px}
+  #err{margin:60px auto;max-width:560px;padding:22px 24px;border:1px solid var(--edge);
+       border-radius:14px;background:var(--card);display:none}
+  #err code{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Email bench</h1>
+  <button id="ground" aria-pressed="false">Dark</button>
+  <button id="width" aria-pressed="false">Phone width</button>
+  <span class="note">Renders the real template files with the Go variables filled in.</span>
+</header>
+
+<div id="err">
+  <p><strong>Nothing loaded.</strong> This page reads the templates with
+  <code>fetch()</code>, which a <code>file://</code> origin refuses. Serve the
+  repo and open it over http:</p>
+  <p><code>python3 -m http.server 8000</code><br>
+     <code>http://localhost:8000/supabase/emails/_preview.html</code></p>
+</div>
+
+<main id="stage"></main>
+
+<script>
+/* The six templates, and what the dashboard calls each one. */
+const FILES = [
+  ['confirm-signup.html',   'Confirm signup'],
+  ['reset-password.html',   'Reset password'],
+  ['magic-link.html',       'Magic Link'],
+  ['change-email.html',     'Change Email Address'],
+  ['invite-user.html',      'Invite user'],
+  ['reauthentication.html', 'Reauthentication'],
+];
+
+/* Stand-ins for what GoTrue substitutes. The token is deliberately
+   long: a short one hides the fact that the pasteable URL wraps. */
+const VARS = {
+  SiteURL:  'https://somedaywelldie.app',
+  Email:    'dana@example.com',
+  NewEmail: 'dana.hartley@example.com',
+  Token:    '418 209',
+  TokenHash:'pkce_6f1c9a0b4e2d7c85f3a1b9e0d4c7a2f8e5b3c1d9a7f4e2b0c8d6a4f2e0b8c6d4',
+  ConfirmationURL: 'https://somedaywelldie.app/index.html?token_hash=…',
+  RedirectTo: 'https://somedaywelldie.app',
+  Data: {},
+};
+
+/* {{ .Foo }} with any amount of inner whitespace. Unknown keys are left
+   standing rather than blanked, so a typo in a template is visible here
+   instead of silently rendering as nothing. */
+function fill(src){
+  return src.replace(/\{\{\s*\.([A-Za-z.]+)\s*\}\}/g, (m, key) => {
+    const v = key.split('.').reduce((o,k)=>(o==null?o:o[k]), VARS);
+    return (v===undefined||v===null) ? m : String(v);
+  });
+}
+
+let dark = false;
+
+function paint(frames){
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  for (const [html, label] of frames){
+    const fig = document.createElement('figure');
+    const cap = document.createElement('figcaption');
+    cap.textContent = label;
+    const f = document.createElement('iframe');
+    f.setAttribute('title', label);
+    fig.append(cap, f);
+    stage.append(fig);
+    /* srcdoc rather than document.write: the iframe then has its own
+       document and the template's own <style> block applies to it
+       alone. The color-scheme override is injected rather than faked
+       with a class, so what is being previewed is the template's real
+       prefers-color-scheme rule. */
+    f.srcdoc = html.replace('</head>',
+      '<style>:root{color-scheme:' + (dark?'dark':'light') + '}</style></head>');
+  }
+}
+
+let loaded = [];
+
+Promise.all(FILES.map(([name,label]) =>
+  fetch(name).then(r => { if(!r.ok) throw new Error(name+': '+r.status); return r.text(); })
+             .then(t => [fill(t), label])
+)).then(frames => {
+  loaded = frames;
+  paint(frames);
+}).catch(e => {
+  console.error(e);
+  document.getElementById('err').style.display = 'block';
+});
+
+document.getElementById('ground').onclick = e => {
+  dark = !dark;
+  e.target.setAttribute('aria-pressed', String(dark));
+  e.target.textContent = dark ? 'Light' : 'Dark';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  paint(loaded);
+};
+
+document.getElementById('width').onclick = e => {
+  const narrow = document.body.classList.toggle('narrow');
+  e.target.setAttribute('aria-pressed', String(narrow));
+  e.target.textContent = narrow ? 'Desktop width' : 'Phone width';
+};
+</script>
+
+</body>
+</html>

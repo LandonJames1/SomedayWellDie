@@ -1,0 +1,48 @@
+/*  ============================================================
+    ALL PHOTOS — the grid on #page-photos.
+
+    Deliberately small. The month headers are .home-sec-head and the
+    tiles inside each cell are .media-tile from components.css, so the
+    only thing defined here is the grid and the box one photo sits in.
+
+    See js/photos.js.
+    ============================================================ */
+
+/*  Three columns at every phone width, unlike .shelf-3 which drops to
+    two below 375px. A shelf is a taster and wants its captions
+    readable; this is a wall and wants density — at 320px the cells are
+    still ~93px, which is a legible thumbnail.
+
+    The gutters stay. Running a photo grid to the glass is the obvious
+    look and this app has exactly one full-bleed screen, the map. */
+    .pw-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      padding: 2px var(--gx-r) 4px var(--gx-l);
+    }
+
+/*  A square box with the tile filling it — .media-tile is written to
+    fill whatever it is placed in, so the size is set here and nowhere
+    else. The radius is small: at this density a row of heavily rounded
+    tiles reads as a set of buttons rather than as photographs. */
+    .pw-cell {
+      display: block; position: relative;
+      width: 100%; aspect-ratio: 1;
+      padding: 0; background: none;
+      border-radius: 5px; overflow: hidden;
+      box-shadow: var(--ring);
+      transition: transform .15s var(--ease), opacity .15s var(--ease);
+    }
+    .pw-cell:active { transform: scale(.96); opacity: .8; }
+
+/*  The play badge is sized for a 92px completion-sheet thumbnail and is
+    too heavy at this scale, where a third of the cells may be video. */
+    .pw-cell .media-play { width: 24px; height: 24px; }
+    .pw-cell .media-play .ic { width: 12px; height: 12px; }
+
+/*  A wider column earns a fourth track rather than four bigger photos —
+    the point of the screen is how much of it you can take in at once. */
+    @media (min-width: 700px) {
+      .pw-grid { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    }

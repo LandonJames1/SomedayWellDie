@@ -9,7 +9,7 @@
    installs pick the new build up instead of serving a stale one.
    ============================================================== */
 
-const CACHE_VERSION = 'v192';
+const CACHE_VERSION = 'v194';
 const SHELL_CACHE = `bucketlist-shell-${CACHE_VERSION}`;
 const VENDOR_CACHE = `bucketlist-vendor-${CACHE_VERSION}`;
 const IMAGE_CACHE = `bucketlist-images-${CACHE_VERSION}`;
@@ -26,6 +26,7 @@ const SHELL_ASSETS = [
   './css/components.css',
   './css/auth.css',
   './css/home.css',
+  './css/photos.css',
   './css/collections.css',
   './css/detail.css',
   './css/me.css',
@@ -71,6 +72,7 @@ const SHELL_ASSETS = [
   './js/shareinbox.js',
   './js/upnext.js',
   './js/done.js',
+  './js/photos.js',
   './js/nativepush.js',
   './js/reminders.js',
   './js/smartlists.js',
@@ -232,82 +234,118 @@ self.addEventListener('message', event => {
 });
 
 /* ---------- Push ----------
-   Two senders now, and they want different banners:
+   Three senders now, and they want different banners:
 
-     send-reminders     a date arrived  → the activity is the headline
-     send-message-push  somebody spoke  → "Sarah · Japan 2027"
+     send-reminders       a date arrived    → the activity is the headline
+     send-message-push    somebody spoke    → "Sarah · Japan 2027"
+     send-activity-push   somebody finished → "Dana · Japan 2027"
 
-   They are told apart by payload.kind, which only the newer one sets;
-   anything without it is a reminder, so a push already in flight from
-   an older function still lands correctly.
+   They are told apart by payload.kind, which the reminder sender does
+   not set — so anything without one is a reminder, and a push already
+   in flight from an older function still lands correctly.
+
+   ⚠️ THE TABLE IS THE WHOLE HANDLER. Three kinds across a headline, a
+   fallback, a tag and a renotify flag is twelve values, and the
+   two-sender version had already turned into nested ternaries that had
+   to be read four times to answer "what does a completion tag as".
+   Adding a fourth kind is one row here.
 
    The payload is JSON and a malformed one still shows a banner: a push
    that arrives and shows nothing is worse than a vague one, and the
    browser will show its own "This site has been updated in the
    background" if we resolve without displaying anything at all. */
+const PUSH_KINDS = {
+  reminder: {
+    title: 'Reminder',
+    body: 'You have something coming up.',
+    /* One per activity, so two reminders are two rows — and everything
+       un-named collapses onto one rather than stacking. */
+    tag: p => p.activityId ? 'bl-reminder-' + p.activityId : 'bl-reminders',
+    renotify: false,
+  },
+  message: {
+    title: 'New message',
+    body: 'Tap to read it.',
+    /* By list: a burst of messages in one conversation replaces itself
+       instead of filling the shade, and renotify brings the alert back
+       each time so it is still noticed. */
+    tag: p => 'bl-conv-' + (p.collectionId || 'all'),
+    renotify: true,
+  },
+  completion: {
+    title: 'Accomplished',
+    body: 'Something got ticked off.',
+    /* By ACTIVITY, not by list — unlike a conversation, these are
+       separate events about separate things and collapsing them would
+       mean three people finishing three things showed up as one. */
+    tag: p => p.activityId ? 'bl-done-' + p.activityId : 'bl-done',
+    renotify: true,
+  },
+};
+
 self.addEventListener('push', event => {
   let payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
-  const isMessage = payload.kind === 'message';
 
-  const title = payload.title || (isMessage ? 'New message' : 'Reminder');
-  const body = payload.body ||
-    (isMessage ? 'Tap to read it.' : 'You have something coming up.');
-
-  /* Tagging collapses repeats rather than stacking them. A conversation
-     tags by collection, so a burst of messages in one list replaces
-     itself instead of filling the shade — renotify brings the alert
-     back for each one so it is still noticed. */
-  const tag = isMessage
-    ? 'bl-conv-' + (payload.collectionId || 'all')
-    : (payload.activityId ? 'bl-reminder-' + payload.activityId : 'bl-reminders');
+  const kind = PUSH_KINDS[payload.kind] ? payload.kind : 'reminder';
+  const spec = PUSH_KINDS[kind];
 
   event.waitUntil((async () => {
     await badgeSet(await badgeGet() + 1);
-    return self.registration.showNotification(title, {
-    body,
-    icon: 'icons/icon-192.png',
-    badge: 'icons/favicon-32.png',
-    tag,
-    renotify: isMessage,
-    data: {
-      url: './index.html',
-      kind: isMessage ? 'message' : 'reminder',
-      collectionId: payload.collectionId || null,
-      activityId: payload.activityId || null,
-    },
+    return self.registration.showNotification(payload.title || spec.title, {
+      body: payload.body || spec.body,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/favicon-32.png',
+      tag: spec.tag(payload),
+      renotify: spec.renotify,
+      data: {
+        url: './index.html',
+        kind,
+        collectionId: payload.collectionId || null,
+        activityId: payload.activityId || null,
+      },
     });
   })());
 });
 
 /* Tapping should bring the app forward rather than opening a second
-   copy of it — and, for a message, land on the conversation it came
-   from. There is no URL routing in this app (see the backlog), so the
-   destination is handed to the running page as a postMessage rather
-   than as a query string; js/messages.js listens for it. A cold start
-   has no page to tell, so the collection id rides on the URL and
-   readPushLanding() in messages.js picks it up at boot. */
+   copy of it, and land on the thing it was about. The destination is
+   handed to the running page as a postMessage; js/messages.js listens
+   for it. A cold start has no page to tell, so the id rides on the URL
+   and readPushLanding() in messages.js picks it up at boot.
+
+   ⚠️ ONE DESTINATION, AND AN ACTIVITY OUTRANKS A CONVERSATION. A
+   completion payload carries BOTH ids — the activity is the news, the
+   list is the context — and the old shape would have taken the second
+   branch as well and left the activity sheet stranded over a
+   conversation. Named rather than inferred: `dest` is decided once and
+   both halves below read it. */
 self.addEventListener('notificationclick', event => {
   const data = event.notification.data || {};
   event.notification.close();
+
+  const dest = data.activityId
+    ? { type: 'open-activity', activityId: data.activityId,
+        url: './index.html?act=' + encodeURIComponent(data.activityId) }
+    : data.collectionId
+      ? { type: 'open-conversation', collectionId: data.collectionId,
+          url: './index.html?conv=' + encodeURIComponent(data.collectionId) }
+      : null;
+
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const c of clients) {
       if ('focus' in c) {
-        if (data.kind === 'message' && data.collectionId) {
-          c.postMessage({ type: 'open-conversation', collectionId: data.collectionId });
-        } else if (data.kind === 'reminder' && data.activityId) {
-          c.postMessage({ type: 'open-activity', activityId: data.activityId });
+        if (dest) {
+          const { url, ...msg } = dest;
+          c.postMessage(msg);
         }
         return c.focus();
       }
     }
-    const url = data.kind === 'message' && data.collectionId
-      ? './index.html?conv=' + encodeURIComponent(data.collectionId)
-      : data.kind === 'reminder' && data.activityId
-        ? './index.html?act=' + encodeURIComponent(data.activityId)
-        : './index.html';
-    if (self.clients.openWindow) return self.clients.openWindow(url);
+    if (self.clients.openWindow) {
+      return self.clients.openWindow(dest ? dest.url : './index.html');
+    }
   })());
 });
 

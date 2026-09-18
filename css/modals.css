@@ -1030,9 +1030,17 @@
     }
     .lb-prev { left: 6px; }
     .lb-next { right: 6px; }
+    /* ⚠️ THIS LINE CARRIES AN ACTIVITY'S NAME NOW, not just "5 of 12",
+       so it has to inset itself. Opened from the photo wall every item
+       names itself (see lbPhotos in modals.js), and a real name fills
+       the width — which ran the text to 13px off the glass, inside the
+       14px floor every other screen in the app respects. */
     .lb-counter {
       margin-top: 14px; flex-shrink: 0;
       font-size: 13px; color: rgba(235,235,245,.6);
+      text-align: center;
+      max-width: 100%;
+      padding: 0 calc(18px + var(--safe-right)) 0 calc(18px + var(--safe-left));
     }
 
 /*  ============================================================

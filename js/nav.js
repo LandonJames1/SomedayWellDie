@@ -11,7 +11,7 @@
 /* Which tab each screen belongs to, so the right tab stays lit while
    a pushed screen is showing. */
 const PAGE_TAB={home:'home',lists:'lists',globalmap:'map',me:'me',detail:'lists',
-  upnext:'home',done:'home',settings:'me',
+  upnext:'home',done:'home',photos:'home',settings:'me',
   messages:'messages',conversation:'messages'};
 
 function nav(page,listId){
@@ -32,7 +32,7 @@ function nav(page,listId){
   if(page==='detail'&&prev!=='detail') curView='list';
 
   /* Pushed screens slide in from the right; switching tabs cross-fades. */
-  const PUSHED=['detail','upnext','done','conversation','settings'];
+  const PUSHED=['detail','upnext','done','photos','conversation','settings'];
   const pushing = PUSHED.includes(page) && !PUSHED.includes(prev);
   if(pushing) backTab=curTab;
   /* One pushed screen opening another that belongs to a DIFFERENT tab.
@@ -131,6 +131,7 @@ const RENDERERS={
   home:()=>renderHome(),
   upnext:()=>renderUpNext(),
   done:()=>renderDone(),
+  photos:()=>renderPhotoWall(),
   lists:()=>renderCollections(),
   detail:()=>renderDetail(),
   globalmap:()=>renderGlobalMap(),
@@ -236,6 +237,7 @@ function refreshAfterChange(src){
   if(p==='home')           return renderHome();
   if(p==='upnext')         return renderUpNext();
   if(p==='done')           return renderDone();
+  if(p==='photos')         return renderPhotoWall();
   if(p==='lists')          return renderCollections();
   if(p==='globalmap')      return renderGlobalMap();
   if(p==='me')             return renderMe();
@@ -279,6 +281,20 @@ function updateNavbar(){
        it sat alone on top of the large title. The Home tab, the swipe
        and the browser's own Back all land where it did. */
     title.textContent=curPage==='upnext'?'Up Next':'Accomplished';
+    /* Accomplished lists the activities; the wall lists the pictures,
+       which is what people actually came to look at. This is the one
+       screen where "and now show me the photos" is the obvious next
+       thought, so the button lives here and not on Up Next. */
+    if(curPage==='done')
+      right.innerHTML=`<button class="navbtn disc ghost" onclick="nav('photos')" aria-label="All photos">${icon('square-grid')}</button>`;
+  } else if(curPage==='photos'){
+    /* ⚠️ THE LABEL HAS TO NAME WHERE BACK WILL ACTUALLY LAND, for the
+       same reason the detail screen's does: this screen is reached from
+       Accomplished (the Home tab) and from the You tab, and goBack()
+       honours backTab. A hardcoded label would be wrong half the time. */
+    const backLabel=backTab==='me'?'You':'Home';
+    left.innerHTML=`<button class="navbtn back" onclick="goBack()">${icon('chevron-left')}<span>${backLabel}</span></button>`;
+    title.textContent='Photos';
   } else if(curPage==='detail'){
     /* The label has to name where Back will actually land. A collection
        can be opened from the Messages tab as well as from Lists (the

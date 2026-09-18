@@ -17,6 +17,8 @@ than assuming it is there:
 | `functions/send-reminders` | — | Reminders still show on Home and on next open, just not as background push |
 | `messages.sql` | `probeMessages()` in `js/messages.js` | No Messages tab, no activity notes log |
 | `functions/send-message-push` | — | Messages arrive silently; the in-app tab badge is the only signal, and it only refreshes on foreground |
+| `functions/send-activity-push` | — | Completing something on a shared list tells nobody; the others find out next time they open the app |
+| `activity-push.sql` | — | Completion pushes still go out, but nothing stops one being sent twice — see §2c |
 | **`rls-lockdown.sql`** | — | **Every signed-in user can read, edit and delete every other user's data. Run it.** |
 | `functions/unfurl` | — | A shared link still opens the activity sheet with the URL attached; screenshot import says it needs the key; the location guess stays quiet |
 | `single-list.sql` | — | Nothing visible: the app never reads `extra_collection_ids`. Run it to take the dead column off the table |
@@ -193,6 +195,79 @@ than an error.
 `sent: 0` with a registered device usually means `APNS_ENV`. Read the
 function logs: `apns failed 400 BadDeviceToken` is the environment
 mismatch above; `403 InvalidProviderToken` is a wrong Key ID or Team ID.
+
+## 2c. Completion notifications on a shared list (optional)
+
+When somebody ticks something off a list they share, everyone else on
+it gets a banner — *"Dana · Japan 2027 / Accomplished “Ride the
+Shinkansen”"* — and tapping it opens that activity. The person who
+filled in the sheet is never notified: they were just looking at it.
+
+Nothing is scheduled. A completion's event is the write itself, so
+`js/sharing.js` calls the function the moment it succeeds, exactly as
+`notifyMessageSent()` does. It shares the VAPID and APNS secrets with
+the other two functions, so if §2 and §2b are done there is nothing
+new to set.
+
+### Run the migration
+
+```sql
+-- supabase/activity-push.sql
+```
+
+One table, `activity_completion_pushes`, keyed on
+`(activity_id, completed_on)`. It is what makes the push happen **once**.
+
+`send-message-push` can refuse a request to announce a message the
+caller did not write (`messages.sender_id`). There is no equivalent
+here — an activity row does not record who completed it, because any
+member may tick anything off — so without a marker, *"announce activity
+X"* is a button any member of the list can hold down. The key carries
+the completion date rather than being the activity id alone, so
+un-completing and finishing again on another day is announced again,
+the same way `reminder_deliveries` keys on `remind_at`.
+
+Without the table the feature still works and only that guarantee is
+lost. The function logs a line and carries on, unlike `send-reminders`,
+which refuses without its delivery table — there a missing marker means
+re-notifying everybody every day, here it means one duplicate.
+
+### Deploy
+
+```bash
+supabase functions deploy send-activity-push
+```
+
+⚠️ **Never with `--no-verify-jwt`.** The JWT is how the caller is
+identified at all — it is where the name on the notification comes
+from, and the check that they are in the list.
+
+### Muting
+
+Reuses `conversation_prefs` from `messages.sql`. Muting a list's
+conversation silences its completions too: the mute is a statement
+about a list being noisy, not about one route into it. No table means
+nothing is muted, which is the right default.
+
+### Checking it worked
+
+The response says what happened rather than just `ok`:
+
+```json
+{ "recipients": 2, "sent": 2, "pruned": 0, "apnsSkipped": 0 }
+```
+
+- `recipients: 0` with `no one else in this list` — the list is not
+  actually shared.
+- `skipped: "already-notified"` — the marker is doing its job.
+- `skipped: "not completed"` — the row's `date_completed` is null.
+- `apnsSkipped` above zero — an iOS device is registered and the
+  `APNS_*` secrets are not set. See §2b.
+
+The browser console shows the same JSON on every completion in a shared
+list, logged by `notifyActivityCompleted()`.
+
+---
 
 ## 3. Reading shared links (optional)
 

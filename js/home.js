@@ -9,7 +9,10 @@
      1. Progress ring — the whole list, at a glance
      2. Quick add    — file an idea without picking a list first
      3. Up Next      — the most urgent unfinished activities
-     4. Recently done
+     4. On this day  — what you finished on this date in past years,
+                       and the only section here about the past. Hidden
+                       on the days it has nothing to say.
+     5. Recently done
 
    The lists shelf that used to close the page is gone: it duplicated
    the Lists tab sitting right there in the tab bar.
@@ -27,6 +30,7 @@ async function renderHome(){
   renderHomeReminders(acts,lists);
   renderHomeProgress(lists,acts);
   renderHomeUpNext(acts,lists);
+  renderHomeOnThisDay(acts);
   renderHomeRecent(acts,lists);
   /* The home screen widget draws Up Next and the progress ring from
      exactly these two arrays -- see js/widget.js. Un-awaited: it is a
@@ -134,6 +138,87 @@ function sortUpNext(acts){
     daysToTarget(a)-daysToTarget(b) ||
     priorityRank(a)-priorityRank(b) ||
     new Date(b.createdAt)-new Date(a.createdAt));
+}
+
+/* ==============================================================
+   ON THIS DAY
+
+   Completed activities whose anniversary is today. The app was very
+   good at capture and planning and never once looked backwards: once
+   something was done it went behind a month header on Accomplished and
+   was effectively gone. This is the cheapest possible correction —
+   every input already exists, there is no schema, no network and no
+   state, and it is the one section on Home about the past rather than
+   about what to do next.
+
+   It sits above Recently accomplished rather than at the top: on the
+   great majority of days it is hidden, and a section that shoves Up
+   Next down the screen a dozen times a year is a section that has to
+   earn it every other day too.
+   ============================================================== */
+
+/* ⚠️ MATCHED BY SLICING THE STRING, NEVER BY PARSING A DATE.
+   `completedDate` is a bare ISO `YYYY-MM-DD`, and `new Date('2025-09-14')`
+   parses as UTC — so it comes back as the 13th anywhere west of
+   Greenwich and every anniversary in the Americas fires a day early.
+   That is the same trap isoLocal() exists for and that fmtDate() pays
+   the `T00:00:00` to avoid. Here there is nothing to pay: month and day
+   are two substrings.
+
+   Returns the activities that match, each stamped with how many whole
+   years ago it was. */
+function onThisDayMatches(acts){
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth()+1,d=now.getDate();
+
+  /* Feb 29 surfaces on Feb 28 in a common year. Left alone it would be
+     invisible three years in four, which for the one memory a person is
+     most likely to remember the date of is the wrong answer. Feb 28 and
+     not Mar 1 because it is still February, which is what people
+     recall. */
+  const leap=(y%4===0&&y%100!==0)||y%400===0;
+  const alsoLeapDay=(m===2&&d===28&&!leap);
+
+  return acts.filter(a=>{
+    if(!a.completed||!a.completedDate)return false;
+    const cy=+a.completedDate.slice(0,4);
+    const cm=+a.completedDate.slice(5,7);
+    const cd=+a.completedDate.slice(8,10);
+    /* Strictly earlier years. Something finished this morning belongs
+       under Recently accomplished, not under a heading about the past. */
+    if(!(cy<y))return false;
+    return (cm===m&&cd===d)||(alsoLeapDay&&cm===2&&cd===29);
+  }).map(a=>({a,years:y-(+a.completedDate.slice(0,4))}))
+    /* Nearest first, like everything else on this screen. */
+    .sort((p,q)=>p.years-q.years||p.a.name.localeCompare(q.a.name))
+    .slice(0,6);
+}
+
+function renderHomeOnThisDay(acts){
+  const hits=onThisDayMatches(acts);
+  const sec=$('homeOnThisDaySection');
+  if(!sec)return;
+  if(!hits.length){sec.style.display='none';return;}
+  sec.style.display='';
+
+  /* setHTML rather than innerHTML: this block is all <img> and it is
+     rebuilt on every navigation back to Home, where the markup is
+     almost always identical. See RENDERING WITHOUT RELOADING. */
+  setHTML($('homeOnThisDay'),hits.map(({a,years})=>{
+    const photo=a.photos&&a.photos.length?a.photos[0]:null;
+    /* The same .rec-card as the shelf below, so the two line up — only
+       the caption differs. It names the real gap rather than saying "a
+       year" about something five years old. .rec-date stays green: it
+       still means completed, and a fourth colour scale on this screen
+       would be one too many. */
+    return `<button class="rec-card" onclick="openActDetail('${a.id}')">
+      <span class="rec-photo">${photo
+        ? `<img src="${esc(photo)}" alt="" loading="lazy"/>`
+        : `<span class="rec-photo-empty">${icon('check')}</span>`}</span>
+      <span class="rec-name">${esc(a.name)}</span>
+      <span class="rec-date">${years===1?'1 year ago':years+' years ago'}</span>
+    </button>`;
+  }).join(''));
 }
 
 /* ---- Recently accomplished ---- */

@@ -175,7 +175,7 @@ document.addEventListener('touchend',()=>{
 const SWIPE_MIN=64;              /* deliberate, not a stray drag */
 const SWIPE_RATIO=1.5;           /* clearly horizontal, not a scroll */
 const SWIPE_EDGE=34;             /* the escape hatch on a map screen */
-const PUSHED_PAGES=['detail','upnext','done','conversation'];
+const PUSHED_PAGES=['detail','upnext','done','photos','conversation'];
 
 let pgSwipe=null;
 

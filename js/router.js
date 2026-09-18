@@ -29,7 +29,7 @@
    'conversation'). Both name the same thing — see the Screens table in
    CLAUDE.md — and a URL is read by a person. */
 const ROUTE_PAGE={
-  home:'home', upnext:'upnext', done:'done',
+  home:'home', upnext:'upnext', done:'done', photos:'photos',
   lists:'lists', list:'detail',
   messages:'messages', chat:'conversation',
   map:'globalmap', you:'me', settings:'settings',

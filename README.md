@@ -118,7 +118,8 @@ Loaded in the order below; **order matters**.
 | `layout.css` | The app shell: navigation bar, collapsing large title, bottom tab bar, the page show/hide system. |
 | `components.css` | Reusable iOS primitives: grouped lists, segmented controls, buttons, search field, badges, empty states. Check here before writing a new component. |
 | `auth.css` | The signed-out sign-in / create-account screen. |
-| `home.css` | The Home dashboard: progress ring, quick add, Up Next, the recently-accomplished and lists shelves. |
+| `home.css` | The Home dashboard: progress ring, quick add, Up Next, the on-this-day and recently-accomplished shelves. |
+| `photos.css` | The photo wall's grid. Everything else on that screen is borrowed from `home.css` and `components.css`. |
 | `collections.css` | The Lists tab — collection photo cards. |
 | `detail.css` | One collection: banner, activity rows, quick-add composer, grid cards, activity sheet. |
 | `me.css` | The Me tab. |
@@ -168,6 +169,7 @@ chain below.
 | `home.js` | The Home dashboard, and the quick-add that files an activity into a chosen list. |
 | `upnext.js` | The full Up Next screen, grouped by target band (this month, this year, next year…). |
 | `done.js` | The full Accomplished screen, grouped by the month things were finished. |
+| `photos.js` | Every photo and video you have ever attached, as one grid. Reached from Accomplished and from the You tab. |
 | `reminders.js` | Reminder dates: the due banner on Home, and local notifications when the app is opened. |
 | `collections.js` | The Lists tab plus create/edit/delete a collection. |
 | `detail.js` | One collection: banner, filter, the activity list/grid/map switch, the composer. |

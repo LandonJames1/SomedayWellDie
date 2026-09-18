@@ -21,6 +21,9 @@ function paintStaticIcons(){
   tab('tabMe','summit','summit-fill','You');
 
   set('coverZoneIcon',icon('photo','ic-lg'));
+  /* The You tab's one row — the photo wall. */
+  set('mePhotosIcon',icon('square-grid'));
+  set('mePhotosChevron',icon('chevron-right'));
   /* The completion sheet is the detail sheet's shape too, so its list
      eyebrow takes the same .ic-eyebrow chevron the other two do. */
   set('compListChevron',icon('chevron-right','ic-eyebrow'));

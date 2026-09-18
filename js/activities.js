@@ -1079,6 +1079,13 @@ async function confirmComplete(){
   else showToast(offline?'Saved — will sync later':'Saved');
   refreshAfterChange(src);
 
+  /* Tell the rest of a shared list. Only on the way in — editing the
+     record of something finished last March is not news — and never
+     for a write that only got as far as the offline queue, which has
+     not reached the table anybody would be told about. Not awaited:
+     the completion is saved and on screen. */
+  if(wasNew&&!offline) notifyActivityCompleted(finishedId,nowIn[0]||curListId);
+
   /* THE MOMENT SOMETHING IS ACCOMPLISHED, SHOW WHAT WAS ACCOMPLISHED.
      Completing used to close the sheet and leave you on the list you
      started from, so the record you had just written -- the photos, the
@@ -1125,6 +1132,10 @@ async function commitCompDraft(fields){
   hapticSuccess();
   showToast(offline?'Accomplished — will sync later':'Accomplished');
   const newId=rows&&rows[0]&&rows[0].id;
+  /* A draft arrives already completed, so it is the same news as the
+     branch in confirmComplete() — "I did this" is if anything more
+     worth saying when the thing was never on the list to begin with. */
+  if(!offline) notifyActivityCompleted(newId,lists[0]);
   if(!revealNewActivity(lists[0],newId)) refreshAfterChange(src);
 }
 

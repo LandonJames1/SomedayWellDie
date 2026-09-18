@@ -548,7 +548,16 @@ function listPickerCreateNew(){
 /* Entries are the normalised media shape from api.js —
    {type,url,poster} — so the same viewer handles photos and video. A
    bare string or array of strings is still accepted, since plenty of
-   call sites only ever have photo URLs. */
+   call sites only ever have photo URLs.
+
+   AN ENTRY MAY ALSO CARRY ITS OWN `label`, and optionally `saveIdx` /
+   `saveTotal`. Everywhere in the app until the photo wall, one lightbox
+   held one activity's media, so a single `lbLabel` named all of it —
+   which is what the saved file is called. The wall walks every photo
+   you own, so one name for the set would give four hundred files the
+   same one and the caption could not say what you were looking at.
+   Per-item wins where it is present; nothing else passes it, so every
+   existing call site is unaffected. See js/photos.js. */
 let lbPhotos=[],lbIdx=0,lbLabel='';
 function openLB(items,startIdx,label){
   if(typeof items==='string') items=[items];
@@ -577,7 +586,13 @@ function lbShow(){
     vid.style.display='none';
     img.style.display='';img.src=m.url;
   }
-  $('lbCounter').textContent=lbPhotos.length>1?`${lbIdx+1} of ${lbPhotos.length}`:'';
+  /* The counter carries the item's own label when it has one. On the
+     photo wall that is the whole point: a photo with no idea what it
+     was of is a picture, not a memory. Where every item belongs to the
+     activity already named at the top of the sheet — which is every
+     other caller — there is no label and this is the count alone. */
+  const count=lbPhotos.length>1?`${lbIdx+1} of ${lbPhotos.length}`:'';
+  $('lbCounter').textContent=m.label?(count?`${m.label} · ${count}`:m.label):count;
   $('lbPrev').style.display=lbPhotos.length>1?'flex':'none';
   $('lbNext').style.display=lbPhotos.length>1?'flex':'none';
   /* The label says which of the two it will save, because on iOS the
@@ -600,7 +615,15 @@ function lbSave(){
   const m=lbPhotos[lbIdx];
   if(!m||!m.url)return;
   const btn=$('lbSaveBtn');
-  saveMedia(m,lbLabel,lbIdx,lbPhotos.length,busy=>{
+  /* An item carrying its own label names its own file, and brings its
+     position WITHIN ITS OWN ACTIVITY with it — mediaSaveName() appends
+     the index only when there is more than one, and on the wall
+     lbPhotos.length is the whole library, so the position in this array
+     would suffix every single file with a meaningless number. */
+  const base=m.label||lbLabel;
+  const idx=m.label?(m.saveIdx||0):lbIdx;
+  const total=m.label?(m.saveTotal||1):lbPhotos.length;
+  saveMedia(m,base,idx,total,busy=>{
     /* A state on the control rather than a message beside it. A video
        is megabytes and the fetch is not instant; without this the
        button reads as dead for the whole of it. */

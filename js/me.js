@@ -29,6 +29,14 @@ async function renderMe(){
       <span>${done} of ${total}</span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+
+  /* Counted off `media`, not `photos`, so a video without a captured
+     poster is still counted — the wall shows it. Empty rather than "0",
+     the same way the Blocked People count is: a zero beside a row is a
+     number you have to read before learning there is nothing there. */
+  const shots=allActs.reduce((n,a)=>n+(a.completed&&a.media?a.media.length:0),0);
+  const shotEl=$('mePhotosCount');
+  if(shotEl) shotEl.textContent=shots?String(shots):'';
 }
 
 /* The Settings screen, pushed from the You tab's gear button. It is a
